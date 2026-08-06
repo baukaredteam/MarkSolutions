@@ -47,7 +47,7 @@ describe("api-client", () => {
     );
   });
 
-  it("sends X-Tenant-Id header from session", async () => {
+  it("sends Authorization Bearer header from session (T2: JWT is the tenant source)", async () => {
     sessionStore.set({ tenantId: "t-123", token: "jwt" });
     const fetchMock = vi
       .fn()
@@ -59,7 +59,7 @@ describe("api-client", () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect((init as RequestInit).headers).toMatchObject({
-      "X-Tenant-Id": "t-123",
+      Authorization: "Bearer jwt",
     });
   });
 });

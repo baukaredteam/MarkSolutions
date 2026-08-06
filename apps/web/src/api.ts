@@ -43,15 +43,17 @@ export class FetchApiClient implements ApiClient {
     path: string,
     body?: unknown
   ): Promise<T> {
+    const sess = sessionStore.get();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "*/*",
+    };
+    if (sess?.token) headers["Authorization"] = `Bearer ${sess.token}`;
     let res: Response;
     try {
       res = await fetch(`${this.base}${path}`, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Tenant-Id": sessionStore.get()?.tenantId ?? "",
-          Accept: "*/*",
-        },
+        headers,
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch {

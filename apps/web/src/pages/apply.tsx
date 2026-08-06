@@ -23,8 +23,8 @@ export function ApplyPage() {
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
-  // после дубля БИН (AT-02) повторный POST не отправляем
-  const [duplicate, setDuplicate] = useState(false);
+  // после любого ответа (новый или дубль) повторный POST не отправляем
+  const [done, setDone] = useState(false);
 
   const set = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [name]: e.target.value }));
@@ -44,13 +44,13 @@ export function ApplyPage() {
         }
       );
       setCreatedId(res.id);
+      setDone(true);
       toast.push(`Заявка отправлена. Статус: ${res.status}`);
     } catch (e) {
       if (e instanceof ApiErrorResponse && e.error.code === 409) {
-        // дубль по БИН → показать существующий статус, форму больше не отправляем (AT-02)
-        setDuplicate(true);
-        toast.push(`Заявка уже существует: ${e.error.message}`);
         setCreatedId(form.bin);
+        setDone(true);
+        toast.push(`Заявка уже существует: ${e.error.message}`);
       } else if (e instanceof ApiErrorResponse) {
         toast.push(`${e.error.code}: ${e.error.message}`);
       } else if (e instanceof ApiUnavailable) {
@@ -85,12 +85,10 @@ export function ApplyPage() {
         />
         Согласен с офертой ({OFFER_VERSION})
       </label>
-      <button onClick={submit} disabled={submitting || duplicate}>
+      <button onClick={submit} disabled={submitting || done}>
         Отправить заявку
       </button>
-      {duplicate && (
-        <p>Заявка уже существует — повторная отправка недоступна.</p>
-      )}
+      {done && <p>Заявка обработана — повторная отправка недоступна.</p>}
       {createdId && (
         <p>
           Проверить статус:{" "}
