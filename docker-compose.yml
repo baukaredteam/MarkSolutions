@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: markflow
+      POSTGRES_PASSWORD: markflow
+      POSTGRES_DB: markflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: markflow
+      RABBITMQ_DEFAULT_PASS: markflow
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: markflow
+      MINIO_ROOT_PASSWORD: markflow123
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:
