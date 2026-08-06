@@ -1,5 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
+import { createHash } from "node:crypto";
+
+// Демо-хэш (не для prod): sha256 (должен совпадать с AuthService.hashPassword)
+function hashPassword(p: string): string {
+  return createHash("sha256").update(p).digest("hex");
+}
 
 async function main() {
   const url =
@@ -24,6 +30,18 @@ async function main() {
       id: "acc-demo",
       tenantId: tenant.id,
       balance: BigInt(1000000), // 1 000 000 тиын = 10 000 KZT (минорные)
+    },
+  });
+
+  // seeded-админ (fallback для демо, если заявка/одобрение не прошли)
+  await prisma.user.upsert({
+    where: { login: "admin@demo" },
+    update: {},
+    create: {
+      login: "admin@demo",
+      tenantId: tenant.id,
+      passwordHash: hashPassword("demo-password"),
+      roles: JSON.stringify(["admin", "accountant", "operator"]),
     },
   });
 
@@ -60,7 +78,7 @@ async function main() {
   }
 
   console.log(
-    `Seeded: tenant=${tenant.bin}, account=${account.balance}, products=${products.length}`
+    `Seeded: tenant=${tenant.bin}, account=${account.balance}, products=${products.length}, admin=admin@demo`
   );
   await prisma.$disconnect();
 }
