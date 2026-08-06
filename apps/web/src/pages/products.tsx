@@ -28,8 +28,8 @@ export function ProductsPage() {
 
   function loadInvoice() {
     if (!sessionStore.get()) {
-      // AT-16 в UI: без сессии → ошибка tenant_id required (400)
-      toast.push("400: tenant_id required");
+      // AT-16 в UI: без сессии → 401 jwt required (T1 контракт)
+      toast.push("401: jwt required");
       return;
     }
     setRows(invoiceFixture);

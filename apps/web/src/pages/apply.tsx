@@ -36,22 +36,23 @@ export function ApplyPage() {
     }
     setSubmitting(true);
     try {
-      const res = await api.post<{ id: string; status: string }>(
-        "/onboarding/applications",
-        {
-          ...form,
-          offerVersion: OFFER_VERSION,
-        }
-      );
-      setCreatedId(res.id);
+      const { status, body } = await api.postRaw<{
+        id: string;
+        status: string;
+      }>("/onboarding/applications", {
+        ...form,
+        offerVersion: OFFER_VERSION,
+      });
+      setCreatedId(body.id);
       setDone(true);
-      toast.push(`Заявка отправлена. Статус: ${res.status}`);
+      if (status === 200) {
+        // дубль БИН (AT-02): существующая заявка, повторный POST не отправляем
+        toast.push(`Заявка уже существует. Статус: ${body.status}`);
+      } else {
+        toast.push(`Заявка отправлена. Статус: ${body.status}`);
+      }
     } catch (e) {
-      if (e instanceof ApiErrorResponse && e.error.code === 409) {
-        setCreatedId(form.bin);
-        setDone(true);
-        toast.push(`Заявка уже существует: ${e.error.message}`);
-      } else if (e instanceof ApiErrorResponse) {
+      if (e instanceof ApiErrorResponse) {
         toast.push(`${e.error.code}: ${e.error.message}`);
       } else if (e instanceof ApiUnavailable) {
         toast.push("Сервис недоступен. Попробуйте позже.");

@@ -25,16 +25,26 @@ export class ApiUnavailable extends Error {
 export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
+  postRaw<T>(path: string, body: unknown): Promise<{ status: number; body: T }>;
 }
 
 export class FetchApiClient implements ApiClient {
   constructor(private readonly base: string = "/api") {}
 
   async get<T>(path: string): Promise<T> {
-    return this.request("GET", path);
+    const { body } = await this.request("GET", path);
+    return body as T;
   }
 
   async post<T>(path: string, body: unknown): Promise<T> {
+    const { body: data } = await this.request("POST", path, body);
+    return data as T;
+  }
+
+  async postRaw<T>(
+    path: string,
+    body: unknown
+  ): Promise<{ status: number; body: T }> {
     return this.request("POST", path, body);
   }
 
@@ -42,7 +52,7 @@ export class FetchApiClient implements ApiClient {
     method: string,
     path: string,
     body?: unknown
-  ): Promise<T> {
+  ): Promise<{ status: number; body: T }> {
     const sess = sessionStore.get();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -61,7 +71,7 @@ export class FetchApiClient implements ApiClient {
     }
 
     if (res.ok) {
-      return (await res.json()) as T;
+      return { status: res.status, body: (await res.json()) as T };
     }
 
     let err: ApiError;
