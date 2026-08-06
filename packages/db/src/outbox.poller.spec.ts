@@ -53,4 +53,43 @@ describe("OutboxPoller", () => {
     const done = await prisma.outbox.findMany();
     expect(done[0].status).toBe("PROCESSED");
   });
+
+  it("exactly-once: concurrent pollers process each record once", async () => {
+    let calls = 0;
+    const makePoller = () =>
+      new OutboxPoller(prisma, async () => {
+        calls++;
+      });
+    await prisma.outbox.create({
+      data: {
+        aggregate: "tenant",
+        payload: { event: "provisioned", tenantId: "t2" },
+      },
+    });
+
+    // two pollers race for the same record
+    await Promise.all([makePoller().runOnce(), makePoller().runOnce()]);
+
+    expect(calls).toBe(1);
+    const rec = await prisma.outbox.findFirst({
+      where: { payload: { equals: { event: "provisioned", tenantId: "t2" } } },
+    });
+    expect(rec?.status).toBe("PROCESSED");
+  });
+
+  it("marks FAILED when handler throws", async () => {
+    const poller = new OutboxPoller(prisma, async () => {
+      throw new Error("boom");
+    });
+    await prisma.outbox.create({
+      data: { aggregate: "tenant", payload: { event: "x" } },
+    });
+
+    await poller.runOnce();
+
+    const rec = await prisma.outbox.findFirst({
+      where: { payload: { equals: { event: "x" } } },
+    });
+    expect(rec?.status).toBe("FAILED");
+  });
 });

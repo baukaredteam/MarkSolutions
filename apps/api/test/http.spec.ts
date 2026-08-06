@@ -34,10 +34,21 @@ describe("HTTP seams (health + tenant-guard)", () => {
     expect(res.body.db).toBe("ok");
   });
 
-  it("AT-16: request without tenant_id is rejected", async () => {
+  it("AT-16: request without tenant_id is rejected with unified error format", async () => {
     const res = await request(app.getHttpServer())
       .get("/api/products")
       .expect(400);
+    expect(res.body.code).toBe(400);
     expect(res.body.message).toMatch(/tenant/i);
+    expect(res.body.correlationId).toBeTruthy();
+    expect(res.body.retryable).toBe(false);
+  });
+
+  it("request with tenant_id passes the guard", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/products")
+      .set("x-tenant-id", "t1")
+      .expect(200);
+    expect(res.body).toEqual({ items: [] });
   });
 });

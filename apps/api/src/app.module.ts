@@ -5,13 +5,29 @@ import {
   Get,
   Injectable,
   Module,
+  SetMetadata,
+  CustomDecorator,
 } from "@nestjs/common";
-import { BadRequestException, UseGuards } from "@nestjs/common";
+import { BadRequestException } from "@nestjs/common";
+import { APP_GUARD, APP_FILTER } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import { PrismaService } from "./prisma.service";
+import { AllExceptionsFilter } from "./exception.filter";
+
+export const IS_PUBLIC_KEY = "isPublic";
+export const Public = (): CustomDecorator => SetMetadata(IS_PUBLIC_KEY, true);
 
 @Injectable()
 export class TenantGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) return true;
+
     const req = context.switchToHttp().getRequest();
     const tenantId = req.headers["x-tenant-id"];
     if (!tenantId) {
@@ -25,6 +41,7 @@ export class TenantGuard implements CanActivate {
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Public()
   @Get()
   async health() {
     let db = "ok";
@@ -40,7 +57,6 @@ export class HealthController {
 }
 
 @Controller("api/products")
-@UseGuards(TenantGuard)
 export class ProductsController {
   @Get()
   list() {
@@ -50,6 +66,10 @@ export class ProductsController {
 
 @Module({
   controllers: [HealthController, ProductsController],
-  providers: [PrismaService],
+  providers: [
+    PrismaService,
+    { provide: APP_GUARD, useClass: TenantGuard },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+  ],
 })
 export class AppModule {}

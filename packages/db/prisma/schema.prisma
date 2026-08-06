@@ -49,7 +49,7 @@ model Outbox {
   version   Int     @default(0)
   aggregate String
   payload   Json
-  status    String  @default("PENDING") // PENDING|PROCESSED|FAILED (ADR-016)
+  status    String  @default("PENDING") // PENDING|PROCESSING|PROCESSED|FAILED (ADR-016)
   createdAt DateTime @default(now())
   processedAt DateTime?
 }
