@@ -65,6 +65,11 @@ docker-compose.yml — прод-контур инфраструктуры (на 
 
 ## Как запустить локально (прототип, без Docker)
 
+Переменные окружения (см. `.env.example`):
+
+- `DATABASE_URL="file:./dev.db"` — SQLite (миграции создают `packages/db/prisma/dev.db`)
+- `STORAGE_DIR="./storage"` — файлы прототипа (этикетки/инвойсы)
+
 ```bash
 # 1. Установить зависимости
 npm install
@@ -79,7 +84,7 @@ npm run db:seed
 npm run dev
 ```
 
-Health: `GET http://localhost:3000/health` → `{"status":"ok","db":"ok"}`. Прод-контур (PostgreSQL/Valkey/RabbitMQ/MinIO) — только на сервере, docker-compose.yml готов.
+Health: `GET http://localhost:3000/health` → `{"status":"ok","db":"ok"}`. Ошибки — единый формат Приложения B ТЗ (ADR-017): `{code,message,details,fieldErrors,correlationId,retryable}`. Прод-контур (PostgreSQL/Valkey/RabbitMQ/MinIO) — только на сервере, docker-compose.yml готов.
 
 ## Git-дисциплина
 

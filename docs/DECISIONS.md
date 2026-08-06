@@ -33,3 +33,12 @@
 - Оптимистическая блокировка: поле version Int @default(0); UPDATE только с WHERE version = {n}; конфликт → retry/409.
 - Время: DateTime (Prisma прозрачно: TEXT в SQLite / TIMESTAMP в PostgreSQL).
 - Миграции проверяем на обеих БД контрактным тестом.
+
+## ADR-017 — единый формат ошибок (Приложение B ТЗ) + глобальный tenant-guard
+
+Изменение внешнего контракта API — фиксируется как решение.
+
+- Все ошибки возвращаются в едином формате Приложения B ТЗ: `{code, message, details, fieldErrors, correlationId, retryable}` (AllExceptionsFilter).
+- `code` = HTTP-статус; `correlationId` = UUID; `retryable = status >= 500`.
+- AT-16 (запрос без tenant_id) = **400** — единственный используемый код; 403 не применяется (нет ролевой модели до T1).
+- TenantGuard глобальный (APP_GUARD); публичные роуты помечаются `@Public()` (health); данные бизнес-эндпоинтов доступны только с заголовком `x-tenant-id`.
