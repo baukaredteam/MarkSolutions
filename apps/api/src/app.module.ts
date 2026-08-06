@@ -1,41 +1,18 @@
-import {
-  CanActivate,
-  Controller,
-  ExecutionContext,
-  Get,
-  Injectable,
-  Module,
-  SetMetadata,
-  CustomDecorator,
-} from "@nestjs/common";
-import { BadRequestException } from "@nestjs/common";
+import { Controller, Get, Module } from "@nestjs/common";
 import { APP_GUARD, APP_FILTER } from "@nestjs/core";
+import { JwtModule } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
 import { PrismaService } from "./prisma.service";
 import { AllExceptionsFilter } from "./exception.filter";
-
-export const IS_PUBLIC_KEY = "isPublic";
-export const Public = (): CustomDecorator => SetMetadata(IS_PUBLIC_KEY, true);
-
-@Injectable()
-export class TenantGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
-
-  canActivate(context: ExecutionContext): boolean {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) return true;
-
-    const req = context.switchToHttp().getRequest();
-    const tenantId = req.headers["x-tenant-id"];
-    if (!tenantId) {
-      throw new BadRequestException("tenant_id required");
-    }
-    return true;
-  }
-}
+import { TenantGuard, RolesGuard, Roles } from "./guards";
+import { Public } from "./public.decorator";
+import { AuthService } from "./auth.service";
+import { AuthController } from "./auth.controller";
+import {
+  OnboardingController,
+  OperatorApprovalsController,
+} from "./onboarding.controller";
+import { MockEcomAdapter, ECOM_ADAPTER } from "./ecom.adapter";
 
 @Controller("health")
 export class HealthController {
@@ -64,12 +41,38 @@ export class ProductsController {
   }
 }
 
+@Controller("api/admin")
+export class AdminController {
+  @Roles("admin")
+  @Get("probe")
+  probe() {
+    return { ok: true };
+  }
+}
+
 @Module({
-  controllers: [HealthController, ProductsController],
+  imports: [
+    JwtModule.register({
+      secret: process.env.JWT_SECRET ?? "dev-secret",
+      signOptions: { expiresIn: "1h" },
+    }),
+  ],
+  controllers: [
+    HealthController,
+    ProductsController,
+    AdminController,
+    AuthController,
+    OnboardingController,
+    OperatorApprovalsController,
+  ],
   providers: [
     PrismaService,
+    AuthService,
+    { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: APP_GUARD, useClass: TenantGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    Reflector,
   ],
 })
 export class AppModule {}

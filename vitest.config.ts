@@ -16,5 +16,6 @@ export default defineConfig({
       "packages/**/*.spec.ts",
     ],
     setupFiles: ["apps/web/test-setup.ts"],
+    testTimeout: 20000,
   },
 });

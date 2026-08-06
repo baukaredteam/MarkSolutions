@@ -19,6 +19,7 @@ model Tenant {
   status  String  @default("PENDING") // PENDING|ACTIVE|REJECTED (ADR-016: String)
   accounts Account[]
   products  Product[]
+  users     User[]
   createdAt DateTime @default(now())
 }
 
@@ -42,6 +43,42 @@ model Product {
   attributes Json? // 44 атрибута каталога (CATALOG-MM)
   demo    Boolean @default(false) // помечена "demo" (тикет 03)
   createdAt DateTime @default(now())
+}
+
+model User {
+  id         String  @id @default(cuid())
+  version    Int     @default(0)
+  tenantId   String?
+  tenant     Tenant? @relation(fields: [tenantId], references: [id])
+  login      String  @unique
+  passwordHash String
+  roles      String  @default("[]") // JSON-массив ролей: admin, accountant, operator (ADR-016)
+  mfaEnabled Boolean @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Application {
+  id             String   @id @default(cuid())
+  version        Int      @default(0)
+  bin            String   @unique
+  name           String
+  email          String
+  phone          String
+  city           String
+  address        String
+  contact        String
+  // согласия-акцепт (ADR-003): версия документа, время, субъект
+  consentDocument String
+  consentAcceptedAt DateTime
+  consentSubject   String
+  // проверка 1ecom (ADR-004): Pending External + retry
+  ecomStatus     String   @default("PENDING") // PENDING|PENDING_EXTERNAL|VERIFIED|REJECTED
+  ecomRetries    Int      @default(0)
+  status         String   @default("PENDING") // PENDING|NEEDS_CORRECTION|APPROVED|REJECTED (§8.1)
+  operatorId     String?
+  tenantId       String?
+  createdAt      DateTime @default(now())
+  approvedAt     DateTime?
 }
 
 model Outbox {
