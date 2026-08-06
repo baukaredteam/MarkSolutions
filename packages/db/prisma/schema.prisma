@@ -1,10 +1,55 @@
-// MarkFlow Prisma schema
+// MarkFlow Prisma schema — портабельная (ADR-016): SQLite dev / PostgreSQL prod.
+// Без enum (статусы String), без массивов (Json), деньги BigInt минорными,
+// version для optimistic lock.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id      String  @id @default(cuid())
+  version Int     @default(0)
+  name    String
+  bin     String  @unique
+  status  String  @default("PENDING") // PENDING|ACTIVE|REJECTED (ADR-016: String)
+  accounts Account[]
+  products  Product[]
+  createdAt DateTime @default(now())
+}
+
+model Account {
+  id      String  @id @default(cuid())
+  version Int     @default(0)
+  tenantId String
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  balance BigInt  @default(0) // минорные единицы (ADR-016)
+  createdAt DateTime @default(now())
+}
+
+model Product {
+  id      String  @id @default(cuid())
+  version Int     @default(0)
+  tenantId String
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  name    String
+  tnved   String
+  gtin    String?
+  attributes Json? // 44 атрибута каталога (CATALOG-MM)
+  demo    Boolean @default(false) // помечена "demo" (тикет 03)
+  createdAt DateTime @default(now())
+}
+
+model Outbox {
+  id        String  @id @default(cuid())
+  version   Int     @default(0)
+  aggregate String
+  payload   Json
+  status    String  @default("PENDING") // PENDING|PROCESSED|FAILED (ADR-016)
+  createdAt DateTime @default(now())
+  processedAt DateTime?
 }

@@ -11,6 +11,10 @@ coverage/
 .codegraph/
 .worktrees/
 storage/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Бинарные исходники документов (источник истины — md в docs/)
 *.docx

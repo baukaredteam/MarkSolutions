@@ -4,13 +4,17 @@
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dev": "ts-node --project tsconfig.json src/main.ts",
+    "start": "ts-node --project tsconfig.json src/main.ts"
   },
   "dependencies": {
     "@nestjs/core": "^11.0.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@prisma/client": "^6.0.0",
+    "@prisma/adapter-libsql": "^6.0.0",
+    "@libsql/client": "^0.17.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

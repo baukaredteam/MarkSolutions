@@ -9,9 +9,6 @@ export default [
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsParser,
-      parserOptions: {
-        project: ["./tsconfig.base.json"],
-      },
     },
     plugins: {
       "@typescript-eslint": tseslint,

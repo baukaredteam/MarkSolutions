@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "generate": "prisma generate",
-    "migrate": "prisma migrate dev"
+    "generate": "prisma generate --schema prisma/schema.prisma",
+    "migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "seed": "tsx src/seed.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.0",
+    "@prisma/adapter-libsql": "^6.0.0",
     "@prisma/client": "^6.0.0"
   },
   "devDependencies": {

@@ -9,8 +9,12 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
-    "test": "echo \"no tests yet\"",
+    "test": "vitest run",
     "secret-scan": "node scripts/secret-scan.mjs",
+    "dev": "npm run dev --workspace @markflow/api",
+    "db:generate": "npm run generate --workspace @markflow/db",
+    "db:migrate": "npm run migrate --workspace @markflow/db",
+    "db:seed": "npm run seed --workspace @markflow/db",
     "prepare": "husky"
   },
   "devDependencies": {

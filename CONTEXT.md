@@ -63,26 +63,23 @@ docker-compose.yml — прод-контур инфраструктуры (на 
 
 Стек прод: NestJS+TS, Prisma+PostgreSQL16, Valkey, RabbitMQ, MinIO, OpenBao(prod)/file-KMS(dev), bwip-js, React+Vite, EntityList. Прототип: SQLite + OutboxPoller + storage/ (ADR-015).
 
-## Как запустить локально
+## Как запустить локально (прототип, без Docker)
 
 ```bash
-# 1. Поднять инфраструктуру (PostgreSQL 16, Valkey, RabbitMQ, MinIO)
-docker compose up -d
-
-# 2. Установить зависимости
+# 1. Установить зависимости
 npm install
 
-# 3. Конфигурация
-cp .env.example .env
+# 2. Миграции (SQLite: packages/db/prisma/dev.db)
+npm run db:migrate
 
-# 4. Сгенерировать Prisma client
-npm run generate --workspace @markflow/db
+# 3. Seed: админ-клиент, tenant, счёт, фикстура товаров
+npm run db:seed
 
-# 5. Запустить API (порт 3000)
-npm run start --workspace @markflow/api
+# 4. Запустить API (порт 3000)
+npm run dev
 ```
 
-Полезные порты: MinIO консоль `http://localhost:9001`, RabbitMQ UI `http://localhost:15672` (markflow/markflow).
+Health: `GET http://localhost:3000/health` → `{"status":"ok","db":"ok"}`. Прод-контур (PostgreSQL/Valkey/RabbitMQ/MinIO) — только на сервере, docker-compose.yml готов.
 
 ## Git-дисциплина
 
