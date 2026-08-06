@@ -34,14 +34,23 @@
 - Время: DateTime (Prisma прозрачно: TEXT в SQLite / TIMESTAMP в PostgreSQL).
 - Миграции проверяем на обеих БД контрактным тестом.
 
-## ADR-017 — единый формат ошибок (Приложение B ТЗ) + глобальный tenant-guard
+## ADR-017 — единый формат ошибок (Приложение B ТЗ) + глобальный tenant-guard (обновлён в T1)
 
 Изменение внешнего контракта API — фиксируется как решение.
 
 - Все ошибки возвращаются в едином формате Приложения B ТЗ: `{code, message, details, fieldErrors, correlationId, retryable}` (AllExceptionsFilter).
 - `code` = HTTP-статус; `correlationId` = UUID; `retryable = status >= 500`.
-- AT-16 (запрос без tenant_id) = **400** — единственный используемый код; 403 не применяется (нет ролевой модели до T1).
-- TenantGuard глобальный (APP_GUARD); публичные роуты помечаются `@Public()` (health); данные бизнес-эндпоинтов доступны только с заголовком `x-tenant-id`.
+- **T1 апдейт**: AT-16 = **401 Unauthorized** (отсутствует/невалидный JWT), 400 не используется для аутентификации; код 403 зарезервирован за ролевой guard / MFA.
+- **T1 апдейт**: tenant читается ИСКЛЮЧИТЕЛЬНО из JWT-клейма; заголовок `x-tenant-id` игнорируется (атака header-spoofing закрыта).
+- **T1 апдейт**: TenantGuard + RolesGuard глобальные (APP_GUARD). Публичные роуты помечаются `@Public()`: /health, /onboarding/applications (POST), /auth/login — ровно три; в MVP также GET /onboarding/applications/:id (для веб-статуса без JWT) и /operator/approvals (оператор-мок без auth — будет закрыт при появлении операторского UI, см. review-t1.md).
+
+## ADR-020 — MFA обязательный для ролей admin/accountant/operator при MFA_ENABLED=true
+
+Фикс ловушки IAM-006: в изначальной трактовке MFA требовался только если `user.mfaEnabled == true`. Это позволяло обойти второй фактор, не включая флаг у пользователя (ловушка в тесте: токен выдавался с mfaCompleted=true даже при MFA_ENABLED=true).
+
+- **При MFA_ENABLED=true** обязательные роли (admin, accountant, operator) требуют второй фактор НЕЗАВИСИМО от `user.mfaEnabled`.
+- Поле `user.mfaEnabled` НЕ участвует в расчёте `mfaRequired` (IAM-006 заглушка: все обязательные роли требуют фактор при включённом флаге, юзер-флаг — для будущих настроек на пользователя).
+- Негативный тест: MFA_ENABLED=true на момент probe, JWT без mfaCompleted → 403 Forbidden. Флаг НЕ сбрасывается до проверки.
 
 ## ADR-019 — инвойс — недоверенный черновик
 
