@@ -21,7 +21,7 @@
 
 ## Вехи
 
-- **06.08 — T0 (стек), T0-web (веб-каркас), T1 (онбординг-бэкенд) закрыты.** T1: POST /onboarding/applications (AT-02 дубль БИН), /operator/approvals (provisioning атомарно), JWT-auth c tenant-клеймом, tenant-guard из JWT (ADR-017), MFA-заглушка (IAM-006, ADR-020). 26 API-тестов.
+- **06.08 — T0 (стек), T0-web (веб-каркас), T1 (онбординг-бэкенд), T2 (связка веб↔бэкенд) закрыты.** T1: POST /onboarding/applications (AT-02 дубль БИН), /operator/approvals (provisioning атомарно), JWT-auth c tenant-клеймом, tenant-guard из JWT (ADR-017), MFA-заглушка (IAM-006, ADR-020). T2: /apply, /status, /login на реальных T1-эндпоинтах, api-client с Bearer JWT. 30 тестов.
 - **08.08 (пт) — внутренний показ учредителям.** Скоуп: онбординг; экран «Товары» на фикстуре; ТНВЭД-фильтр. Парсер инвойса и цепочка заказ→КМ→этикетка НЕ входят.
 - **31.08–01.09 — демо стейкхолдерам** → доступы → волны интеграций.
 
