@@ -9,3 +9,8 @@ coverage/
 .husky/_
 .DS_Store
 .codegraph/
+
+# Бинарные исходники документов (источник истины — md в docs/)
+*.docx
+*.pdf
+
