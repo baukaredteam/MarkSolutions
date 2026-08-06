@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { useToast } from "../toast";
 
@@ -17,10 +17,14 @@ const OFFER_VERSION = "v1";
 
 export function ApplyPage() {
   const toast = useToast();
+  const [params] = useSearchParams();
+  const correctionId = params.get("correction");
   const [form, setForm] = useState<Record<string, string>>({});
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  // после дубля БИН (AT-02) повторный POST не отправляем
+  const [duplicate, setDuplicate] = useState(false);
 
   const set = (name: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [name]: e.target.value }));
@@ -43,7 +47,8 @@ export function ApplyPage() {
       toast.push(`Заявка отправлена. Статус: ${res.status}`);
     } catch (e) {
       if (e instanceof ApiErrorResponse && e.error.code === 409) {
-        // дубль по БИН → показать существующий статус (AT-02)
+        // дубль по БИН → показать существующий статус, форму больше не отправляем (AT-02)
+        setDuplicate(true);
         toast.push(`Заявка уже существует: ${e.error.message}`);
         setCreatedId(form.bin);
       } else if (e instanceof ApiErrorResponse) {
@@ -61,6 +66,7 @@ export function ApplyPage() {
   return (
     <section>
       <h1>Заявка на подключение</h1>
+      {correctionId && <p>Исправление заявки #{correctionId}</p>}
       {FIELDS.map((f) => (
         <label key={f.name}>
           {f.label}
@@ -79,9 +85,12 @@ export function ApplyPage() {
         />
         Согласен с офертой ({OFFER_VERSION})
       </label>
-      <button onClick={submit} disabled={submitting}>
+      <button onClick={submit} disabled={submitting || duplicate}>
         Отправить заявку
       </button>
+      {duplicate && (
+        <p>Заявка уже существует — повторная отправка недоступна.</p>
+      )}
       {createdId && (
         <p>
           Проверить статус:{" "}

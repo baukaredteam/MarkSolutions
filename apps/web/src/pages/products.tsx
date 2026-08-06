@@ -61,7 +61,10 @@ export function ProductsPage() {
             const inList = IN_LIST.includes(r.tnved);
             return (
               <tr key={i} style={{ color: inList ? "green" : "red" }}>
-                <td>{r.name}</td>
+                <td>
+                  {r.name}
+                  {r.demo && <strong> [demo]</strong>}
+                </td>
                 <td>
                   {r.tnved}
                   {!inList && <em> — {HINT}</em>}
