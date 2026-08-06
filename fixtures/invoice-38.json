@@ -1,0 +1,240 @@
+[
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 15W40 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 120,
+    "priceUsd": 4.5
+  },
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 15W40 API объем 1 литр",
+    "tnved": "27101919",
+    "qty": 240,
+    "priceUsd": 1.3
+  },
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 20W50 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 96,
+    "priceUsd": 4.4
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W40 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 84,
+    "priceUsd": 5.1
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W40 API объем 1 литр",
+    "tnved": "27101919",
+    "qty": 180,
+    "priceUsd": 1.5
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W30 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 60,
+    "priceUsd": 5.0
+  },
+  {
+    "name": "Моторное масло Nomad Artax SAE 20W50 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 72,
+    "priceUsd": 4.2
+  },
+  {
+    "name": "Моторное масло Nomad Artax SAE 20W50 API объем 1 литр",
+    "tnved": "27101919",
+    "qty": 200,
+    "priceUsd": 1.2
+  },
+  {
+    "name": "Моторное масло Nomad Artax XT SAE 10W40 API CI-4/SL ACEA объем 4 литра",
+    "tnved": "27101919",
+    "qty": 48,
+    "priceUsd": 5.6
+  },
+  {
+    "name": "Моторное масло Nomad Artax XT SAE 10W40 API CI-4/SL ACEA объем 1 литр",
+    "tnved": "27101919",
+    "qty": 120,
+    "priceUsd": 1.6
+  },
+  {
+    "name": "Моторное масло Nomad Artax HD SAE 20W50 API CH-4/SJ ACEA объем 4 литра",
+    "tnved": "27101919",
+    "qty": 40,
+    "priceUsd": 6.0
+  },
+  {
+    "name": "Моторное масло Nomad Artax Verde SAE 15W40 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 66,
+    "priceUsd": 4.8
+  },
+  {
+    "name": "Моторное масло Nomad Artax Verde SAE 15W40 API объем 1 литр",
+    "tnved": "27101919",
+    "qty": 150,
+    "priceUsd": 1.4
+  },
+  {
+    "name": "Моторное масло Nomad GPA SAE 15W40 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 54,
+    "priceUsd": 4.6
+  },
+  {
+    "name": "Трансмиссионное масло Nomad MTF SAE 75W90 API объем 1 литр",
+    "tnved": "27101919",
+    "qty": 100,
+    "priceUsd": 2.1
+  },
+  {
+    "name": "Трансмиссионное масло Nomad MTF SAE 80W90 API объем 1 литр",
+    "tnved": "27101919",
+    "qty": 90,
+    "priceUsd": 2.0
+  },
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 15W40 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 30,
+    "priceUsd": 20.0
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W40 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 24,
+    "priceUsd": 22.0
+  },
+  {
+    "name": "Моторное масло Nomad Artax SAE 20W50 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 20,
+    "priceUsd": 19.0
+  },
+  {
+    "name": "Моторное масло Nomad Artax XT SAE 10W40 API CI-4/SL ACEA объем 20 литров",
+    "tnved": "27101919",
+    "qty": 16,
+    "priceUsd": 24.0
+  },
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 15W40 API объем 5 литров",
+    "tnved": "27101919",
+    "qty": 130,
+    "priceUsd": 5.4
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W40 API объем 5 литров",
+    "tnved": "27101919",
+    "qty": 110,
+    "priceUsd": 6.1
+  },
+  {
+    "name": "Моторное масло Nomad Artax SAE 20W50 API объем 5 литров",
+    "tnved": "27101919",
+    "qty": 90,
+    "priceUsd": 5.0
+  },
+  {
+    "name": "Моторное масло Nomad Artax XT SAE 10W40 API CI-4/SL ACEA объем 5 литров",
+    "tnved": "27101919",
+    "qty": 70,
+    "priceUsd": 6.6
+  },
+  {
+    "name": "Моторное масло Nomad GPA SAE 15W40 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 18,
+    "priceUsd": 21.0
+  },
+  {
+    "name": "Трансмиссионное масло Nomad MTF SAE 75W90 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 40,
+    "priceUsd": 7.5
+  },
+  {
+    "name": "Трансмиссионное масло Nomad MTF SAE 80W90 API объем 4 литра",
+    "tnved": "27101919",
+    "qty": 35,
+    "priceUsd": 7.0
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 5W30 ACEA объем 4 литра",
+    "tnved": "27101919",
+    "qty": 50,
+    "priceUsd": 5.8
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 5W40 ACEA C3 объем 4 литра",
+    "tnved": "27101919",
+    "qty": 45,
+    "priceUsd": 6.2
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 5W40 ACEA C3 объем 1 литр",
+    "tnved": "27101919",
+    "qty": 100,
+    "priceUsd": 1.8
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 5W30 ACEA объем 1 литр",
+    "tnved": "27101919",
+    "qty": 95,
+    "priceUsd": 1.7
+  },
+  {
+    "name": "Моторное масло Nomad Artax Verde SAE 15W40 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 22,
+    "priceUsd": 21.5
+  },
+  {
+    "name": "Моторное масло Nomad Artax HD SAE 20W50 API CH-4/SJ ACEA объем 20 литров",
+    "tnved": "27101919",
+    "qty": 12,
+    "priceUsd": 26.0
+  },
+  {
+    "name": "Трансмиссионное масло Nomad MTF SAE 75W90 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 14,
+    "priceUsd": 9.0
+  },
+  {
+    "name": "Трансмиссионное масло Nomad MTF SAE 80W90 API объем 20 литров",
+    "tnved": "27101919",
+    "qty": 10,
+    "priceUsd": 8.5
+  },
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 15W40 API объем 200 литров",
+    "tnved": "27101919",
+    "qty": 8,
+    "priceUsd": 180.0
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W40 API объем 200 литров",
+    "tnved": "27101919",
+    "qty": 6,
+    "priceUsd": 195.0
+  },
+  {
+    "name": "Моторное масло Nomad Artax SAE 20W50 API объем 200 литров",
+    "tnved": "27101919",
+    "qty": 5,
+    "priceUsd": 170.0
+  },
+  {
+    "name": "Моторное масло Nomad Novo 7000 SAE 15W40 API объем 4 литра",
+    "tnved": "2710198200",
+    "demo": true
+  },
+  {
+    "name": "Моторное масло Nomad Novo 9000 SAE 10W40 API объем 4 литра",
+    "tnved": "3403191000",
+    "demo": true
+  }
+]
