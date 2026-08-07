@@ -105,7 +105,9 @@ model ProductCard {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   drafts     DraftProposal[]
-  @@unique([tenantId, gtin])
+  // Дубль GTIN у tenant — предпроверка на уровне сервиса (409, не уникальный индекс):
+  // SQLite не умеет partial unique; прод (PostgreSQL) — CREATE UNIQUE INDEX ... WHERE status != 'Archived'.
+  @@index([tenantId, gtin])
 }
 
 model DraftProposal {
@@ -120,6 +122,7 @@ model DraftProposal {
   missing    Json     // список недостающего (ADR-019)
   status     String   @default("DRAFT") // DRAFT|DOBOR|OUT_OF_SCOPE (ADR-022)
   demo       Boolean  @default(false)
+  audit      Json     @default("[]") // [{at, actor, action}] (Q3/Q4: решения аудируются)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }

@@ -14,6 +14,11 @@ import {
 } from "./onboarding.controller";
 import { MockEcomAdapter, ECOM_ADAPTER } from "./ecom.adapter";
 import { TemplatesController } from "./templates.module";
+import {
+  CatalogController,
+  DemoController,
+  CatalogService,
+} from "./catalog.controller";
 
 @Controller("health")
 export class HealthController {
@@ -66,10 +71,13 @@ export class AdminController {
     OnboardingController,
     OperatorApprovalsController,
     TemplatesController,
+    CatalogController,
+    DemoController,
   ],
   providers: [
     PrismaService,
     AuthService,
+    CatalogService,
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

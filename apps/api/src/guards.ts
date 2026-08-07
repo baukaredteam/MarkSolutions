@@ -46,6 +46,7 @@ export class TenantGuard implements CanActivate {
     req.tenantId = claims.tenantId;
     req.roles = claims.roles ?? [];
     req.mfaCompleted = claims.mfaCompleted ?? false;
+    req.actor = claims.sub;
     return true;
   }
 }

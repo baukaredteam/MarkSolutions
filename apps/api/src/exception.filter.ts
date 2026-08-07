@@ -28,17 +28,33 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message =
+    const response =
       exception instanceof HttpException
-        ? ((exception.getResponse() as { message?: string }).message ??
-          exception.message)
-        : "Internal server error";
+        ? (exception.getResponse() as unknown)
+        : undefined;
+
+    const message =
+      typeof response === "string"
+        ? response
+        : (((response as Record<string, unknown> | null)?.message as unknown as
+            string | undefined) ??
+          (exception instanceof Error ? exception.message : undefined) ??
+          "Internal server error");
+
+    // AT-03: пробрасываем fieldErrors из кастомного body (validateAttributes)
+    const rawFe =
+      response &&
+      typeof response === "object" &&
+      typeof (response as { fieldErrors?: unknown }).fieldErrors === "object"
+        ? (response as { fieldErrors: Record<string, string> }).fieldErrors
+        : undefined;
+    const fieldErrors: Record<string, string> = rawFe ?? {};
 
     const body: ApiError = {
       code: status,
       message: String(message),
       details: null,
-      fieldErrors: {},
+      fieldErrors,
       correlationId: randomUUID(),
       retryable: status >= 500,
     };
