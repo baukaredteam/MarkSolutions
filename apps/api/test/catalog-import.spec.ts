@@ -91,14 +91,12 @@ describe("catalog import (T3)", () => {
     const t = await prisma.tenant.create({
       data: { bin: "777000555666", name: "Сидинжойс", status: "ACTIVE" },
     });
-    const tokenT = app
-      .get(JwtService)
-      .sign({
-        sub: "u3",
-        tenantId: t.id,
-        roles: ["admin"],
-        mfaCompleted: true,
-      });
+    const tokenT = app.get(JwtService).sign({
+      sub: "u3",
+      tenantId: t.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
     const res = await request(app.getHttpServer())
       .post("/demo/seed-invoice")
       .set("Authorization", `Bearer ${tokenT}`)
@@ -196,14 +194,12 @@ describe("catalog import (T3)", () => {
     const t2 = await prisma.tenant.create({
       data: { bin: "777000333444", name: "ДрТенант", status: "ACTIVE" },
     });
-    const token2 = app
-      .get(JwtService)
-      .sign({
-        sub: "u2",
-        tenantId: t2.id,
-        roles: ["admin"],
-        mfaCompleted: true,
-      });
+    const token2 = app.get(JwtService).sign({
+      sub: "u2",
+      tenantId: t2.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
     const other = await request(app.getHttpServer())
       .post("/products/cards")
       .set("Authorization", `Bearer ${token2}`)
@@ -216,14 +212,12 @@ describe("catalog import (T3)", () => {
     const t = await prisma.tenant.create({
       data: { bin: "777000777888", name: "ГейтТен", status: "ACTIVE" },
     });
-    const tok = app
-      .get(JwtService)
-      .sign({
-        sub: "u4",
-        tenantId: t.id,
-        roles: ["admin"],
-        mfaCompleted: true,
-      });
+    const tok = app.get(JwtService).sign({
+      sub: "u4",
+      tenantId: t.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
 
     // черновик с TNVED 27101919 (вне перечня) → статус DOBOR
     await request(app.getHttpServer())
@@ -274,7 +268,9 @@ describe("catalog import (T3)", () => {
         .get("/products/drafts")
         .set("Authorization", `Bearer ${tok}`)
         .expect(200)
-    ).body.items[1] as { id: string };
+    ).body.items.find((x: { proposed: { name?: string } }) =>
+      (x.proposed.name ?? "").includes("Канистра")
+    ) as { id: string };
     await request(app.getHttpServer())
       .post(`/products/drafts/${d2.id}/out-of-scope`)
       .set("Authorization", `Bearer ${tok}`)
@@ -309,5 +305,210 @@ describe("catalog import (T3)", () => {
     const fe = res.body.fieldErrors as Record<string, string>;
     expect(fe.gtin).toBeTruthy(); // ярус A: gtin обязателен
     expect(fe.sae).toBeTruthy();
+  });
+
+  it("F2: OUT_OF_SCOPE скрыт по умолчанию, виден через ?status=OUT_OF_SCOPE", async () => {
+    const t = await prisma.tenant.create({
+      data: { bin: "777000888999", name: "Ф2Тен", status: "ACTIVE" },
+    });
+    const tok = app
+      .get(JwtService)
+      .sign({
+        sub: "u5",
+        tenantId: t.id,
+        roles: ["admin"],
+        mfaCompleted: true,
+      });
+    await request(app.getHttpServer())
+      .post("/products/drafts/import")
+      .set("Authorization", `Bearer ${tok}`)
+      .send({ rows: [{ name: "Канистра", tnved: "27101919" }] })
+      .expect(201);
+    const d = (
+      await request(app.getHttpServer())
+        .get("/products/drafts")
+        .set("Authorization", `Bearer ${tok}`)
+        .expect(200)
+    ).body.items[0] as { id: string };
+    await request(app.getHttpServer())
+      .post(`/products/drafts/${d.id}/out-of-scope`)
+      .set("Authorization", `Bearer ${tok}`)
+      .expect(200);
+    // по умолчанию скрыт
+    const def = (
+      await request(app.getHttpServer())
+        .get("/products/drafts")
+        .set("Authorization", `Bearer ${tok}`)
+        .expect(200)
+    ).body.items;
+    expect(def.some((x: { id: string }) => x.id === d.id)).toBe(false);
+    // ?status=OUT_OF_SCOPE → виден
+    const oos = (
+      await request(app.getHttpServer())
+        .get("/products/drafts?status=OUT_OF_SCOPE")
+        .set("Authorization", `Bearer ${tok}`)
+        .expect(200)
+    ).body.items;
+    expect(oos.some((x: { id: string }) => x.id === d.id)).toBe(true);
+  });
+
+  it("F3: fuzzy-дубль без confirm → 409 warning; с confirm → 201 + audit override", async () => {
+    const t = await prisma.tenant.create({
+      data: { bin: "777000999000", name: "Ф3Тен", status: "ACTIVE" },
+    });
+    const tok = app
+      .get(JwtService)
+      .sign({
+        sub: "u6",
+        tenantId: t.id,
+        roles: ["admin"],
+        mfaCompleted: true,
+      });
+    const attrs = {
+      schemaVersion: 1,
+      gtin: "04014835723399",
+      name: "Castrol EDGE 0W-20",
+      brand: "Castrol",
+      model: "EDGE",
+      volumeL: 4,
+      sae: "0W-20",
+      countryOfBrand: "Германия",
+      composition: "syn",
+      shelfLifeMonths: 60,
+      productType: "моторное масло",
+      purpose: "легковые",
+      storage: "сухое",
+      conformityMark: "нет",
+      eacMarks: "нет",
+      grossWeightKg: 3.8,
+      tnved: "2710198200",
+      group: "Смазочные материалы",
+      category: "Моторные масла",
+      packageType: "Единица товара",
+      kpved: "19.20.29",
+      gpc: "10005267",
+      ownerGcp: "0401483",
+      ownerName: "ТОО Автодеталь",
+      ownerCountry: "Казахстан",
+      ownerAddress: "г. Шымкент",
+      platformName: "1ecom",
+      platformCountry: "Казахстан",
+      platformAddress: "г. Алматы",
+      participantTaxNumber: "123456789012",
+      participantName: "ТОО Автодеталь",
+      participantCountry: "Казахстан",
+      participantAddress: "г. Шымкент",
+    };
+    // базовая карточка (другой gtin)
+    await request(app.getHttpServer())
+      .post("/products/cards")
+      .set("Authorization", `Bearer ${tok}`)
+      .send({ gtin: "05000000000001", attributes: attrs })
+      .expect(201);
+    // fuzzy-дубль (другой gtin, тот же бренд/модель/объём/SAE) без confirm → 409 warning
+    const warn = await request(app.getHttpServer())
+      .post("/products/cards")
+      .set("Authorization", `Bearer ${tok}`)
+      .send({
+        gtin: "05000000000002",
+        attributes: { ...attrs, gtin: "05000000000002" },
+      })
+      .expect(409);
+    expect(warn.body.details.warning).toBe("fuzzy_duplicate");
+    // с confirm → 201
+    await request(app.getHttpServer())
+      .post("/products/cards")
+      .set("Authorization", `Bearer ${tok}`)
+      .send({
+        gtin: "05000000000002",
+        attributes: { ...attrs, gtin: "05000000000002" },
+        confirmDuplicate: true,
+      })
+      .expect(201);
+    const auditRow = await prisma.outbox.findFirst({
+      where: { aggregate: "product-card-audit" },
+    });
+    expect(auditRow).toBeTruthy();
+    expect(String((auditRow!.payload as { action: string }).action)).toMatch(
+      /duplicate_override/
+    );
+  });
+
+  it("F4: seed-invoice при DEMO_ENABLED=false → 404", async () => {
+    process.env.DEMO_ENABLED = "false";
+    try {
+      await request(app.getHttpServer())
+        .post("/demo/seed-invoice")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(404);
+    } finally {
+      process.env.DEMO_ENABLED = "true";
+    }
+  });
+
+  it("F1: конкурентные create с одним GTIN → ровно один 201 и один 409 (partial unique)", async () => {
+    const t = await prisma.tenant.create({
+      data: { bin: "777000111100", name: "Конкурент", status: "ACTIVE" },
+    });
+    const tok = app
+      .get(JwtService)
+      .sign({
+        sub: "u7",
+        tenantId: t.id,
+        roles: ["admin"],
+        mfaCompleted: true,
+      });
+    const gtin = "06001234567890";
+    const attrs = {
+      schemaVersion: 1,
+      gtin,
+      name: "Concurrent",
+      brand: "X",
+      model: "Y",
+      volumeL: 1,
+      sae: "5W-30",
+      countryOfBrand: "DE",
+      composition: "syn",
+      shelfLifeMonths: 60,
+      productType: "oil",
+      purpose: "car",
+      storage: "dry",
+      conformityMark: "нет",
+      eacMarks: "нет",
+      grossWeightKg: 1,
+      tnved: "2710198200",
+      group: "g",
+      category: "c",
+      packageType: "p",
+      kpved: "k",
+      gpc: "g",
+      ownerGcp: "g",
+      ownerName: "n",
+      ownerCountry: "c",
+      ownerAddress: "a",
+      platformName: "p",
+      platformCountry: "c",
+      platformAddress: "a",
+      participantTaxNumber: "n",
+      participantName: "n",
+      participantCountry: "c",
+      participantAddress: "a",
+    };
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer())
+        .post("/products/cards")
+        .set("Authorization", `Bearer ${tok}`)
+        .send({ gtin, attributes: attrs }),
+      request(app.getHttpServer())
+        .post("/products/cards")
+        .set("Authorization", `Bearer ${tok}`)
+        .send({ gtin, attributes: attrs }),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([201, 409]);
+    const count = await prisma.productCard.count({
+      where: { tenantId: t.id, gtin },
+    });
+    expect(count).toBe(1);
   });
 });

@@ -49,11 +49,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? (response as { fieldErrors: Record<string, string> }).fieldErrors
         : undefined;
     const fieldErrors: Record<string, string> = rawFe ?? {};
+    const rawDetails =
+      response && typeof response === "object"
+        ? (response as { details?: unknown }).details
+        : undefined;
+    const details: unknown = rawDetails ?? null;
 
     const body: ApiError = {
       code: status,
       message: String(message),
-      details: null,
+      details,
       fieldErrors,
       correlationId: randomUUID(),
       retryable: status >= 500,

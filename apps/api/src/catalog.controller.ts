@@ -5,8 +5,10 @@ import {
   HttpCode,
   Post,
   Param,
+  Query,
   ConflictException,
   BadRequestException,
+  NotFoundException,
   Injectable,
   Req,
 } from "@nestjs/common";
@@ -18,7 +20,10 @@ import {
   isInList,
   validateAttributes,
   autofillAttributes,
+  checkDuplicate,
+  fuzzyKeyOf,
   type MotorOilAttributes,
+  type FuzzyKey,
 } from "@markflow/shared";
 
 interface DraftRow {
@@ -35,26 +40,14 @@ interface DraftRow {
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Предпроверка дубля GTIN у tenant (Q4): активная (не Archived) → конфликт.
-  private async assertGtinFree(tenantId: string, gtin: string): Promise<void> {
-    const existing = await this.prisma.productCard.findFirst({
-      where: { tenantId, gtin, status: { not: "ARCHIVED" } },
-    });
-    if (existing) {
-      throw new ConflictException({
-        code: 409,
-        message: `card with gtin ${gtin} already exists`,
-        details: { cardId: existing.id },
-        fieldErrors: {},
-        correlationId: "",
-        retryable: false,
-      });
-    }
-  }
-
   async createCard(
     tenantId: string,
-    body: { gtin: string; attributes: Record<string, unknown> }
+    actor: string,
+    body: {
+      gtin: string;
+      attributes: Record<string, unknown>;
+      confirmDuplicate?: boolean;
+    }
   ): Promise<unknown> {
     if (!body.gtin || !/^\d{14}$/.test(body.gtin)) {
       throw new BadRequestException("gtin must be 14 digits");
@@ -75,16 +68,114 @@ export class CatalogService {
         retryable: false,
       });
     }
-    await this.assertGtinFree(tenantId, body.gtin);
-    const card = await this.prisma.productCard.create({
-      data: {
-        tenantId,
-        gtin: body.gtin,
-        status: "DRAFT",
-        attributes: { ...body.attributes, schemaVersion: 1, gtin: body.gtin },
-      },
-    });
-    return card;
+    try {
+      // F1: assert + create в одной транзакции; partial unique index — вторая защита
+      const card = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.productCard.findFirst({
+          where: { tenantId, gtin: body.gtin, status: { not: "ARCHIVED" } },
+        });
+        if (existing) {
+          throw new ConflictException({
+            code: 409,
+            message: `card with gtin ${body.gtin} already exists`,
+            details: { cardId: existing.id },
+            fieldErrors: {},
+            correlationId: "",
+            retryable: false,
+          });
+        }
+        // F3: нечёткий дубль (бренд+модель+объём+SAE) → warning; confirmDuplicate не задан → 409
+        const fuzzyCandidate: FuzzyKey = fuzzyKeyOf({
+          brand: String(filled.brand ?? ""),
+          model: String(filled.model ?? ""),
+          volumeL: Number(filled.volumeL ?? 0),
+          sae: String(filled.sae ?? ""),
+        });
+        const fuzzyHits = await tx.productCard.findMany({
+          where: {
+            tenantId,
+            status: { not: "ARCHIVED" },
+            gtin: { not: body.gtin },
+          },
+        });
+        const matches = fuzzyHits.filter((c) => {
+          const a = c.attributes as Record<string, unknown>;
+          return checkDuplicate(fuzzyCandidate, [
+            fuzzyKeyOf({
+              brand: String(a.brand ?? ""),
+              model: String(a.model ?? ""),
+              volumeL: Number(a.volumeL ?? 0),
+              sae: String(a.sae ?? ""),
+            }),
+          ]);
+        });
+        if (matches.length > 0 && body.confirmDuplicate !== true) {
+          throw new ConflictException({
+            code: 409,
+            message: "fuzzy duplicate detected",
+            details: {
+              warning: "fuzzy_duplicate",
+              existing: matches.map((m) => ({
+                id: m.id,
+                gtin: m.gtin,
+                name: (m.attributes as Record<string, unknown>).name,
+              })),
+            },
+            fieldErrors: {},
+            correlationId: "",
+            retryable: false,
+          });
+        }
+        const created = await tx.productCard.create({
+          data: {
+            tenantId,
+            gtin: body.gtin,
+            status: "DRAFT",
+            attributes: {
+              ...body.attributes,
+              schemaVersion: 1,
+              gtin: body.gtin,
+            },
+          },
+        });
+        // F3: «Продолжить создание» (override fuzzy-дубля) — аудируется (CAT-014)
+        if (matches.length > 0 && body.confirmDuplicate === true) {
+          await tx.outbox.create({
+            data: {
+              aggregate: "product-card-audit",
+              payload: {
+                at: new Date().toISOString(),
+                actor,
+                action: `duplicate_override:${matches[0].id}`,
+                cardId: created.id,
+              },
+            },
+          });
+        }
+        return created;
+      });
+      return card;
+    } catch (e) {
+      // constraint violation (P2002 / UNIQUE) — конкурентный дубль → 409
+      if (e instanceof ConflictException) throw e;
+      const code =
+        (e as { code?: string }).code ??
+        (e as { cause?: { code?: string } }).cause?.code ??
+        "";
+      const isUnique =
+        code === "P2002" || /UNIQUE/i.test(String((e as Error).message));
+      if (isUnique) {
+        throw new ConflictException({
+          code: 409,
+          message: `card with gtin ${body.gtin} already exists`,
+          details: null,
+          fieldErrors: {},
+          correlationId: "",
+          retryable: false,
+        });
+      }
+      throw e;
+    }
   }
 
   async createDraft(tenantId: string, row: DraftRow): Promise<unknown> {
@@ -120,9 +211,14 @@ export class CatalogService {
     });
   }
 
-  async listDrafts(tenantId: string): Promise<unknown[]> {
+  async listDrafts(tenantId: string, status?: string): Promise<unknown[]> {
+    // F2: по умолчанию OUT_OF_SCOPE скрыт; ?status=OUT_OF_SCOPE — отдельный список
+    const where =
+      status === "OUT_OF_SCOPE"
+        ? { tenantId, status: "OUT_OF_SCOPE" }
+        : { tenantId, status: { not: "OUT_OF_SCOPE" } };
     return this.prisma.draftProposal.findMany({
-      where: { tenantId },
+      where,
       orderBy: { createdAt: "desc" },
     });
   }
@@ -234,9 +330,9 @@ export class CatalogController {
   constructor(private readonly catalog: CatalogService) {}
 
   @Get("drafts")
-  async drafts(@Req() req: Request) {
+  async drafts(@Req() req: Request, @Query("status") status?: string) {
     const tenantId = (req as unknown as { tenantId: string }).tenantId;
-    return { items: await this.catalog.listDrafts(tenantId) };
+    return { items: await this.catalog.listDrafts(tenantId, status) };
   }
 
   @HttpCode(201)
@@ -253,10 +349,16 @@ export class CatalogController {
   @Post("cards")
   async createCard(
     @Req() req: Request,
-    @Body() body: { gtin: string; attributes: Record<string, unknown> }
+    @Body()
+    body: {
+      gtin: string;
+      attributes: Record<string, unknown>;
+      confirmDuplicate?: boolean;
+    }
   ) {
     const tenantId = (req as unknown as { tenantId: string }).tenantId;
-    return this.catalog.createCard(tenantId, body);
+    const actor = (req as unknown as { actor: string }).actor;
+    return this.catalog.createCard(tenantId, actor, body);
   }
 
   @HttpCode(200)
@@ -303,7 +405,7 @@ export class DemoController {
   @Post("seed-invoice")
   async seed(@Req() req: Request) {
     if (process.env.DEMO_ENABLED !== "true") {
-      throw new BadRequestException("demo disabled");
+      throw new NotFoundException("demo endpoint disabled"); // F4: 404, не 400
     }
     const tenantId = (req as unknown as { tenantId: string }).tenantId;
     const count = await this.catalog.seedInvoice(tenantId);

@@ -118,22 +118,27 @@ describe("T2 web-backend integration", () => {
     });
   });
 
-  it("/products survives ApiUnavailable gracefully", async () => {
+  it("/products survives ApiUnavailable gracefully (no crash, toast)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("fetch failed"))
     );
     sessionStore.set({ tenantId: "t-1", token: "jwt" });
+    const { ToastProvider } = await import("./toast.js");
 
     render(
-      <MemoryRouter initialEntries={["/products"]}>
-        <AppRoutes />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/products"]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </ToastProvider>
     );
 
-    fireEvent.click(screen.getByText("Загрузить инвойс (демо)"));
+    // mount-loadDrafts падает → тост «Сервис недоступен», без белого экрана
     await waitFor(() => {
-      expect(screen.getAllByRole("row").length).toBeGreaterThan(1);
+      expect(screen.getByText(/Сервис недоступен/)).toBeTruthy();
     });
+    // нет краша: заголовок «Товары» на месте, строк нет
+    expect(screen.getByRole("heading", { name: "Товары" })).toBeTruthy();
   });
 });
