@@ -11,6 +11,8 @@ interface DraftRow {
     tnved?: string;
     tnvedHint?: string | null;
     strengthenFix?: boolean;
+    gtin?: string;
+    gtinManual?: boolean;
   };
   demo?: boolean;
   audit?: { action: string }[];
@@ -110,6 +112,9 @@ export function ProductsPage() {
                 <td>
                   {r.proposed.name}
                   {r.demo && <strong> [demo]</strong>}
+                  {r.proposed.gtinManual && (
+                    <em> [GTIN подтверждён вручную]</em>
+                  )}
                 </td>
                 <td>
                   {tnved}

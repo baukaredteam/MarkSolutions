@@ -5,6 +5,7 @@ import {
   tnvedHint,
   heuristicStrengthensFix,
   checkDuplicate,
+  verifyGtinMod10,
   type FuzzyKey,
 } from "./catalog-rules";
 
@@ -30,6 +31,26 @@ describe("TNVED filter (ADR-022)", () => {
     expect(heuristicStrengthensFix("Моторное масло GL-4")).toBe(true);
     // нет маркеров → не усиливать
     expect(heuristicStrengthensFix("Канистра 4л")).toBe(false);
+  });
+});
+
+describe("GTIN check digit (mod 10) — GtinResolver слой 2", () => {
+  it("RAVENOL 04014835723399 → valid", () => {
+    expect(verifyGtinMod10("04014835723399")).toBe(true);
+  });
+
+  it("codes_success 04870267100135 → valid", () => {
+    expect(verifyGtinMod10("04870267100135")).toBe(true);
+  });
+
+  it("corrupted check digit → invalid", () => {
+    expect(verifyGtinMod10("04014835723398")).toBe(false);
+  });
+
+  it("not 14 digits → invalid", () => {
+    expect(verifyGtinMod10("0401483572339")).toBe(false);
+    expect(verifyGtinMod10("")).toBe(false);
+    expect(verifyGtinMod10("0401483572339a")).toBe(false);
   });
 });
 

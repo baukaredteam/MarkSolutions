@@ -19,6 +19,17 @@ import {
   DemoController,
   CatalogService,
 } from "./catalog.controller";
+import { ModerationController } from "./moderation.controller";
+import { ModerationService } from "./moderation.service";
+import { GtinResolver } from "./gtin-resolver";
+import { OutboxPoller } from "./outbox-poller";
+import { SeedService } from "./seed.service";
+import {
+  MockGs1Adapter,
+  MockNktAdapter,
+  IGS1_ADAPTER,
+  NKT_ADAPTER,
+} from "./integrations";
 
 @Controller("health")
 export class HealthController {
@@ -73,16 +84,27 @@ export class AdminController {
     TemplatesController,
     CatalogController,
     DemoController,
+    ModerationController,
   ],
   providers: [
     PrismaService,
     AuthService,
     CatalogService,
+    ModerationService,
+    GtinResolver,
+    OutboxPoller,
+    SeedService,
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
+    { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },
+    { provide: NKT_ADAPTER, useClass: MockNktAdapter },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     Reflector,
   ],
 })
-export class AppModule {}
+export class AppModule {
+  constructor(private readonly poller: OutboxPoller) {
+    this.poller.start();
+  }
+}

@@ -105,4 +105,37 @@ describe("ProductsPage (F5: reads GET /products/drafts)", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("ручной GTIN (source=manual) → бейдж «GTIN подтверждён вручную» (Q6 слой 3)", async () => {
+    sessionStore.set({ tenantId: "t1", token: "jwt" });
+    const items = [
+      {
+        id: "m1",
+        status: "DRAFT",
+        proposed: {
+          name: "RAVENOL 5W-30",
+          tnved: "2710198200",
+          gtin: "04014835723399",
+          gtinManual: true,
+        },
+      },
+      {
+        id: "m2",
+        status: "DRAFT",
+        proposed: { name: "Обычный", tnved: "2710198200" },
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items }) })
+    );
+    render(
+      <MemoryRouter>
+        <ProductsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/GTIN подтверждён вручную/)).toBeTruthy();
+    });
+  });
 });

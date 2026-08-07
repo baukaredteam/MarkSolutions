@@ -9,11 +9,13 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   Injectable,
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
 import { PrismaService } from "./prisma.service";
+import { ModerationService } from "./moderation.service";
 import {
   tnvedHint,
   heuristicStrengthensFix,
@@ -327,18 +329,28 @@ export class CatalogService {
 
 @Controller("products")
 export class CatalogController {
-  constructor(private readonly catalog: CatalogService) {}
+  constructor(
+    private readonly catalog: CatalogService,
+    private readonly moderation: ModerationService
+  ) {}
+
+  // Роль OPERATOR не имеет tenant — tenant-scoped эндпоинты для него закрыты (403),
+  // кроме модерации (CAT-013).
+  private tenantOf(req: Request): string {
+    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
+    if (!tenantId) throw new ForbiddenException("tenant required");
+    return tenantId;
+  }
 
   @Get("drafts")
   async drafts(@Req() req: Request, @Query("status") status?: string) {
-    const tenantId = (req as unknown as { tenantId: string }).tenantId;
-    return { items: await this.catalog.listDrafts(tenantId, status) };
+    return { items: await this.catalog.listDrafts(this.tenantOf(req), status) };
   }
 
   @HttpCode(201)
   @Post("drafts/import")
   async importDrafts(@Req() req: Request, @Body() body: { rows: DraftRow[] }) {
-    const tenantId = (req as unknown as { tenantId: string }).tenantId;
+    const tenantId = this.tenantOf(req);
     // MVP: синхронно создаём (OutboxPoller-асинхронность — след. итерация),
     // но возвращаем jobId для совместимости с acceptance.
     for (const row of body.rows) await this.catalog.createDraft(tenantId, row);
@@ -356,7 +368,7 @@ export class CatalogController {
       confirmDuplicate?: boolean;
     }
   ) {
-    const tenantId = (req as unknown as { tenantId: string }).tenantId;
+    const tenantId = this.tenantOf(req);
     const actor = (req as unknown as { actor: string }).actor;
     return this.catalog.createCard(tenantId, actor, body);
   }
@@ -369,7 +381,7 @@ export class CatalogController {
     @Body() body: { tnved: string }
   ) {
     return this.catalog.fixTnved(
-      (req as unknown as { tenantId: string }).tenantId,
+      this.tenantOf(req),
       id,
       (req as unknown as { actor: string }).actor,
       body.tnved
@@ -380,7 +392,7 @@ export class CatalogController {
   @Post("drafts/:id/out-of-scope")
   async outOfScope(@Req() req: Request, @Param("id") id: string) {
     return this.catalog.outOfScope(
-      (req as unknown as { tenantId: string }).tenantId,
+      this.tenantOf(req),
       id,
       (req as unknown as { actor: string }).actor
     );
@@ -390,7 +402,18 @@ export class CatalogController {
   @Post("drafts/:id/submit")
   async submitDraft(@Req() req: Request, @Param("id") id: string) {
     return this.catalog.submitDraft(
-      (req as unknown as { tenantId: string }).tenantId,
+      this.tenantOf(req),
+      id,
+      (req as unknown as { actor: string }).actor
+    );
+  }
+
+  // CAT-013: tenant отправляет карточку на модерацию (Draft/Needs Correction → Validating → Submitted).
+  @HttpCode(200)
+  @Post("cards/:id/submit")
+  async submitCard(@Req() req: Request, @Param("id") id: string) {
+    return this.moderation.submitCard(
+      this.tenantOf(req),
       id,
       (req as unknown as { actor: string }).actor
     );
@@ -407,7 +430,8 @@ export class DemoController {
     if (process.env.DEMO_ENABLED !== "true") {
       throw new NotFoundException("demo endpoint disabled"); // F4: 404, не 400
     }
-    const tenantId = (req as unknown as { tenantId: string }).tenantId;
+    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
+    if (!tenantId) throw new ForbiddenException("tenant required");
     const count = await this.catalog.seedInvoice(tenantId);
     return { count };
   }

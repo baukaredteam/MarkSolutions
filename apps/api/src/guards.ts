@@ -42,9 +42,15 @@ export class TenantGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException("invalid jwt");
     }
-    if (!claims.tenantId) throw new UnauthorizedException("invalid jwt");
-    req.tenantId = claims.tenantId;
-    req.roles = claims.roles ?? [];
+    const roles = claims.roles ?? [];
+    // оператор модерации — глобальная роль без tenant (CAT-013): ему tenant не нужен,
+    // tenant-scoped эндпоинты с req.tenantId=null не вернут чужие данные.
+    const isOperator = roles.includes("operator");
+    if (!claims.tenantId && !isOperator) {
+      throw new UnauthorizedException("invalid jwt");
+    }
+    req.tenantId = claims.tenantId ?? null;
+    req.roles = roles;
     req.mfaCompleted = claims.mfaCompleted ?? false;
     req.actor = claims.sub;
     return true;
