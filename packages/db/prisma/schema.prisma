@@ -105,8 +105,8 @@ model ProductCard {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   drafts     DraftProposal[]
-  // Дубль GTIN у tenant — предпроверка на уровне сервиса (409, не уникальный индекс):
-  // SQLite не умеет partial unique; прод (PostgreSQL) — CREATE UNIQUE INDEX ... WHERE status != 'Archived'.
+  // F1: partial unique index на (tenantId, gtin) WHERE "status" != 'ARCHIVED' (миграция t3_fix_partial_unique).
+  // Дубль GTIN у tenant с активной карточкой — DB-гарантия (SQLite+PG) + app-проверка в $transaction.
   @@index([tenantId, gtin])
 }
 
