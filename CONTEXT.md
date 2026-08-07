@@ -45,6 +45,16 @@
 
 КМ (КИ+код проверки), КИ (AI01+GTIN14+AI21+serial), GTIN, НТИН, ТНВЭД, УОТ, УЭО, МОД (businessPlaceId), tenant, КМ base (AI01+AI21) / extended (+GS+AI91+AI92), GS=0x1D, SSCC (AI='00').
 
+## Глоссарий каталога (T3, ADR-021/022)
+
+- **DraftProposal** — невалидированный черновик карточки из любого канала (инвойс/Excel/форма/клон). Несёт confidence + missing (ADR-019); не источник истины.
+- **ProductCard** — валидированная карточка товара (44 атрибута, CATALOG-MM), единственный источник истины. Версионируется (CAT-011): опубликованная версия неизменна, правка = новая версия.
+- **schemaVersion** — версия JSON-схемы атрибутов; additive-only эволюция, ленивая миграция при правке через app-мапперы (ADR-021).
+- **ModerationRoute** — машина состояний карточки Draft→Validating→Submitted→In Review→Approved/Rejected→Registering→Registered (CAT-013, §8.2 ТЗ); причина отклонения на уровне поля (fieldReasons).
+- **GtinResolver** — трёхслойная проверка GTIN: кэш→IGs1Adapter.verify (mod10)→ручной ввод. Registering не требует VERIFIED в MVP-1 (конфиг-флаг, ADR-016-политика).
+- **NktAdapter** (мок) — submitProduct + getStatus; Registering→Registered асинхронно, reconciliation (ID-017), отказ → Registration Failed → Needs Correction.
+- **Вне скоупа** — терминальный статус строки DraftProposal, чей ТНВЭД вне перечня и пользователь подтвердил «не подлежит маркировке» (Q3, ADR-022); виден отдельным списком с причиной.
+
 ## Навигация по контексту
 
 Решения — docs/DECISIONS.md; роадмап — docs/ROADMAP.md; API — docs/CONTRACT-IS-MPT.md; Правила — docs/RULES-MM.md; каталог/инвойс — docs/CATALOG-MM.md; происхождение файлов — docs/SOURCE-MANIFEST.md. Правила агента — AGENTS.md.
