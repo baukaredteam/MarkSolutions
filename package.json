@@ -17,7 +17,9 @@
     "db:seed": "npm run seed --workspace @markflow/db",
     "demo:reset": "node scripts/demo-reset.mjs",
     "demo:smoke": "node scripts/demo-smoke.mjs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "predev": "npm run build:cjs --workspace @markflow/shared",
+    "prestart": "npm run build:cjs --workspace @markflow/shared"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.1.28",
