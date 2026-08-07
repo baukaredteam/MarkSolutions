@@ -13,6 +13,7 @@ import {
   OperatorApprovalsController,
 } from "./onboarding.controller";
 import { MockEcomAdapter, ECOM_ADAPTER } from "./ecom.adapter";
+import { TemplatesController } from "./templates.module";
 
 @Controller("health")
 export class HealthController {
@@ -64,6 +65,7 @@ export class AdminController {
     AuthController,
     OnboardingController,
     OperatorApprovalsController,
+    TemplatesController,
   ],
   providers: [
     PrismaService,

@@ -65,6 +65,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
         tenantId: tenant.id,
         source: "demo-seed",
         proposed: {
+          schemaVersion: 1,
           name: "Nomad Novo 7000",
           tnved: "27101919",
           confidence: 0.8,
@@ -77,6 +78,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
     expect(prop.source).toBe("demo-seed");
     expect(prop.demo).toBe(true);
     expect(prop.missing as string[]).toContain("gtin");
+    expect((prop.proposed as { schemaVersion: number }).schemaVersion).toBe(1);
   });
 
   it("tenant_id everywhere + duplicate gtin blocked per tenant (neg)", async () => {

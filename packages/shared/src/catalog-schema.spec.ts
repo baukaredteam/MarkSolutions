@@ -78,4 +78,18 @@ describe("motor-oils schema v1", () => {
     expect(typeof TIER_A_MANUAL).toBe("object");
     expect(TIER_B.includes("photo")).toBe(true);
   });
+
+  it("additive-only (ADR-021): historical v1 card still valid after new optional field added", () => {
+    // карточка v1 без нового опционального поля (например 'packageMaterial' — ярус B)
+    const v1Card = autofillAttributes(
+      { ...validManual, schemaVersion: 1 },
+      fullTenant
+    );
+    // схема v2 добавила бы новое опциональное поле; его отсутствие = null, не ошибка
+    expect(
+      (v1Card as Record<string, unknown>).newOptionalField
+    ).toBeUndefined();
+    const err = validateAttributes(v1Card);
+    expect(err.ok).toBe(true);
+  });
 });

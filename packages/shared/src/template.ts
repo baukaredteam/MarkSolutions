@@ -77,9 +77,37 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function renderSheet(schema: CatalogSchema): string {
-  const headers = schema.attributes.map(
-    (a: AttributeDef) => `${xmlEscape(a.label)}${a.required ? "*" : ""}`
+// Чистая модель листа (F2): дескриптор + заголовки. Рендер xlsx строится из неё.
+export interface SheetModel {
+  descriptor: {
+    productGroup: string;
+    schemaVersion: number;
+    generatedAt: string;
+  };
+  headers: { label: string; required: boolean }[];
+}
+
+export function sheetModel(
+  schema: CatalogSchema,
+  generatedAt = new Date()
+): SheetModel {
+  return {
+    descriptor: {
+      productGroup: schema.productGroup,
+      schemaVersion: schema.schemaVersion,
+      generatedAt: generatedAt.toISOString(),
+    },
+    headers: schema.attributes.map((a: AttributeDef) => ({
+      label: a.label,
+      required: a.required,
+    })),
+  };
+}
+
+function renderSheet(model: SheetModel): string {
+  // заголовок: ярус A (required) помечен «*», остальные без
+  const headers = model.headers.map(
+    (h) => `${xmlEscape(h.label)}${h.required ? "*" : ""}`
   );
   const rows: string[][] = [headers, []];
   const sheet = rows
@@ -98,7 +126,8 @@ function renderSheet(schema: CatalogSchema): string {
 }
 
 export function buildMotorOilTemplate(): Buffer {
-  const sheet = renderSheet(motorOilSchemaV1);
+  const model = sheetModel(motorOilSchemaV1);
+  const sheet = renderSheet(model);
   const enc = new TextEncoder();
   const zipBuf = zip([
     {

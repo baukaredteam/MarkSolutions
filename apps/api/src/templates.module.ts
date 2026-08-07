@@ -7,15 +7,15 @@ import {
   Res,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { Public } from "./public.decorator";
 import { templateFor } from "@markflow/shared";
 
 const XLSX_CT =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+// GET /templates требует JWT (ADR-017: не входит в 3 публичных роута).
+// Tenant-guard глобальный в AppModule; шаблон per-product-group одинаков для всех tenant.
 @Controller("templates")
 export class TemplatesController {
-  @Public()
   @Get(":productGroup")
   get(@Param("productGroup") group: string, @Res() res: Response) {
     const xlsx = templateFor(group);

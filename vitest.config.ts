@@ -17,5 +17,8 @@ export default defineConfig({
     ],
     setupFiles: ["apps/web/test-setup.ts"],
     testTimeout: 20000,
+    // e2e-спеки мутируют process.env.DATABASE_URL в beforeAll; последовательный
+    // запуск файлов исключает параллельную гонку (корень проблемы).
+    fileParallelism: false,
   },
 });
