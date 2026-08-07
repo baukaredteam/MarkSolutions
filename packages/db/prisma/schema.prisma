@@ -20,6 +20,8 @@ model Tenant {
   accounts Account[]
   products  Product[]
   users     User[]
+  productCards ProductCard[]
+  draftProposals DraftProposal[]
   createdAt DateTime @default(now())
 }
 
@@ -89,4 +91,35 @@ model Outbox {
   status    String  @default("PENDING") // PENDING|PROCESSING|PROCESSED|FAILED (ADR-016)
   createdAt DateTime @default(now())
   processedAt DateTime?
+}
+
+model ProductCard {
+  id         String   @id @default(cuid())
+  version    Int      @default(0)
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  status     String   @default("DRAFT") // ModerationRoute (CAT-013): DRAFT|VALIDATING|SUBMITTED|IN_REVIEW|APPROVED|REJECTED|REGISTERING|REGISTERED (ADR-016: String)
+  gtin       String?
+  ntin       String?
+  attributes Json     // 44 атрибута каталога (CATALOG-MM), schemaVersion внутри (ADR-021)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  drafts     DraftProposal[]
+  @@unique([tenantId, gtin])
+}
+
+model DraftProposal {
+  id         String   @id @default(cuid())
+  version    Int      @default(0)
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  cardId     String?
+  card       ProductCard? @relation(fields: [cardId], references: [id])
+  source     String   // invoice|excel|form|clone|demo-seed
+  proposed   Json     // предполагаемые поля + confidence (ADR-019)
+  missing    Json     // список недостающего (ADR-019)
+  status     String   @default("DRAFT") // DRAFT|DOBOR|OUT_OF_SCOPE (ADR-022)
+  demo       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
