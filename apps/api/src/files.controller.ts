@@ -153,11 +153,10 @@ export class FilesController {
     const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
     if (!tenantId) throw new ForbiddenException("tenant required");
     const { file, data } = await this.files.getFile(tenantId, id, key);
+    // санация имени для заголовка (защита от CRLF-инъекции через originalName)
+    const safeName = file.originalName.replace(/[\r\n"]/g, "_");
     res.setHeader("Content-Type", file.mimeType);
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${file.originalName}"`
-    );
+    res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
     res.send(data);
   }
 

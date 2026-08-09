@@ -201,6 +201,10 @@ describe("catalog files (T3, ADR-015)", () => {
     expect(front.originalName).toBe("photo.jpg");
     expect(front.mimeType).toBe("image/jpeg");
     expect(front.contentHash).toMatch(/^[a-f0-9]{64}$/); // sha256
+    // точное значение на известном содержимом (стабильность/дедуп-инвариант)
+    expect(front.contentHash).toBe(
+      "a5802267e3d4391063291d64f63ad6f8cdc09702685aee977b7e928ac1f1b244"
+    );
     expect(front.uploadedAt).toBeTruthy();
     expect(front.label).toBe("front");
 
@@ -314,5 +318,36 @@ describe("catalog files (T3, ADR-015)", () => {
     }
     expect(sub2res.status).toBe(200);
     expect(sub2res.body.status).toBe("SUBMITTED");
+  });
+
+  it("ярус B: декларация без согласованных дат → submit блокируется", async () => {
+    const cardId = await createCard();
+    await uploadExpect(cardId, "front", Buffer.from("d-front"));
+    await uploadExpect(cardId, "back", Buffer.from("d-back"));
+    // атрибуты с декларацией: perpetual=false, дата есть, expiry нет → несогласовано
+    await prisma.productCard.update({
+      where: { id: cardId },
+      data: {
+        attributes: {
+          ...fullAttrs("04014835723399"),
+          brand: "DCL",
+          declarationDate: "2026-08-01",
+          declarationPerpetual: false,
+        },
+      },
+    });
+    await uploadExpect(
+      cardId,
+      "declaration",
+      Buffer.from("d-pdf"),
+      "decl.pdf",
+      "application/pdf"
+    );
+    const sub = await request(app.getHttpServer())
+      .post(`/products/cards/${cardId}/submit`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(sub.body.status).toBe("NEEDS_CORRECTION");
+    expect(sub.body.fieldErrors.declaration).toBeTruthy();
   });
 });
