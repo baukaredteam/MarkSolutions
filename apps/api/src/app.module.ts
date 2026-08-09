@@ -35,6 +35,8 @@ import {
   FilesService,
   STORAGE_ADAPTER,
 } from "./files.controller";
+import { BillingController } from "./billing.controller";
+import { BillingService } from "./billing.service";
 import { LocalStorageAdapter } from "@markflow/shared";
 import { join } from "node:path";
 
@@ -93,6 +95,7 @@ export class AdminController {
     DemoController,
     ModerationController,
     FilesController,
+    BillingController,
   ],
   providers: [
     PrismaService,
@@ -103,6 +106,7 @@ export class AdminController {
     OutboxPoller,
     SeedService,
     FilesService,
+    BillingService,
     {
       provide: STORAGE_ADAPTER,
       useFactory: () =>
