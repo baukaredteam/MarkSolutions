@@ -30,9 +30,10 @@ export const MODERATION_STATUSES = [
 export type CardStatus = (typeof MODERATION_STATUSES)[number];
 
 export interface AuditEntry {
+  author: string;
   at: string;
-  actor: string;
-  action: string;
+  from: string;
+  to: string;
   comment?: string;
 }
 
@@ -43,11 +44,12 @@ export class ModerationService {
     private readonly gtin: GtinResolver
   ) {}
 
-  // Аудит перехода: читаем текущий audit + append (не перезаписываем).
-  private async audit(
+  // Аудит перехода (CAT-013): {author, at, from, to, comment}; append, не перезапись.
+  private async recordTransition(
     cardId: string,
-    actor: string,
-    action: string,
+    author: string,
+    from: string,
+    to: string,
     comment?: string
   ): Promise<void> {
     const card = await this.prisma.productCard.findUnique({
@@ -56,9 +58,10 @@ export class ModerationService {
     if (!card) return;
     const list = (card.audit as unknown as AuditEntry[]) ?? [];
     const next: AuditEntry = {
+      author,
       at: new Date().toISOString(),
-      actor,
-      action,
+      from,
+      to,
       comment,
     };
     await this.prisma.productCard.update({
@@ -110,12 +113,19 @@ export class ModerationService {
     if (Object.keys(fieldErrors).length > 0) {
       await this.prisma.productCard.update({
         where: { id: cardId },
-        data: { status: "NEEDS_CORRECTION", fieldReasons: fieldErrors },
+        data: {
+          status: "NEEDS_CORRECTION",
+          fieldReasons: fieldErrors,
+          // снапшот — иначе после исправления полей resubmit не сможет сверить изменения
+          rejectedAttributes:
+            card.attributes as unknown as Prisma.InputJsonValue,
+        },
       });
-      await this.audit(
+      await this.recordTransition(
         cardId,
         actor,
-        "validation_failed",
+        "VALIDATING",
+        "NEEDS_CORRECTION",
         `ярус A/ТНВЭД/GtinResolver: ${Object.keys(fieldErrors).join(", ")}`
       );
       return { ok: false, fieldErrors };
@@ -147,9 +157,9 @@ export class ModerationService {
         {}
       ) as unknown as Record<string, unknown>;
       const unfixed = Object.keys(reasons).filter((f) => {
-        // поле считается неисправленным, если его значение не изменилось с момента реджекта
+        // поле неисправлено, если его значение не изменилось с момента реджекта
+        // (отсутствие в снапшоте = пустое значение на тот момент)
         const snapValue = rejectedSnapshot ? rejectedSnapshot[f] : undefined;
-        if (snapValue === undefined) return true; // снапшот недоступен → считаем неисправленным
         return String(attrs[f] ?? "") === String(snapValue ?? "");
       });
       if (unfixed.length > 0) {
@@ -167,15 +177,17 @@ export class ModerationService {
       }
     }
 
-    // Draft → Validating → (auto) → Submitted / Needs Correction
+    // Draft/Needs Correction → Validating → (auto) → Submitted / Needs Correction
+    const fromStatus = card.status;
     await this.prisma.productCard.update({
       where: { id: cardId },
       data: { status: "VALIDATING" },
     });
-    await this.audit(
+    await this.recordTransition(
       cardId,
       actor,
-      "validating",
+      fromStatus,
+      "VALIDATING",
       "карточка на автоматической проверке"
     );
 
@@ -195,7 +207,13 @@ export class ModerationService {
         rejectedAttributes: Prisma.JsonNull,
       },
     });
-    await this.audit(cardId, actor, "submit", "отправлена в очередь модерации");
+    await this.recordTransition(
+      cardId,
+      actor,
+      "VALIDATING",
+      "SUBMITTED",
+      "отправлена в очередь модерации"
+    );
     return { id: cardId, status: "SUBMITTED" };
   }
 
@@ -230,14 +248,16 @@ export class ModerationService {
     actor: string,
     comment?: string
   ) {
+    const from = card.status;
     await this.prisma.productCard.update({
       where: { id: card.id },
       data: { status: to },
     });
-    await this.audit(card.id, actor, to.toLowerCase(), comment);
+    await this.recordTransition(card.id, actor, from, to, comment);
   }
 
   // Оператор одобряет: In Review → Approved → (далее Registering через NKT, OutboxPoller).
+  // Идемпотентно: повторный approve на APPROVED не создаёт вторую регистрацию.
   async approve(cardId: string, actor: string) {
     const card = await this.getCard(cardId);
     if (!["SUBMITTED", "IN_REVIEW", "APPROVED"].includes(card.status)) {
@@ -245,23 +265,15 @@ export class ModerationService {
         `cannot approve card in status ${card.status}`
       );
     }
-    if (card.status !== "APPROVED") {
-      if (card.status === "SUBMITTED") {
-        await this.transition(
-          card,
-          "IN_REVIEW",
-          actor,
-          "оператор взял в работу"
-        );
-      }
-      const reviewed = await this.getCard(cardId);
-      await this.transition(
-        reviewed,
-        "APPROVED",
-        actor,
-        "одобрена модератором"
-      );
+    if (card.status === "APPROVED") {
+      // outbox-событие уже создано при первом approve — повторно не дублируем
+      return { id: cardId, status: "APPROVED" };
     }
+    if (card.status === "SUBMITTED") {
+      await this.transition(card, "IN_REVIEW", actor, "оператор взял в работу");
+    }
+    const reviewed = await this.getCard(cardId);
+    await this.transition(reviewed, "APPROVED", actor, "одобрена модератором");
     // создаём outbox-событие для асинхронной регистрации в НКТ
     await this.prisma.outbox.create({
       data: {
@@ -303,10 +315,11 @@ export class ModerationService {
         rejectedAttributes: card.attributes as unknown as Prisma.InputJsonValue,
       },
     });
-    await this.audit(
+    await this.recordTransition(
       cardId,
       actor,
-      "rejected",
+      "IN_REVIEW",
+      "NEEDS_CORRECTION",
       `причины: ${JSON.stringify(fieldReasons)}`
     );
     return { id: cardId, status: "NEEDS_CORRECTION", fieldReasons };

@@ -10,23 +10,40 @@ import { INktAdapter, NKT_ADAPTER } from "./integrations";
 @Injectable()
 export class OutboxPoller implements OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
-  private readonly pollMs = Number(process.env.OUTBOX_POLL_MS ?? 1000);
-  private readonly timeoutMs = Number(process.env.NKT_TIMEOUT_MS ?? 15000);
-  private readonly requireGs1Verified =
-    process.env.REQUIRE_GS1_VERIFIED_FOR_REGISTERING === "true";
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject(NKT_ADAPTER) private readonly nkt: INktAdapter
   ) {}
 
+  // читаем env на каждом тике — конфиг-флаги можно менять без перезапуска
+  // (в проде они стабильны; в тестах это позволяет проверять сценарии)
+  private get pollMs(): number {
+    return Number(process.env.OUTBOX_POLL_MS ?? 1000);
+  }
+  private get timeoutMs(): number {
+    return Number(process.env.NKT_TIMEOUT_MS ?? 15000);
+  }
+  private get requireGs1Verified(): boolean {
+    return process.env.REQUIRE_GS1_VERIFIED_FOR_REGISTERING === "true";
+  }
+
   start() {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.poll(), this.pollMs);
+    // интервал пересоздаём каждый тик, чтобы подхватывать изменения pollMs
+    const tick = () => {
+      void this.poll().finally(() => {
+        if (this.timer !== null) {
+          clearTimeout(this.timer);
+          this.timer = setTimeout(tick, this.pollMs);
+        }
+      });
+    };
+    this.timer = setTimeout(tick, this.pollMs);
   }
 
   onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
   }
 

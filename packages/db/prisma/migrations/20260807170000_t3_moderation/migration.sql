@@ -32,6 +32,9 @@ CREATE UNIQUE INDEX "uniq_card_tenant_gtin_active"
 ON "ProductCard" ("tenantId", "gtin")
 WHERE "status" != 'ARCHIVED';
 
+-- обычный индекс (т3_import_index) тоже теряется при DROP TABLE — восстанавливаем
+CREATE INDEX "ProductCard_tenantId_gtin_idx" ON "ProductCard"("tenantId", "gtin");
+
 -- CreateTable
 CREATE TABLE "GtinCache" (
     "id" TEXT NOT NULL PRIMARY KEY,

@@ -137,7 +137,7 @@ describe("catalog moderation (T3, CAT-013)", () => {
     return { cardId: res.body.id, token: tenantToken, tenantId: tenant.id };
   }
 
-  it("AT-03: submit с ошибкой яруса A → Needs Correction с fieldErrors, не In Review", async () => {
+  it("AT-03: submit с ошибкой яруса A → Needs Correction с fieldErrors, не In Review; после исправления → Submitted", async () => {
     // карточка с пустым tier A (только имя) — создаём напрямую через prisma
     const card = await prisma.productCard.create({
       data: {
@@ -157,6 +157,17 @@ describe("catalog moderation (T3, CAT-013)", () => {
       where: { id: card.id },
     });
     expect(updated!.status).toBe("NEEDS_CORRECTION");
+
+    // исправляем атрибуты (полный ярус A) → повторная отправка проходит
+    await prisma.productCard.update({
+      where: { id: card.id },
+      data: { attributes: fullAttrs("04014835723399") },
+    });
+    const resub = await request(app.getHttpServer())
+      .post(`/products/cards/${card.id}/submit`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(resub.body.status).toBe("SUBMITTED");
   });
 
   it("полный путь: Draft → Validating → Submitted → In Review → Approved → Registering → Registered (RAVENOL)", async () => {
@@ -179,21 +190,43 @@ describe("catalog moderation (T3, CAT-013)", () => {
       true
     );
 
-    // оператор approve → Approved
+    // оператор approve → Approved; повторный approve идемпотентен (без дубля регистрации)
     const apr = await request(app.getHttpServer())
       .post(`/moderation/${cardId}/approve`)
       .set("Authorization", `Bearer ${operatorToken}`)
       .expect(200);
     expect(apr.body.status).toBe("APPROVED");
+    await request(app.getHttpServer())
+      .post(`/moderation/${cardId}/approve`)
+      .set("Authorization", `Bearer ${operatorToken}`)
+      .expect(200);
+    await sleep(300);
+    const nktRows = (
+      await prisma.outbox.findMany({ where: { aggregate: "nkt-register" } })
+    ).filter((r) => (r.payload as { cardId: string }).cardId === cardId);
+    expect(nktRows).toHaveLength(1); // идемпотентность: одна регистрация
 
-    // аудит переходов: validating + submit + in_review + approved
+    // аудит переходов {author, at, from, to, comment} без «прыжков»
     await sleep(200);
     const card = await prisma.productCard.findUnique({ where: { id: cardId } });
-    const actions = (card!.audit as { action: string }[]).map((a) => a.action);
-    expect(actions).toContain("validating");
-    expect(actions).toContain("submit");
-    expect(actions).toContain("in_review");
-    expect(actions).toContain("approved");
+    const audit = card!.audit as {
+      author: string;
+      at: string;
+      from: string;
+      to: string;
+      comment?: string;
+    }[];
+    for (const e of audit) {
+      expect(e.author).toBeTruthy();
+      expect(e.at).toBeTruthy();
+      expect(e.from).toBeTruthy();
+      expect(e.to).toBeTruthy();
+    }
+    const path = audit.map((e) => `${e.from}->${e.to}`);
+    expect(path).toContain("DRAFT->VALIDATING");
+    expect(path).toContain("VALIDATING->SUBMITTED");
+    expect(path).toContain("SUBMITTED->IN_REVIEW");
+    expect(path).toContain("IN_REVIEW->APPROVED");
 
     // OutboxPoller: Registering → Registered (SLA 300ms)
     let status = "";
@@ -387,12 +420,21 @@ describe("catalog moderation (T3, CAT-013)", () => {
         .set("Authorization", `Bearer ${operatorToken}`)
         .expect(200);
 
-      // OutboxPoller: из-за REQUIRE_GS1_VERIFIED → FAILED (не REGISTERED)
+      // OutboxPoller: из-за REQUIRE_GS1_VERIFIED → FAILED именно этой карточки
       await sleep(800);
-      const failed = await prisma.outbox.findFirst({
-        where: { aggregate: "nkt-register", status: "FAILED" },
+      const rows = await prisma.outbox.findMany({
+        where: { aggregate: "nkt-register" },
+      });
+      const failed = rows.find((r) => {
+        const p = r.payload as { cardId: string };
+        return p.cardId === cardId;
       });
       expect(failed).toBeTruthy();
+      expect(failed!.status).toBe("FAILED");
+      const card = await prisma.productCard.findUnique({
+        where: { id: cardId },
+      });
+      expect(card!.status).not.toBe("REGISTERED");
       // дашборд исключений (ID-017) показывает FAILED
       const exc = await request(app.getHttpServer())
         .get("/moderation/exceptions")
@@ -421,11 +463,15 @@ describe("catalog moderation (T3, CAT-013)", () => {
         .set("Authorization", `Bearer ${operatorToken}`)
         .expect(200);
       await sleep(900);
-      const failed = await prisma.outbox.findFirst({
-        where: { aggregate: "nkt-register", status: "FAILED" },
-        orderBy: { createdAt: "desc" },
+      const rows = await prisma.outbox.findMany({
+        where: { aggregate: "nkt-register" },
+      });
+      const failed = rows.find((r) => {
+        const p = r.payload as { cardId: string };
+        return p.cardId === cardId;
       });
       expect(failed).toBeTruthy();
+      expect(failed!.status).toBe("FAILED");
       const exc = await request(app.getHttpServer())
         .get("/moderation/exceptions")
         .set("Authorization", `Bearer ${operatorToken}`)
