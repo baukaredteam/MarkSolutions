@@ -6,7 +6,7 @@
 - ADR-004 1ecom: порт IEcomAdapter + MockEcomAdapter (ручной режим), реальный — по договору.
 - ADR-005 Ports&Adapters: конфиг adapters.<system>=mock|http; симулятор ИС МПТ реализует IMptAdapter и используется в контрактных тестах.
 - ADR-006 Каноническая модель КМ: структура {gtin, serial, ai91, ai92} + form base|extended; raw-строка с GS(0x1D) — лишь сериализация; рендер/парсинг только из структуры.
-- ADR-007 Биллинг double-entry; баланс=сумма проводок; резерв FOR UPDATE; списание КМ = регистрация сведений о нанесении (п.26 Правил).
+- ADR-007 Биллинг double-entry; баланс=сумма проводок; деньги BigInt в целых тенге (дробных единиц нет); резерв — портабельный optimistic CAS на Account.version (SQLite↔PG), FOR UPDATE допустим на PG только как оптимизация при росте конкуренции, не как условие корректности; списание КМ = регистрация сведений о нанесении (п.26 Правил).
 - ADR-008 UI-таблицы = один data-driven EntityList + конфиги (вкладки = конфиги, не страницы).
 - ADR-009 Valkey вместо Redis; OpenBao вместо Vault (лицензии RSAL/BSL не OSI).
 - ADR-010 1С: контракт v1 (PaymentImport идемпотентно по ref1c; ServiceAct; MovementJournal только с хешами КМ); транспорт MVP = файлы; 1С — система записи бухгалтерии, не MarkFlow.
@@ -17,6 +17,7 @@
 - ADR-021 JSON-схема 44 атрибутов — источник истины карточки (additive-only, ленивая миграция через app-мапперы, трёхъярусная обязательность).
 - ADR-022 ТНВЭД-фильтр на уровне карточки, не инвойса (двухфазный, две аудируемые кнопки, эвристика п.15).
 - ADR-023 Закрытие T3 — каталог сквозной; каталог не меняется до второй товарной группы; будущие изменения — только через CAT-010 (конфигурируемые группы) с отдельной фазой.
+- ADR-024 Заказ КМ + Code Vault (W3): снимок единиц маркировки в строке заказа; тарифы = данные (Tariff seed); Ledger TOPUP/RESERVE/RELEASE/SETTLE + optimistic CAS на Account.version; симулятор ИС МПТ stateless (SIM_MPT_EMISSION_MS); Code Vault AES-256-GCM (KMS_PROFILE) + маска; поллер=сверка ORD-029; cisType=UNIT, serialNumberType=OPERATOR.
 
 ## ADR-015 — профиль прототипа: SQLite + LocalStorage + OutboxPoller
 
@@ -32,7 +33,7 @@
 
 - Без enum в Prisma: enum → String + валидация на уровне приложения; статусы — String, не enum.
 - Без массивов: массив → JSON-строка с валидацией на уровне приложения (прод = native array PostgreSQL).
-- Деньги: BigInt в минорных единицах; float запрещён.
+- Деньги: BigInt в целых тенге (KZT), дробных единиц нет (минимальная единица — 1 тенге); float запрещён.
 - Оптимистическая блокировка: поле version Int @default(0); UPDATE только с WHERE version = {n}; конфликт → retry/409.
 - Время: DateTime (Prisma прозрачно: TEXT в SQLite / TIMESTAMP в PostgreSQL).
 - Миграции проверяем на обеих БД контрактным тестом.
@@ -100,3 +101,47 @@ JSON-схема атрибутов (CATALOG-MM) — единственный и�
 - **Будущие изменения каталога — ТОЛЬКО через CAT-010 (конфигурируемые товарные группы)** и только в отдельной фазе: выделение схемы «моторные масла» в конфиг-группу, реестр групп, per-group валидация/справочники/шаблоны. НЕ инкрементально, НЕ «попутно» с другими фичами.
 - Пока CAT-010 не выведен — любые правки в `CATALOG-MM`, `motorOilSchemaV1`, справочниках или машине модерации для каталога считаются изменением замороженного контура и требуют отдельного решения.
 - Исключение — исправление дефектов, не меняющих контракт: баги валидации/модерации/файлов фиксируются как обычно, но без расширения атрибутов и без смены правил обязательности.
+
+## ADR-024 — заказ КМ + Code Vault (W3)
+
+Решения грилля W3 (grill-with-docs, 10 вопросов). Дорожка «Заказы кодов» + деньги.
+
+### Единицы маркировки и снимок заказа
+
+- Единицы маркировки — НЕ сущность, а снимок в строке заказа: `{places, unitsPerPlace, quantity, totalPrice, cisType, serialNumberType}`.
+- quantity по умолчанию = places × unitsPerPlace (превью в UI), пользователь может уменьшить до 1; валидация `1 ≤ quantity ≤ places×unitsPerPlace`.
+- places/unitsPerPlace — из инвойса/packing list (если заказ связан с поставкой) либо ручной ввод.
+- MVP заказ однопозиционный (1 заказ = 1 строка); многопозиционность — позже, таблица OrderLine (адаптер уже принимает `products[]`).
+
+### Тарифы и деньги
+
+- Цена карточки/инвойса в биллинге НЕ участвует (у карточки цены нет — ADR-023; `priceUsd` инвойса — закупочная цена, вне биллинга MarkFlow).
+- **Tariff**: `{id, validFrom, validTo, pricePerCodeKZT (BigInt целые тенге, дробных единиц нет), unit="KM", currency="KZT"}` — данные в БД (seed), не хардкод. Выбор = активный на дату; нет активного → заказ отклоняется «тариф не настроен». Заказ хранит снимок `{tariffId, pricePerCodeKZT}`; totalPrice = quantity × pricePerCodeKZT.
+- **isPaid** в POST /api/orders всегда true (резерв создаётся атомарно с заказом; при 0 баланса заказ не создаётся, AT-06).
+- **Ledger** (ADR-007): TOPUP / RESERVE / RELEASE / SETTLE; balance = материализованный кэш; available = balance − SUM(активных RESERVE).
+- Резерв: optimistic CAS на Account.version (`UPDATE ... WHERE id=? AND version=?`), портабельно SQLite↔PG, БЕЗ FOR UPDATE в коде; FOR UPDATE на PG — только оптимизация при росте конкуренции. Конфликт → до 3 ретраев с backoff, затем 409. RESERVE уникален по (orderId, kind).
+- Создание заказа: одна транзакция = заказ + RESERVE + outbox `send-order-to-mpt`; отправка поллером после коммита (Idempotency-Key = orderId, AT-07).
+- Освобождение — явный RELEASE (компенсация, не откат); отмена до эмиссии → RELEASE; после эмиссии отмена запрещена. SETTLE — только при регистрации нанесения (п.26).
+
+### Симулятор ИС МПТ (Q5)
+
+- Stateless: `status = f(now, createdAt, config)`, без setTimeout. PENDING пока `now-createdAt < SIM_MPT_EMISSION_MS` (демо 45 с, тесты 50–100 мс), затем READY.
+- Коды генерируются ОДИН раз при первом переходе в READY, сохраняются (GET /api/codes идемпотентен). Валидны по п.19 + ADR-006.
+- Поллер MarkFlow (MPT_POLL_MS) опрашивает getStatus; PENDING дольше MPT_ORDER_TIMEOUT_MS → Failed + RELEASE + задача оператору (ID-017).
+- Внешние CREATED|PENDING|READY маппятся на внутреннюю машину ORD-026 (Sent→Processing→Completed).
+
+### Code Vault (CV-030…033)
+
+- Строка Vault: gtin ОТКРЫТЫЙ (индекс) + шифрованный `{serial, ai91, ai92}` (AES-256-GCM, per-row nonce рядом с ciphertext) + метадата {orderId, cardId, tenantId, status, createdAt, mask}. Ключи через KMS_PROFILE (file-KMS dev / OpenBao prod). Хешей полного КМ нет.
+- Маска КМ: gtin открыт + serial «первые 2 + … + последние 2» при length>6, иначе скрыт полностью. Полный КМ — только печать этикетки и экспорт, с аудитом CV-032.
+- Экспорт CSV: `gtin, serial, ai91, ai92, form, km_full, orderId`; km_full с литералом `<GS>` (текст, не 0x1D); UTF-8 BOM, «;»; только READY/Completed (иначе 409); tenant-scoped; роли admin/accountant; каждая выгрузка = аудит.
+- serialNumberType всегда OPERATOR; SELF_MADE → 400 (фаза с tenant-конфигом схемы). cisType всегда UNIT; GROUP/SET → 400 (агрегация — W4/C6).
+
+### Reconciliation (ORD-029)
+
+- Поллер = сверка: опрашивает ВСЕ незакрытые заказы каждые MPT_POLL_MS и догоняет пропущенные статусы. Дневного джоба в MVP НЕТ (эволюция: после боевой интеграции — независимый дневной контрольный контур).
+- Расхождение количества → Partially Completed + задача оператору, БЕЗ авто-финкорректировки (SETTLE по фактическому количеству при нанесении + RELEASE разницы оператором).
+
+### Таймер 30 дней (п.25, ADR-012)
+
+- От даты получения КМ; алерты 7/3/1; аннулирование = смена статуса, не физическое удаление; дедлайны = данные.
