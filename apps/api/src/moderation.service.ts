@@ -9,6 +9,8 @@ import {
   validateAttributes,
   autofillAttributes,
   isInList,
+  validateFiles,
+  type FileDescriptor,
   type MotorOilAttributes,
 } from "@markflow/shared";
 import { GtinResolver } from "./gtin-resolver";
@@ -110,6 +112,19 @@ export class ModerationService {
       fieldErrors.gtin = "GTIN обязателен для модерации";
     }
 
+    // T3-files (ярус B): если файлы загружены — фото ≥2 с разными label + декларация.
+    // Файлы — необязательные атрибуты: пока их нет, гейт не срабатывает.
+    const files = (card.attributes as { files?: FileDescriptor[] }).files ?? [];
+    if (files.length > 0) {
+      const fv = validateFiles(
+        files,
+        card.attributes as Record<string, unknown>
+      );
+      if (!fv.ok) {
+        Object.assign(fieldErrors, fv.errors);
+      }
+    }
+
     if (Object.keys(fieldErrors).length > 0) {
       await this.prisma.productCard.update({
         where: { id: cardId },
@@ -157,6 +172,10 @@ export class ModerationService {
         {}
       ) as unknown as Record<string, unknown>;
       const unfixed = Object.keys(reasons).filter((f) => {
+        // гейт «не исправлены» применим только к атрибутным полям, которые tenant может править
+        // (photos/tnved/gtin перепроверяются validateForSubmit на следующем submit — снапшот тут не нужен)
+        const isAttribute = f in (card.attributes as Record<string, unknown>);
+        if (!isAttribute) return false;
         // поле неисправлено, если его значение не изменилось с момента реджекта
         // (отсутствие в снапшоте = пустое значение на тот момент)
         const snapValue = rejectedSnapshot ? rejectedSnapshot[f] : undefined;

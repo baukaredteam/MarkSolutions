@@ -30,6 +30,13 @@ import {
   IGS1_ADAPTER,
   NKT_ADAPTER,
 } from "./integrations";
+import {
+  FilesController,
+  FilesService,
+  STORAGE_ADAPTER,
+} from "./files.controller";
+import { LocalStorageAdapter } from "@markflow/shared";
+import { join } from "node:path";
 
 @Controller("health")
 export class HealthController {
@@ -85,6 +92,7 @@ export class AdminController {
     CatalogController,
     DemoController,
     ModerationController,
+    FilesController,
   ],
   providers: [
     PrismaService,
@@ -94,6 +102,14 @@ export class AdminController {
     GtinResolver,
     OutboxPoller,
     SeedService,
+    FilesService,
+    {
+      provide: STORAGE_ADAPTER,
+      useFactory: () =>
+        new LocalStorageAdapter(
+          process.env.STORAGE_DIR ?? join(process.cwd(), "storage")
+        ),
+    },
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },
     { provide: NKT_ADAPTER, useClass: MockNktAdapter },
