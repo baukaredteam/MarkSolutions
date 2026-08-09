@@ -56,5 +56,23 @@ export class SeedService implements OnModuleInit {
         });
       }
     }
+
+    // Тариф на КМ (W3, ADR-024): одна активная строка; значение задаёт бизнес.
+    // Дефолт 100 KZT = 10000 тийын за код (меняется через seed/скрипт, админ-UI нет).
+    const now = new Date();
+    const activeTariff = await this.prisma.tariff.findFirst({
+      where: { validFrom: { lte: now }, validTo: { gte: now } },
+    });
+    if (!activeTariff) {
+      await this.prisma.tariff.create({
+        data: {
+          validFrom: new Date(Date.now() - 86400000),
+          validTo: new Date(Date.now() + 30 * 86400000),
+          pricePerCodeKZT: BigInt(10000),
+          unit: "KM",
+          currency: "KZT",
+        },
+      });
+    }
   }
 }

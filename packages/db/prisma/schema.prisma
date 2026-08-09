@@ -18,6 +18,7 @@ model Tenant {
   bin     String  @unique
   status  String  @default("PENDING") // PENDING|ACTIVE|REJECTED (ADR-016: String)
   accounts Account[]
+  ledgerEntries LedgerEntry[]
   products  Product[]
   users     User[]
   productCards ProductCard[]
@@ -30,8 +31,38 @@ model Account {
   version Int     @default(0)
   tenantId String
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  balance BigInt  @default(0) // минорные единицы (ADR-016)
+  balance BigInt  @default(0) // минорные единицы (ADR-016); материализованный кэш, источник истины — LedgerEntry
+  ledgerEntries LedgerEntry[]
   createdAt DateTime @default(now())
+}
+
+// Double-entry (ADR-007): источник истины баланса. balance = SUM(credit) - SUM(debit).
+model LedgerEntry {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  kind      String   // TOPUP|RESERVE|RELEASE|SETTLE (ADR-007)
+  amount    BigInt   // минорные единицы, положительное число
+  refOrderId String? // связь с заказом (RESERVE/RELEASE/SETTLE)
+  ref1c     String?  // идемпотентность PaymentImport (ADR-010)
+  reason    String?
+  createdAt DateTime @default(now())
+  @@unique([ref1c])
+}
+
+// Тариф на КМ (W3): данные в БД, не хардкод (дух ADR-012). Выбор = активный на дату.
+model Tariff {
+  id              String   @id @default(cuid())
+  version         Int      @default(0)
+  validFrom       DateTime
+  validTo         DateTime
+  pricePerCodeKZT BigInt   // минорные (тийыны)
+  unit            String   @default("KM")
+  currency        String   @default("KZT")
+  createdAt       DateTime @default(now())
 }
 
 model Product {
