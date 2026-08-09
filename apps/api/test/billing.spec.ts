@@ -207,6 +207,85 @@ describe("billing core (W3, ADR-007)", () => {
     expect(available).toBe(total.topup - total.settle - activeReserve);
   });
 
+  it("RELEASE идемпотентен: повторный release не инфлейтит available", async () => {
+    await request(app.getHttpServer())
+      .post("/billing/reserve")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ orderId: "r-2", amount: 20000 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/billing/release")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ orderId: "r-2", reason: "отмена" })
+      .expect(200);
+    // повторный RELEASE — идемпотентен (нет второй RELEASE-проводки)
+    await request(app.getHttpServer())
+      .post("/billing/release")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ orderId: "r-2", reason: "повтор" })
+      .expect(200);
+    const releases = await prisma.ledgerEntry.count({
+      where: { tenantId, kind: "RELEASE", refOrderId: "r-2" },
+    });
+    expect(releases).toBe(1);
+    const total = await assertLedgerInvariant();
+    const bal = await request(app.getHttpServer())
+      .get("/billing/balance")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    // available не вырос сверх balance (нет инфляции)
+    expect(BigInt(bal.body.available)).toBeLessThanOrEqual(
+      BigInt(bal.body.balance)
+    );
+    expect(total.reserve - total.release).toBe(BigInt(0));
+  });
+
+  it("SETTLE ограничен available: списание сверх → 402, баланс не уходит в минус", async () => {
+    const t = await prisma.tenant.create({
+      data: { bin: "777000111555", name: "СеттлТен", status: "ACTIVE" },
+    });
+    const acc = await prisma.account.create({
+      data: { tenantId: t.id, balance: BigInt(0) },
+    });
+    await prisma.ledgerEntry.create({
+      data: {
+        tenantId: t.id,
+        accountId: acc.id,
+        kind: "TOPUP",
+        amount: BigInt(50000),
+        reason: "seed",
+      },
+    });
+    await prisma.account.update({
+      where: { id: acc.id },
+      data: { balance: BigInt(50000) },
+    });
+    const tok = app.get(JwtService).sign({
+      sub: `u-${t.id}`,
+      tenantId: t.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+    // списание 50000 проходит, баланс → 0
+    await request(app.getHttpServer())
+      .post("/billing/settle")
+      .set("Authorization", `Bearer ${tok}`)
+      .send({ orderId: "s-1", amount: 50000 })
+      .expect(200);
+    // повторное списание сверх → 402, баланс не отрицательный
+    await request(app.getHttpServer())
+      .post("/billing/settle")
+      .set("Authorization", `Bearer ${tok}`)
+      .send({ orderId: "s-2", amount: 10000 })
+      .expect(402);
+    const bal = await request(app.getHttpServer())
+      .get("/billing/balance")
+      .set("Authorization", `Bearer ${tok}`)
+      .expect(200);
+    expect(bal.body.balance).toBe("0");
+    expect(BigInt(bal.body.available)).toBe(BigInt(0));
+  });
+
   it("SETTLE списывает баланс (п.26), резерв гасится", async () => {
     await request(app.getHttpServer())
       .post("/billing/settle")

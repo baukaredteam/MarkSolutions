@@ -258,11 +258,23 @@ export class BillingService {
   }
 
   // RELEASE: компенсация резерва (BILL-019) — уменьшает активный резерв.
+  // Идемпотентен: повторный RELEASE того же orderId возвращает существующую
+  // проводку и НЕ создаёт вторую (иначе available инфлейтится).
   async release(tenantId: string, orderId: string, reason?: string) {
     const reserve = await this.prisma.ledgerEntry.findFirst({
       where: { tenantId, kind: "RESERVE", refOrderId: orderId },
     });
     if (!reserve) throw new NotFoundException("no active reserve for order");
+    const released = await this.prisma.ledgerEntry.findFirst({
+      where: { tenantId, kind: "RELEASE", refOrderId: orderId },
+    });
+    if (released) {
+      return {
+        id: released.id,
+        kind: "RELEASE",
+        amount: BigInt(released.amount),
+      };
+    }
     const result = await this.apply(
       tenantId,
       "RELEASE",
@@ -277,6 +289,7 @@ export class BillingService {
   }
 
   // SETTLE: списание = регистрация нанесения (п.26) — balance −= amount.
+  // Ограничено available (balance − активные резервы) — нельзя увести в минус.
   async settle(
     tenantId: string,
     orderId: string,
@@ -289,6 +302,7 @@ export class BillingService {
       refOrderId: orderId,
       reason: reason ?? "settle",
       delta: -amount,
+      checkAvailable: (balance, reserved) => balance - reserved >= amount,
     });
     return result.entry;
   }
