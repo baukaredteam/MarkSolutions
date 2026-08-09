@@ -60,3 +60,24 @@
 ## Следующий шаг (когда продолжим)
 
 `/verification-before-completion` (повторно) → `/ocr-review` → `/requesting-code-review` на сильной модели → `/finishing-a-development-branch` (merge в main + гейты на merged + cleanup worktree/ветку + ROADMAP + opencode-mem).
+
+---
+
+## /ocr-review коммита b1fdd52 (07.08)
+
+### HIGH — исправлены отдельным коммитом `772fe68` (не amend)
+
+1. **Формат аудита** не соответствовал acceptance: писалось `{at, actor, action, comment}` вместо требуемого `{author, at, from, to, comment}`. Исправлено: `AuditEntry = {author, at, from, to, comment}`, все переходы через `recordTransition(from, to, ...)`. Тест проверяет путь без «прыжков»: `DRAFT→VALIDATING→SUBMITTED→IN_REVIEW→APPROVED`.
+2. **Идемпотентность approve**: повторный approve на `APPROVED` создавал второй outbox → дубль регистрации в НКТ. Исправлено: на `APPROVED` возвращаем как есть, outbox не дублируется. Тест: `nktRows.length === 1`.
+3. **Миграция теряла индекс** `ProductCard_tenantId_gtin_idx` при `DROP TABLE`/RedefineTables. Исправлено: `CREATE INDEX` добавлен в миграцию + применён к dev.db.
+4. **Poller читал env при конструировании** (`readonly pollMs/timeoutMs/requireGs1Verified`) → конфиг-флаги не менялись без перезапуска, и тесты REQUIRE_GS1/timeout проходили ложноположительно (лов чужой FAILED-строки). Исправлено: геттеры читают env на каждом тике; `setInterval`→самоперезапускаемый `setTimeout`; тесты ищут outbox-строку **по `payload.cardId`** + проверяют `status==="FAILED"` и `card.status !== "REGISTERED"`.
+5. **Resubmit после авто-валидации**: `validateForSubmit` не писал `rejectedAttributes` → после исправления полей повторная отправка навсегда = 400. Исправлено: снапшот пишется и при авто-валидации; сравнение значения со снапшотом (отсутствие в снапшоте = пусто тогда).
+
+### Некритичные (не исправлены, принято как есть)
+
+- `apps/api/src/outbox-poller.ts` — `poll()` глотает ошибки (`catch(e => void e)`): ок для MVP, при реальном НКТ добавить метрику/лог.
+- `MockNktAdapter.ntin` — синтетический `0{gtin}001`; реальный формат НТИН — по контракту НКТ (Q5 мок).
+- `ModerationController.exceptions` — `take: 50` без пагинации; при росте добавить курсор.
+- `GtinResolver` слой 2 пишет в кэш даже при хите `PENDING_REAL` (лишний upsert) — идемпотентно, не критично.
+- `SeedService.seed()` — 2 отдельных `findUnique`+`create` на GTIN; можно `upsert` одним запросом (микрооптимизация).
+- web-бейдж: `gtinManual` пока не выставляется API при создании draft (только чтение флага) — выводить вместе с реальным потоком ручного ввода GTIN.
