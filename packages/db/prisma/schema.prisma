@@ -1,5 +1,5 @@
 // MarkFlow Prisma schema — портабельная (ADR-016): SQLite dev / PostgreSQL prod.
-// Без enum (статусы String), без массивов (Json), деньги BigInt минорными,
+// Без enum (статусы String), без массивов (Json), деньги BigInt целыми тенге (дробных единиц нет),
 // version для optimistic lock.
 
 generator client {
@@ -31,7 +31,7 @@ model Account {
   version Int     @default(0)
   tenantId String
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  balance BigInt  @default(0) // минорные единицы (ADR-016); материализованный кэш, источник истины — LedgerEntry
+  balance BigInt  @default(0) // целые тенге (ADR-016); материализованный кэш, источник истины — LedgerEntry
   ledgerEntries LedgerEntry[]
   createdAt DateTime @default(now())
 }
@@ -45,7 +45,7 @@ model LedgerEntry {
   accountId String
   account   Account  @relation(fields: [accountId], references: [id])
   kind      String   // TOPUP|RESERVE|RELEASE|SETTLE (ADR-007)
-  amount    BigInt   // минорные единицы, положительное число
+  amount    BigInt   // целые тенге, положительное число
   refOrderId String? // связь с заказом (RESERVE/RELEASE/SETTLE)
   ref1c     String?  // идемпотентность PaymentImport (ADR-010)
   reason    String?
@@ -59,7 +59,7 @@ model Tariff {
   version         Int      @default(0)
   validFrom       DateTime
   validTo         DateTime
-  pricePerCodeKZT BigInt   // минорные (тийыны)
+  pricePerCodeKZT BigInt   // целые тенге (дробных единиц нет)
   unit            String   @default("KM")
   currency        String   @default("KZT")
   createdAt       DateTime @default(now())
