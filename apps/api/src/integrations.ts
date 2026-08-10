@@ -1,6 +1,7 @@
-// Порты интеграций модерации (T3, Q5/Q6).
-// IG/GS1 (проверка GTIN) и НКТ (регистрация продукта) — моки для MVP.
+// Порты интеграций модерации (T3, Q5/Q6) + симулятор ИС МПТ (W3, ADR-005/024).
 import { verifyGtinMod10 } from "@markflow/shared";
+import { PrismaService } from "./prisma.service";
+import { Injectable } from "@nestjs/common";
 
 // ---- IG/GS1: слой 2 GtinResolver ----
 export const IGS1_ADAPTER = "IGS1_ADAPTER";
@@ -88,5 +89,157 @@ export class MockNktAdapter implements INktAdapter {
       ntin: `0${entry.input.gtin}001`,
       gtin: entry.input.gtin,
     };
+  }
+}
+
+// ---- ИС МПТ (W3, ADR-005): порт по CONTRACT-IS-MPT.md ----
+export const MPT_ADAPTER = "MPT_ADAPTER";
+
+export type MptOrderStatus =
+  "CREATED" | "PENDING" | "READY" | "REJECTED" | "CLOSED";
+
+export interface MptOrderInput {
+  orderId: string; // Idempotency-Key (внутренний заказ)
+  tenantId: string;
+  gtin: string;
+  quantity: number;
+  serialNumberType: "OPERATOR";
+  cisType: "UNIT";
+  isPaid: boolean;
+}
+
+export interface MptCodeView {
+  gtin: string;
+  serial: string;
+  ai91: string | null;
+  ai92: string | null;
+  form: "base" | "extended";
+}
+
+export interface IMptAdapter {
+  createOrder(input: MptOrderInput): Promise<{ status: MptOrderStatus }>;
+  getOrder(orderId: string): Promise<{
+    status: MptOrderStatus;
+    quantity: number;
+  }>;
+  getCodes(orderId: string): Promise<{ codes: MptCodeView[] }>;
+}
+
+// Симулятор ИС МПТ (W3): stateless — статус = f(now, createdAt, SIM_MPT_EMISSION_MS).
+// Коды генерируются ОДИН раз при первом переходе в READY и сохраняются.
+// Без setTimeout/фоновых таймеров (рестарт не теряет статусы).
+@Injectable()
+export class MockMptAdapter implements IMptAdapter {
+  constructor(private readonly prisma: PrismaService) {}
+
+  private get emissionMs(): number {
+    return Number(process.env.SIM_MPT_EMISSION_MS ?? 45000);
+  }
+
+  // идемпотентно по orderId: повтор POST /api/orders возвращает существующий заказ
+  async createOrder(input: MptOrderInput): Promise<{ status: MptOrderStatus }> {
+    const existing = await this.prisma.mptOrder.findUnique({
+      where: { externalId: input.orderId },
+    });
+    if (existing) {
+      return { status: this.statusOf(existing) };
+    }
+    await this.prisma.mptOrder.create({
+      data: {
+        tenantId: input.tenantId,
+        externalId: input.orderId,
+        gtin: input.gtin,
+        quantity: input.quantity,
+        status: "CREATED",
+      },
+    });
+    return { status: "CREATED" };
+  }
+
+  async getOrder(orderId: string): Promise<{
+    status: MptOrderStatus;
+    quantity: number;
+  }> {
+    const order = await this.prisma.mptOrder.findUnique({
+      where: { externalId: orderId },
+    });
+    if (!order) return { status: "CREATED", quantity: 0 };
+    const status = this.statusOf(order);
+    // первый переход в READY → эмитировать коды (один раз)
+    if (status === "READY" && order.status !== "READY") {
+      await this.emitCodes(order.id, order.gtin, order.quantity);
+    }
+    await this.prisma.mptOrder.update({
+      where: { id: order.id },
+      data: { status },
+    });
+    return { status, quantity: order.quantity };
+  }
+
+  async getCodes(orderId: string): Promise<{ codes: MptCodeView[] }> {
+    const order = await this.prisma.mptOrder.findUnique({
+      where: { externalId: orderId },
+      include: { codes: true },
+    });
+    // только READY/CLOSED (CONTRACT-IS-MPT)
+    if (!order || !["READY", "CLOSED"].includes(this.statusOf(order))) {
+      return { codes: [] };
+    }
+    if (order.status !== "READY" && this.statusOf(order) === "READY") {
+      await this.emitCodes(order.id, order.gtin, order.quantity);
+    }
+    const fresh = await this.prisma.mptOrder.findUnique({
+      where: { externalId: orderId },
+      include: { codes: true },
+    });
+    return {
+      codes: (fresh?.codes ?? []).map((c) => ({
+        gtin: c.gtin,
+        serial: c.serial,
+        ai91: c.ai91,
+        ai92: c.ai92,
+        form: c.form as "base" | "extended",
+      })),
+    };
+  }
+
+  // статус из createdAt + конфиг (stateless)
+  private statusOf(order: { status: string; createdAt: Date }): MptOrderStatus {
+    if (order.status === "REJECTED" || order.status === "CLOSED")
+      return order.status as MptOrderStatus;
+    const age = Date.now() - order.createdAt.getTime();
+    if (age >= this.emissionMs) return "READY";
+    return "PENDING";
+  }
+
+  // генерация кодов один раз: serial уникальны по (gtin) между заказами (OPERATOR)
+  private async emitCodes(
+    mptOrderId: string,
+    gtin: string,
+    quantity: number
+  ): Promise<void> {
+    const count = await this.prisma.mptCode.count({ where: { mptOrderId } });
+    if (count > 0) return; // уже сгенерированы — идемпотентно
+    // мок-шов для теста расхождения количества: gtin с маркером "999999" → quantity−1 кодов
+    let effective = quantity;
+    if (gtin.includes("999999") && quantity > 1) effective = quantity - 1;
+    const prev = await this.prisma.mptCode.findFirst({
+      where: { gtin },
+      orderBy: { serial: "desc" },
+    });
+    let seed = prev ? Number(prev.serial) + 1 : 1;
+    const rows = [];
+    for (let i = 0; i < effective; i++) {
+      const serial = String(seed++).padStart(7, "0");
+      rows.push({
+        mptOrderId,
+        gtin,
+        serial,
+        ai91: null,
+        ai92: null,
+        form: "base" as const,
+      });
+    }
+    await this.prisma.mptCode.createMany({ data: rows });
   }
 }

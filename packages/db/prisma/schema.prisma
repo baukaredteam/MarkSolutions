@@ -20,6 +20,7 @@ model Tenant {
   accounts Account[]
   ledgerEntries LedgerEntry[]
   orders Order[]
+  mptOrders MptOrder[]
   products  Product[]
   users     User[]
   productCards ProductCard[]
@@ -208,4 +209,34 @@ model OrderLine {
   serialNumberType String @default("OPERATOR")
   tariffId      String
   pricePerCodeKZT BigInt  // снимок тарифа (смена тарифа заказ не меняет)
+}
+
+// Симулятор ИС МПТ (W3, ADR-005/024): state в БД, статус = f(now, createdAt, SIM_MPT_EMISSION_MS).
+model MptOrder {
+  id          String   @id @default(cuid())
+  version     Int      @default(0)
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  externalId  String   @unique // orderId из POST /api/orders (внутренний заказ)
+  gtin        String
+  quantity    Int
+  status      String   @default("CREATED") // CREATED|PENDING|READY|REJECTED|CLOSED (CONTRACT-IS-MPT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  codes       MptCode[]
+}
+
+// Коды симулятора (п.19 + ADR-006): структура {gtin, serial, ai91, ai92}, form base|extended.
+model MptCode {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  mptOrderId String
+  mptOrder  MptOrder @relation(fields: [mptOrderId], references: [id])
+  gtin      String
+  serial    String   // уникален по (gtin) между заказами (OPERATOR-генерация)
+  ai91      String?
+  ai92      String?
+  form      String   @default("base") // base|extended (ADR-006)
+  createdAt DateTime @default(now())
+  @@unique([gtin, serial])
 }

@@ -27,8 +27,10 @@ import { SeedService } from "./seed.service";
 import {
   MockGs1Adapter,
   MockNktAdapter,
+  MockMptAdapter,
   IGS1_ADAPTER,
   NKT_ADAPTER,
+  MPT_ADAPTER,
 } from "./integrations";
 import {
   FilesController,
@@ -121,6 +123,7 @@ export class AdminController {
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },
     { provide: NKT_ADAPTER, useClass: MockNktAdapter },
+    { provide: MPT_ADAPTER, useClass: MockMptAdapter },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
