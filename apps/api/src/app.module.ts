@@ -43,6 +43,8 @@ import { OrderController } from "./order.controller";
 import { OrderService } from "./order.service";
 import { VaultController } from "./vault.controller";
 import { VaultService } from "./vault.service";
+import { UtilisationController } from "./utilisation.controller";
+import { UtilisationService } from "./utilisation.service";
 import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
 import { join } from "node:path";
@@ -105,6 +107,7 @@ export class AdminController {
     BillingController,
     OrderController,
     VaultController,
+    UtilisationController,
   ],
   providers: [
     PrismaService,
@@ -118,6 +121,7 @@ export class AdminController {
     BillingService,
     OrderService,
     VaultService,
+    UtilisationService,
     {
       provide: KMS_ADAPTER,
       useFactory: () =>

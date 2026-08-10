@@ -23,6 +23,8 @@ model Tenant {
   mptOrders MptOrder[]
   codeVaults CodeVault[]
   vaultExports VaultExport[]
+  utilisationReports UtilisationReport[]
+  utilisationAlerts UtilisationAlert[]
   products  Product[]
   users     User[]
   productCards ProductCard[]
@@ -239,8 +241,26 @@ model MptCode {
   ai91      String?
   ai92      String?
   form      String   @default("base") // base|extended (ADR-006)
+  used      Boolean  @default(false) // нанесён (п.26) — повторное нанесение отклоняется
   createdAt DateTime @default(now())
   @@unique([gtin, serial])
+}
+
+// Отчёты о нанесении в симуляторе ИС МПТ (W3, п.26): stateless по SLA.
+model MptUtilisation {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  reportId  String   @unique
+  tenantId  String
+  sntins    Json
+  releaseType String
+  expirationDate String
+  productionDate String
+  manufacturerCountry String
+  status    String   @default("IN_PROCESS") // IN_PROCESS|SUCCESS|ERROR
+  rejectReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Code Vault (W3, CV-030..033): gtin ОТКРЫТЫЙ (индекс) + зашифрованный {serial,ai91,ai92}
@@ -272,5 +292,41 @@ model VaultExport {
   kind      String   // export|print (CV-032)
   reason    String?
   count     Int
+  createdAt DateTime @default(now())
+}
+
+// Отчёт о нанесении (W3, п.26): POST /api/utilisation → reportId; поллер доводит до SUCCESS/ERROR.
+model UtilisationReport {
+  id           String   @id @default(cuid())
+  version      Int      @default(0)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  orderId      String
+  idempotencyKey String  @unique
+  reportId     String   @unique
+  status       String   @default("IN_PROCESS") // IN_PROCESS|SUCCESS|ERROR (CONTRACT-IS-MPT)
+  sntins       Json     // массив строк (base64 serial-идентификаторов КМ)
+  releaseType  String   // PRODUCTION|IMPORT|CIRCULATION
+  expirationDate String
+  productionDate String
+  manufacturerCountry String
+  businessPlaceId String
+  rejectReason String?
+  settled      Boolean  @default(false) // SETTLE выполнен (п.26)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Таймер 30 дней (п.25, ADR-012): дедлайн = данные (срок 30, отсчёт от даты получения КМ).
+// Алерты 7/3/1 — задачи оператору и видны tenant'у.
+model UtilisationAlert {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orderId   String
+  daysLeft  Int      // 7|3|1
+  kind      String   // alert|expire
+  status    String   @default("OPEN") // OPEN|RESOLVED
   createdAt DateTime @default(now())
 }

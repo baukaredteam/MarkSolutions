@@ -123,6 +123,23 @@ export interface IMptAdapter {
     quantity: number;
   }>;
   getCodes(orderId: string): Promise<{ codes: MptCodeView[] }>;
+  submitUtilisation(input: {
+    tenantId: string;
+    sntins: string[];
+    businessPlaceId: number;
+    releaseType: string;
+    expirationDate: string;
+    productionDate: string;
+    manufacturerCountry: string;
+  }): Promise<{
+    reportId: string;
+    status: "IN_PROCESS" | "ERROR";
+    rejectReason?: string;
+  }>;
+  getUtilisation(reportId: string): Promise<{
+    status: "IN_PROCESS" | "SUCCESS" | "ERROR";
+    rejectReason?: string;
+  }>;
 }
 
 // Симулятор ИС МПТ (W3): stateless — статус = f(now, createdAt, SIM_MPT_EMISSION_MS).
@@ -223,8 +240,8 @@ export class MockMptAdapter implements IMptAdapter {
     // мок-шов для теста расхождения количества: gtin с маркером "999999" → quantity−1 кодов
     let effective = quantity;
     if (gtin.includes("999999") && quantity > 1) effective = quantity - 1;
+    // serial уникальны ГЛОБАЛЬНО (не только по gtin): исключаем коллизии between orders
     const prev = await this.prisma.mptCode.findFirst({
-      where: { gtin },
       orderBy: { serial: "desc" },
     });
     let seed = prev ? Number(prev.serial) + 1 : 1;
@@ -241,5 +258,89 @@ export class MockMptAdapter implements IMptAdapter {
       });
     }
     await this.prisma.mptCode.createMany({ data: rows });
+  }
+
+  // ---- Нанесение (п.26, CONTRACT-IS-MPT) ----
+  // sntins — это NTIN-идентификаторы КМ. В симуляторе сверяем с serial кодов (мок).
+  private get utilSlaMs(): number {
+    return Number(process.env.UTIL_SLA_MS ?? 3000);
+  }
+
+  async submitUtilisation(input: {
+    tenantId: string;
+    sntins: string[];
+    businessPlaceId: number;
+    releaseType: string;
+    expirationDate: string;
+    productionDate: string;
+    manufacturerCountry: string;
+  }): Promise<{
+    reportId: string;
+    status: "IN_PROCESS" | "ERROR";
+    rejectReason?: string;
+  }> {
+    // неизвестный код (serial не в MptCode) или уже нанесённый (used) → report сразу ERROR
+    let invalid: string | null = null;
+    for (const sntin of input.sntins) {
+      const code = await this.prisma.mptCode.findFirst({
+        where: { serial: sntin },
+      });
+      if (!code) {
+        invalid = `unknown code: ${sntin}`;
+        break;
+      }
+      if (code.used) {
+        invalid = `code already used: ${sntin}`;
+        break;
+      }
+    }
+    const reportId = `util-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    await this.prisma.mptUtilisation.create({
+      data: {
+        reportId,
+        tenantId: input.tenantId,
+        sntins: input.sntins,
+        releaseType: input.releaseType,
+        expirationDate: input.expirationDate,
+        productionDate: input.productionDate,
+        manufacturerCountry: input.manufacturerCountry,
+        status: invalid ? "ERROR" : "IN_PROCESS",
+        rejectReason: invalid ?? null,
+      },
+    });
+    return invalid
+      ? { reportId, status: "ERROR" as const, rejectReason: invalid }
+      : { reportId, status: "IN_PROCESS" as const };
+  }
+
+  async getUtilisation(reportId: string): Promise<{
+    status: "IN_PROCESS" | "SUCCESS" | "ERROR";
+    rejectReason?: string;
+  }> {
+    const report = await this.prisma.mptUtilisation.findUnique({
+      where: { reportId },
+    });
+    if (!report) return { status: "ERROR", rejectReason: "report not found" };
+    if (report.status === "ERROR")
+      return {
+        status: "ERROR",
+        rejectReason: report.rejectReason ?? undefined,
+      };
+    // IN_PROCESS → SUCCESS после SLA; помечаем коды нанесёнными (used=true)
+    const age = Date.now() - report.createdAt.getTime();
+    if (age >= this.utilSlaMs) {
+      if (report.status !== "SUCCESS") {
+        await this.prisma.mptCode.updateMany({
+          where: { serial: { in: report.sntins as string[] } },
+          data: { used: true },
+        });
+        await this.prisma.mptUtilisation.update({
+          where: { id: report.id },
+          data: { status: "SUCCESS" },
+        });
+      }
+      return { status: "SUCCESS" };
+    }
+    return { status: "IN_PROCESS" };
   }
 }
