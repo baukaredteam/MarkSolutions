@@ -19,3 +19,11 @@
 
 - Хешей полного КМ нет (не усложняем).
 - Структура base|extended — по ADR-006; рендер/парсинг только из структуры.
+
+## /ocr-review ca316e9 — LOW (принято, не блокер)
+
+- **`void attrs`** (vault.controller.ts:134,155): `attrs` вычисляется, но не используется — extended-логика уже в `revealForExport` (withExtended через card). Мёртвый код; убрать.
+- **`reveal` (print) возвращает `form:"base"` всегда** (vault.service.ts:87): vault хранит только base (симулятор эмитит base), extended применяется только в export с KMS_EXTENDED_CODES — консистентно, но print не учитывает extended-КМ (по спеке extended только для экспорта).
+- **`masks()` перезаписывает mask последней строкой** (vault.controller.ts:89 `cur.mask = i.mask`): для одного заказа все serial-маски одинаковы (первые2…последние2), утечки нет, косметика.
+- **log-scan CV-031**: тест проверяет отсутствие serial в ответах GET /api/codes и ciphertext ≠ serial; полного перехвата console.log нет — но serial физически не логируется (сериал только в seal/open, в open не логируется). При желании добавить spy на console.log в тесте.
+- **`ingest` не проверяет tenant на входе**: находит order по id, создаёт vault с `order.tenantId` — поллер вызывает только для своих заказов, безопасно; при прямом вызове извне — доверять вызывающему.
