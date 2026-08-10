@@ -7,12 +7,14 @@ import {
   MPT_ADAPTER,
 } from "./integrations";
 import { BillingService } from "./billing.service";
+import { VaultService } from "./vault.service";
 
 // OutboxPoller: асинхронные интеграции.
 // 1) nkt-register (T3): Approved → Registering → Registered (НКТ).
 // 2) send-order-to-mpt (W3, тикет 02): Queued → Sent (POST /api/orders в симулятор ИС МПТ),
 //    затем поллинг статусов (ORD-029, поллер=сверка): READY → Completed; REJECTED →
 //    Rejected + RELEASE + задача; PENDING дольше MPT_ORDER_TIMEOUT_MS → Failed + RELEASE + задача.
+// 3) инджест кодов в Code Vault (W3, тикет 04): COMPLETED/PARTIALLY → GET /api/codes из симулятора → Vault.
 @Injectable()
 export class OutboxPoller implements OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -20,6 +22,7 @@ export class OutboxPoller implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
+    private readonly vault: VaultService,
     @Inject(NKT_ADAPTER) private readonly nkt: INktAdapter,
     @Inject(MPT_ADAPTER) private readonly mpt: IMptAdapter
   ) {}
@@ -304,6 +307,8 @@ export class OutboxPoller implements OnModuleDestroy {
               },
             },
           });
+          // инджест: сколько пришло (PARTIALLY) — в Vault
+          await this.vault.ingest(orderId, codes.codes, order.cardId);
         }
         return;
       }
@@ -312,6 +317,8 @@ export class OutboxPoller implements OnModuleDestroy {
           where: { id: orderId },
           data: { status: "COMPLETED" },
         });
+        // инджест всех кодов в Vault (граница с тикетом 03)
+        await this.vault.ingest(orderId, codes.codes, order.cardId);
       }
       return;
     }

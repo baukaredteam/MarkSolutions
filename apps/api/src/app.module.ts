@@ -41,6 +41,9 @@ import { BillingController } from "./billing.controller";
 import { BillingService } from "./billing.service";
 import { OrderController } from "./order.controller";
 import { OrderService } from "./order.service";
+import { VaultController } from "./vault.controller";
+import { VaultService } from "./vault.service";
+import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
 import { join } from "node:path";
 
@@ -101,6 +104,7 @@ export class AdminController {
     FilesController,
     BillingController,
     OrderController,
+    VaultController,
   ],
   providers: [
     PrismaService,
@@ -113,6 +117,14 @@ export class AdminController {
     FilesService,
     BillingService,
     OrderService,
+    VaultService,
+    {
+      provide: KMS_ADAPTER,
+      useFactory: () =>
+        process.env.KMS_PROFILE === "openbao"
+          ? new VaultKmsAdapter()
+          : new FileKmsAdapter(),
+    },
     {
       provide: STORAGE_ADAPTER,
       useFactory: () =>
