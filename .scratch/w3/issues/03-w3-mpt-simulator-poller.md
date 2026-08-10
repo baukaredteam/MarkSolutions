@@ -4,15 +4,16 @@
 
 **Blocked by:** 02 (W3: заказ КМ)
 
-**Status:** ready-for-agent
+**Status:** done (feat/w3-simulator)
 
-- [ ] Симулятор stateless, без setTimeout: status = f(now, createdAt, SIM_MPT_EMISSION_MS); PENDING пока now−createdAt < задержки, затем READY
-- [ ] POST /api/orders (productGroup, products[gtin, quantity, serialNumberType=OPERATOR, cisType=UNIT], businessPlaceId, releaseMethodType, isPaid=true) → orderId; GET /api/orders (CREATED|PENDING|READY|REJECTED|CLOSED); GET /api/codes только для READY/CLOSED (CONTRACT-IS-MPT)
-- [ ] Коды генерируются ОДИН раз при первом переходе в READY и сохраняются; GET /api/codes идемпотентен (те же коды при повторе); serial уникальны по (gtin) между заказами, валидны по п.19 + ADR-006
-- [ ] Поллер MarkFlow (MPT_POLL_MS, конфиг): опрашивает ВСЕ незакрытые заказы (Sent/Accepted/Processing), догоняет пропущенные статусы (тест: вручную READY → догоняется ≤ 2 интервалов)
-- [ ] MPT_ORDER_TIMEOUT_MS: PENDING дольше → заказ Failed + RELEASE + задача оператору (ID-017)
-- [ ] Внешние CREATED|PENDING|READY → внутренняя машина ORD-026 (Sent→Processing→Completed); READY → Completed + коды в Code Vault (интерфейс Vault готов, реализация в тикете 04)
-- [ ] ORD-029: поллер = сверка; дневного джоба нет; расхождение quantity → Partially Completed + задача оператору, без авто-финкорректировки (мок-шов quantity−1 в тесте)
+- [x] Симулятор stateless, без setTimeout: status = f(now, createdAt, SIM_MPT_EMISSION_MS); PENDING пока now−createdAt < задержки, затем READY
+- [x] POST /api/orders (идемпотентно по orderId), GET /api/orders (CREATED|PENDING|READY|REJECTED|CLOSED), GET /api/codes только для READY/CLOSED (CONTRACT-IS-MPT) — порт IMptAdapter (ADR-005), мок в БД (MptOrder/MptCode)
+- [x] Коды генерируются ОДИН раз при первом переходе в READY и сохраняются; GET /api/codes идемпотентен; serial уникальны по (gtin) между заказами (composite @@unique[gtin,serial]), 7-значные по п.19; form base|extended (ADR-006)
+- [x] Поллер MarkFlow (MPT_POLL_MS): outbox send-order-to-mpt → Sent (at-least-once, re-check CANCELLED перед SENT); опрашивает ВСЕ незакрытые (Sent/Processing/Partially), догоняет статусы
+- [x] MPT_ORDER_TIMEOUT_MS: PENDING дольше → Failed + RELEASE (идемпотентный) + задача (outbox mpt-order-timeout FAILED)
+- [x] READY → Completed; REJECTED → Rejected + RELEASE + задача; граница с тикетом 04: коды остаются в симуляторе (инджест в Vault — тикет 04)
+- [x] ORD-029: поллер = сверка; дневного джоба нет; расхождение quantity (мок-шов gtin с 999999 → quantity−1) → Partially Completed + задача, без авто-финкорректировки
+- [x] Стоп-тесты: restart не теряет статусы; GET /api/codes идемпотентен; ручной READY (сдвиг createdAt) догоняется; таймаут → Failed+RELEASE+задача; расхождение → Partially; Cancelled не отправляется/не эмитит (cancel нейтрализует outbox + re-check в поллере)
 
 ## Ограничения
 
