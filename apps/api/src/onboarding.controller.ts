@@ -101,7 +101,9 @@ export class OnboardingController {
   @Public()
   @Get(":id")
   async get(@Param("id") id: string) {
-    const app = await this.prisma.application.findUnique({ where: { id } });
+    const app = await this.prisma.application.findFirst({
+      where: { OR: [{ id }, { bin: id }] },
+    });
     if (!app) throw new NotFoundException("application not found");
     return {
       id: app.id,

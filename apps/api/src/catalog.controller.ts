@@ -318,7 +318,10 @@ export class CatalogService {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const rows = JSON.parse(
-      readFileSync(join(process.cwd(), "fixtures", "invoice-38.json"), "utf8")
+      readFileSync(
+        join(__dirname, "..", "..", "..", "fixtures", "invoice-38.json"),
+        "utf8"
+      )
     ) as DraftRow[];
     for (const r of rows) {
       await this.createDraft(tenantId, { ...r, demo: r.demo ?? false });

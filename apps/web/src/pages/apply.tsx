@@ -41,7 +41,8 @@ export function ApplyPage() {
         status: string;
       }>("/onboarding/applications", {
         ...form,
-        offerVersion: OFFER_VERSION,
+        consentDocument: "offer-v1",
+        consentSubject: form.email || form.contact,
       });
       setCreatedId(body.id);
       setDone(true);
