@@ -279,6 +279,24 @@ describe("order create (W3, ORD-024..028)", () => {
     expect(reserves).toBe(1);
   });
 
+  it("AT-07 конкурентный: два параллельных POST с одним ключом → оба 201, один заказ (P2002 → existing)", async () => {
+    const { id: cardId, gtin } = await createCard();
+    const key = "k-at07-conc";
+    const [a, b] = await Promise.all([
+      createOrder({ cardId, gtin, places: 1, unitsPerPlace: 1 }, key),
+      createOrder({ cardId, gtin, places: 1, unitsPerPlace: 1 }, key),
+    ]);
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    expect(a.body.id).toBe(b.body.id); // тот же заказ (не 500)
+    const orders = await prisma.order.count({ where: { idempotencyKey: key } });
+    expect(orders).toBe(1);
+    const reserves = await prisma.ledgerEntry.count({
+      where: { tenantId, kind: "RESERVE", refOrderId: a.body.id },
+    });
+    expect(reserves).toBe(1);
+  });
+
   it("cisType GROUP/SET → 400; serialNumberType SELF_MADE → 400", async () => {
     const { id: cardId, gtin } = await createCard();
     await createOrder(

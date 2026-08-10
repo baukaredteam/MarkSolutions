@@ -99,67 +99,91 @@ export class OrderService {
     }
 
     // ОДНА транзакция: заказ + RESERVE (CAS) + outbox; machine Draft→…→Queued
-    const order = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
-        data: {
-          tenantId,
-          idempotencyKey,
-          cardId: card.id,
-          gtin: body.gtin,
-          isPaid: true,
-          status: "DRAFT",
-        },
-      });
-      // ORD-026: Draft → Validating → Funds Reserved → Queued
-      await tx.order.update({
-        where: { id: created.id },
-        data: { status: "VALIDATING" },
-      });
-      await this.billing.reserveOn(
-        tx,
-        tenantId,
-        created.id,
-        totalPrice,
-        `order ${created.id}`
-      );
-      await tx.order.update({
-        where: { id: created.id },
-        data: { status: "FUNDS_RESERVED" },
-      });
-      await tx.orderLine.create({
-        data: {
-          orderId: created.id,
-          cardId: card.id,
-          gtin: body.gtin,
-          places: body.places,
-          unitsPerPlace: body.unitsPerPlace,
-          quantity,
-          totalPrice,
-          cisType: "UNIT",
-          serialNumberType: "OPERATOR",
-          tariffId: tariff.id,
-          pricePerCodeKZT: BigInt(pricePerCodeKZT),
-        },
-      });
-      // финал create = QUEUED (вариант b: статус — синхронный финал create,
-      // без лишнего SELECT после транзакции)
-      const queued = await tx.order.update({
-        where: { id: created.id },
-        data: { status: "QUEUED" },
-      });
-      await tx.outbox.create({
-        data: {
-          aggregate: "send-order-to-mpt",
-          payload: {
-            orderId: created.id,
+    let order;
+    try {
+      order = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.order.create({
+          data: {
             tenantId,
+            idempotencyKey,
+            cardId: card.id,
             gtin: body.gtin,
-            quantity,
+            isPaid: true,
+            status: "DRAFT",
           },
-        },
+        });
+        // ORD-026: Draft → Validating → Funds Reserved → Queued
+        await tx.order.update({
+          where: { id: created.id },
+          data: { status: "VALIDATING" },
+        });
+        await this.billing.reserveOn(
+          tx,
+          tenantId,
+          created.id,
+          totalPrice,
+          `order ${created.id}`
+        );
+        await tx.order.update({
+          where: { id: created.id },
+          data: { status: "FUNDS_RESERVED" },
+        });
+        await tx.orderLine.create({
+          data: {
+            orderId: created.id,
+            cardId: card.id,
+            gtin: body.gtin,
+            places: body.places,
+            unitsPerPlace: body.unitsPerPlace,
+            quantity,
+            totalPrice,
+            cisType: "UNIT",
+            serialNumberType: "OPERATOR",
+            tariffId: tariff.id,
+            pricePerCodeKZT: BigInt(pricePerCodeKZT),
+          },
+        });
+        // финал create = QUEUED (вариант b: статус — синхронный финал create,
+        // без лишнего SELECT после транзакции)
+        const queued = await tx.order.update({
+          where: { id: created.id },
+          data: { status: "QUEUED" },
+        });
+        await tx.outbox.create({
+          data: {
+            aggregate: "send-order-to-mpt",
+            payload: {
+              orderId: created.id,
+              tenantId,
+              gtin: body.gtin,
+              quantity,
+            },
+          },
+        });
+        return queued;
       });
-      return queued;
-    });
+    } catch (e) {
+      // конкурентный повтор того же Idempotency-Key: unique(idempotencyKey) → P2002.
+      // Возвращаем существующий заказ (AT-07), не 500.
+      if ((e as { code?: string }).code === "P2002") {
+        const existing = await this.prisma.order.findUnique({
+          where: { idempotencyKey },
+          include: { lines: true },
+        });
+        if (existing) {
+          return {
+            id: existing.id,
+            status: existing.status,
+            isPaid: existing.isPaid,
+            lines: existing.lines.map((l) => ({
+              quantity: l.quantity,
+              totalPrice: l.totalPrice.toString(),
+            })),
+          };
+        }
+      }
+      throw e;
+    }
     if (!order) throw new NotFoundException("order not found");
 
     return {
