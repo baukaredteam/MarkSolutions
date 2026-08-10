@@ -221,6 +221,20 @@ export class OrderService {
       where: { id: orderId },
       data: { status: "CANCELLED" },
     });
+    // отмена выигрывает гонку с поллером: нейтрализуем ещё не отправленный outbox
+    const pending = await this.prisma.outbox.findMany({
+      where: { aggregate: "send-order-to-mpt", status: "PENDING" },
+      take: 50,
+    });
+    const mine = pending.filter(
+      (r) => (r.payload as { orderId?: string }).orderId === orderId
+    );
+    for (const r of mine) {
+      await this.prisma.outbox.update({
+        where: { id: r.id },
+        data: { status: "PROCESSED", processedAt: new Date() },
+      });
+    }
     return { id: orderId, status: "CANCELLED" };
   }
 

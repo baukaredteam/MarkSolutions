@@ -33,9 +33,12 @@ export class ModerationController {
 
   @Get("exceptions")
   async exceptions() {
-    // ID-017: дашборд исключений оператора — таймауты/ошибки регистрации НКТ
+    // ID-017: дашборд исключений оператора — таймауты/ошибки НКТ и ИС МПТ
     const rows = await this.prisma.outbox.findMany({
-      where: { aggregate: "nkt-register", status: "FAILED" },
+      where: {
+        aggregate: { in: ["nkt-register", "mpt-order-timeout"] },
+        status: "FAILED",
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
