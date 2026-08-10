@@ -4,14 +4,15 @@
 
 **Blocked by:** 03 (W3: симулятор + поллер), 04 (W3: Code Vault)
 
-**Status:** ready-for-agent
+**Status:** done (feat/w3-utilisation)
 
-- [ ] POST /api/utilisation по CONTRACT-IS-MPT: sntins[], businessPlaceId, releaseType, expirationDate ОБЯЗ, productionDate ОБЯЗ, manufacturerCountry ОБЯЗ (ISO2) → reportId; GET /api/utilisation/:id → IN_PROCESS|SUCCESS|ERROR
-- [ ] Успех регистрации = SETTLE: списание КМ с баланса (п.26), резерв гасится; каждая SETTLE с refOrderId и причиной
-- [ ] GET /api/utilisation не «готово» по факту отправки — поллер доводит до SUCCESS/ERROR
-- [ ] Таймер 30 дней (п.25, ADR-012): дедлайн = данные (таблица: срок→отсчёт→календ/раб→пункт), от даты получения КМ; алерты 7/3/1
-- [ ] Аннулирование просроченных КМ = смена статуса (не физическое удаление)
-- [ ] Тест: нанесение → КМ списаны, баланс уменьшен, резерв погашен
+- [x] Симулятор: POST /api/utilisation (sntins[], businessPlaceId, releaseType, expirationDate/productionDate/manufacturerCountry обяз) → reportId; GET /api/utilisation/:reportId → IN_PROCESS|SUCCESS|ERROR(+rejectReason); неизвестный код (serial не в MptCode) или уже нанесённый (used) → ERROR сразу
+- [x] MarkFlow: POST /utilisation {orderId, releaseType, даты, страна} → полные КМ из Vault (reveal + аудит CV-032) → submitUtilisation → UtilisationReport; поллер (pollReports) доводит до SUCCESS/ERROR
+- [x] SUCCESS = SETTLE (п.26): BillingService.settle(totalPrice из снимка заказа, refOrderId+reason), коды → UTILISED, резерв заказа гасится (RELEASE); идемпотентно по settled
+- [x] ERROR → списания НЕТ; задача оператору (mpt-order-timeout FAILED) с rejectReason
+- [x] Таймер 30 дней (ADR-012): UTIL_DEADLINE_DAYS (конфиг, дедлайн=данные), отсчёт от order.updatedAt; поллер алертов 7/3/1 (UtilisationAlert + задача) и аннулирование после дедлайна = EXPIRED (смена статуса, не удаление)
+- [x] Стоп-тесты: без expirationDate → 400; SETTLE только после SUCCESS; повторное нанесение того же кода → ERROR («code already used»); аннулирование не удаляет строки Vault
+- [x] e2e: SUCCESS → коды UTILISED, balance −= totalPrice, резерв заказа погашен (RELEASE); ERROR → без списания + задача; сдвиг даты → алерты 7/3/1 + EXPIRED
 
 ## Ограничения
 
