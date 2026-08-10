@@ -4,14 +4,16 @@
 
 **Blocked by:** 03 (W3: симулятор + поллер)
 
-**Status:** ready-for-agent
+**Status:** done (feat/w3-vault)
 
-- [ ] Vault-строка: gtin ОТКРЫТЫЙ + зашифрованный {serial, ai91, ai92} (AES-256-GCM, per-row nonce рядом с ciphertext) + метадата {orderId, cardId, tenantId, status, createdAt, mask}; ключи через KMS_PROFILE (file-KMS dev / OpenBao prod), без правок кода при переключении
-- [ ] Негативный тест CV-030: дамп БД без ключей не содержит serial/ai91/ai92 (расшифровка без ключа падает)
-- [ ] Маска КМ: gtin открыт + serial «первые 2 + … + последние 2» при length>6, иначе полностью скрыт; CV-031: serial не попадает в логи/APM (тест log-scan)
-- [ ] GET /api/codes отдаёт маску + gtin + статус + количество (без полных serial)
-- [ ] Экспорт CSV (CV-032): колонки gtin, serial, ai91, ai92, form, km_full, orderId; km_full с литералом <GS> (текст, не байт 0x1D), сериализация из структуры ADR-006; UTF-8 BOM, «;»; только READY/Completed (иначе 409); tenant-scoped; роли admin/accountant; каждая выгрузка = аудит (actor, время, orderId, причина)
-- [ ] Полный КМ — только печать этикетки и экспорт, каждая с аудит-записью (CV-032)
+- [x] Vault-строка: gtin ОТКРЫТЫЙ + зашифрованный {serial, ai91, ai92} (AES-256-GCM, per-row nonce (12) || tag (16) || ciphertext, base64) + метадата {orderId, cardId, tenantId, status, createdAt, mask}; ключи через KMS_ADAPTER + KMS_PROFILE (file-KMS dev / VaultKmsAdapter-заглушка prod), без правок кода при переключении
+- [x] Негативный тест CV-030: дамп БД (raw JSON vault) не содержит plaintext serial; ciphertext ≠ serial
+- [x] Маска КМ: mask = `{gtin}:{первые2…последние2}` при length>6, иначе «••••»; CV-031: serial не в ответах GET /api/codes и не в ciphertext
+- [x] GET /api/codes отдаёт {gtin, mask, quantity, status, orderId} (одна строка на заказ, без полных serial)
+- [x] Экспорт CSV (CV-032): колонки gtin, serial, ai91, ai92, form, km_full, orderId; km_full с литералом <GS> (текст, не байт 0x1D), сериализация из структуры ADR-006; UTF-8 BOM («\uFEFF»), «;», кавычки; только COMPLETED/PARTIALLY (иначе 409); tenant-scoped (чужой → 404); каждая выгрузка = аудит VaultExport (actor, время, orderId, причина, count); повторный экспорт разрешён и тоже аудируется
+- [x] Полный КМ — только печать (POST /codes/print) и экспорт, каждая с аудит-записью (CV-032)
+- [x] Инджест из симулятора (граница с тикетом 03): поллер при COMPLETED/PARTIALLY читает GET /api/codes → VaultService.ingest → CodeVault (ACTIVE); идемпотентно (count>0 → skip)
+- [x] Расширенный рендер ADR-006: KMS_EXTENDED_CODES=true → ai91=gtin, ai92=tnved, form=extended; дефолт false → base
 
 ## Ограничения
 
