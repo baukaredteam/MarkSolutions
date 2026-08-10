@@ -21,6 +21,8 @@ model Tenant {
   ledgerEntries LedgerEntry[]
   orders Order[]
   mptOrders MptOrder[]
+  codeVaults CodeVault[]
+  vaultExports VaultExport[]
   products  Product[]
   users     User[]
   productCards ProductCard[]
@@ -239,4 +241,36 @@ model MptCode {
   form      String   @default("base") // base|extended (ADR-006)
   createdAt DateTime @default(now())
   @@unique([gtin, serial])
+}
+
+// Code Vault (W3, CV-030..033): gtin ОТКРЫТЫЙ (индекс) + зашифрованный {serial,ai91,ai92}
+// AES-256-GCM (per-row nonce рядом с ciphertext). Метадата открыта.
+model CodeVault {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  orderId   String
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  cardId    String?
+  gtin      String   // открытый (публичный идентификатор, индекс)
+  mask      String   // маска для UI/логов (CV-031)
+  status    String   @default("ACTIVE") // ACTIVE|USED|CANCELLED|EXPIRED (тикет 05 добавит USED/EXPIRED)
+  ciphertext String  // base64: nonce(12) + GCM-tag(16) + encrypted(JSON {serial,ai91,ai92})
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, gtin])
+}
+
+// Аудит выдачи/печати КМ (CV-032): каждая выгрузка/печать фиксирует actor, время, основание, кол-во, orderId.
+model VaultExport {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orderId   String
+  actor     String
+  kind      String   // export|print (CV-032)
+  reason    String?
+  count     Int
+  createdAt DateTime @default(now())
 }
