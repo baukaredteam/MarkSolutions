@@ -7,10 +7,14 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 
 const RESERVE_KINDS = ["TOPUP", "RESERVE", "RELEASE", "SETTLE"] as const;
 type LedgerKind = (typeof RESERVE_KINDS)[number];
+
+// db — PrismaClient или TransactionClient (для одной транзакции заказ+резерв)
+type Db = PrismaService | Prisma.TransactionClient;
 
 export interface BalanceView {
   balance: bigint;
@@ -25,16 +29,16 @@ export interface BalanceView {
 export class BillingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getAccount(tenantId: string) {
-    const account = await this.prisma.account.findFirst({
+  private async getAccount(db: Db, tenantId: string) {
+    const account = await db.account.findFirst({
       where: { tenantId },
     });
     if (!account) throw new NotFoundException("account not found");
     return account;
   }
 
-  private async activeReserve(tenantId: string): Promise<bigint> {
-    const rows = await this.prisma.ledgerEntry.findMany({
+  private async activeReserve(db: Db, tenantId: string): Promise<bigint> {
+    const rows = await db.ledgerEntry.findMany({
       where: { tenantId, kind: { in: ["RESERVE", "RELEASE"] } },
       select: { kind: true, amount: true },
     });
@@ -44,8 +48,8 @@ export class BillingService {
     }, BigInt(0));
   }
 
-  private async balanceOf(tenantId: string): Promise<bigint> {
-    const rows = await this.prisma.ledgerEntry.findMany({
+  private async balanceOf(db: Db, tenantId: string): Promise<bigint> {
+    const rows = await db.ledgerEntry.findMany({
       where: { tenantId, kind: { in: ["TOPUP", "SETTLE"] } },
       select: { kind: true, amount: true },
     });
@@ -56,8 +60,8 @@ export class BillingService {
   }
 
   async getBalance(tenantId: string): Promise<BalanceView> {
-    const reserved = await this.activeReserve(tenantId);
-    const balance = await this.balanceOf(tenantId);
+    const reserved = await this.activeReserve(this.prisma, tenantId);
+    const balance = await this.balanceOf(this.prisma, tenantId);
     return { balance, reserved, available: balance - reserved };
   }
 
@@ -65,7 +69,8 @@ export class BillingService {
   // Один вызов = одна проводка + атомарный баланс. checkAvailable вызывается
   // ВНУТРИ каждой итерации (после CAS-конфликта), чтобы concurrent-резервы
   // видели уже записанные RESERVE (сериализация через version bump).
-  private async apply(
+  private async applyOn(
+    db: Db,
     tenantId: string,
     kind: LedgerKind,
     amount: bigint,
@@ -83,17 +88,17 @@ export class BillingService {
     if (!RESERVE_KINDS.includes(kind)) {
       throw new BadRequestException(`invalid ledger kind: ${kind}`);
     }
-    const account = await this.getAccount(tenantId);
+    const account = await this.getAccount(db, tenantId);
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const current = await this.prisma.account.findUnique({
+        const current = await db.account.findUnique({
           where: { id: account.id },
         });
         if (!current) throw new NotFoundException("account not found");
         // единственный уникальный ref1c: повторный TOPUP должен вернуть старую проводку
         const existing =
           opts.ref1c && kind === "TOPUP"
-            ? await this.prisma.ledgerEntry.findUnique({
+            ? await db.ledgerEntry.findUnique({
                 where: { ref1c: opts.ref1c },
               })
             : null;
@@ -104,11 +109,11 @@ export class BillingService {
               kind: existing.kind,
               amount: BigInt(existing.amount),
             },
-            balance: await this.balanceOf(tenantId),
+            balance: await this.balanceOf(db, tenantId),
           };
         }
         if (opts.checkAvailable) {
-          const reserved = await this.activeReserve(tenantId);
+          const reserved = await this.activeReserve(db, tenantId);
           const balance = current.balance;
           if (!opts.checkAvailable(balance, reserved)) {
             throw new HttpException(
@@ -128,7 +133,7 @@ export class BillingService {
           }
         }
         const nextBalance = current.balance + opts.delta;
-        const updated = await this.prisma.account.updateMany({
+        const updated = await db.account.updateMany({
           where: { id: account.id, version: current.version },
           data: { balance: nextBalance, version: { increment: 1 } },
         });
@@ -147,7 +152,7 @@ export class BillingService {
             retryable: true,
           });
         }
-        const entry = await this.prisma.ledgerEntry.create({
+        const entry = await db.ledgerEntry.create({
           data: {
             tenantId,
             accountId: account.id,
@@ -171,7 +176,7 @@ export class BillingService {
           throw e;
         // уникальный ref1c нарушен конкурентным повтором — вернуть существующий
         if (opts.ref1c && (e as { code?: string }).code === "P2002") {
-          const existing = await this.prisma.ledgerEntry.findUnique({
+          const existing = await db.ledgerEntry.findUnique({
             where: { ref1c: opts.ref1c },
           });
           if (existing) {
@@ -181,7 +186,7 @@ export class BillingService {
                 kind: existing.kind,
                 amount: BigInt(existing.amount),
               },
-              balance: await this.balanceOf(tenantId),
+              balance: await this.balanceOf(db, tenantId),
             };
           }
         }
@@ -189,6 +194,21 @@ export class BillingService {
       }
     }
     throw new ServiceUnavailableException("billing apply failed");
+  }
+
+  private async apply(
+    tenantId: string,
+    kind: LedgerKind,
+    amount: bigint,
+    opts: {
+      refOrderId?: string;
+      ref1c?: string;
+      reason?: string;
+      delta: bigint;
+      checkAvailable?: (balance: bigint, reserved: bigint) => boolean;
+    }
+  ) {
+    return this.applyOn(this.prisma, tenantId, kind, amount, opts);
   }
 
   private sleep(ms: number) {
@@ -235,9 +255,20 @@ export class BillingService {
     amount: bigint,
     reason?: string
   ) {
+    return this.reserveOn(this.prisma, tenantId, orderId, amount, reason);
+  }
+
+  // резерв внутри интерактивной транзакции (заказ + RESERVE + outbox одной транзакцией)
+  async reserveOn(
+    db: Db,
+    tenantId: string,
+    orderId: string,
+    amount: bigint,
+    reason?: string
+  ) {
     if (amount <= BigInt(0))
       throw new BadRequestException("amount must be positive");
-    const existing = await this.prisma.ledgerEntry.findFirst({
+    const existing = await db.ledgerEntry.findFirst({
       where: { tenantId, kind: "RESERVE", refOrderId: orderId },
     });
     if (existing) {
@@ -248,7 +279,7 @@ export class BillingService {
       };
     }
     // RESERVE не меняет balance (delta=0), но CAS-версию двигает для сериализации
-    const result = await this.apply(tenantId, "RESERVE", amount, {
+    const result = await this.applyOn(db, tenantId, "RESERVE", amount, {
       refOrderId: orderId,
       reason,
       delta: BigInt(0),

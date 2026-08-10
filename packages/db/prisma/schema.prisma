@@ -19,6 +19,7 @@ model Tenant {
   status  String  @default("PENDING") // PENDING|ACTIVE|REJECTED (ADR-016: String)
   accounts Account[]
   ledgerEntries LedgerEntry[]
+  orders Order[]
   products  Product[]
   users     User[]
   productCards ProductCard[]
@@ -173,4 +174,38 @@ model DraftProposal {
   audit      Json     @default("[]") // [{at, actor, action}] (Q3/Q4: решения аудируются)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// Заказ КМ (W3, ADR-024): ORD-026 машина Draft->Validating->Funds Reserved->Queued->Sent->...
+model Order {
+  id           String   @id @default(cuid())
+  version      Int      @default(0)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  status       String   @default("DRAFT") // ORD-026: DRAFT|VALIDATING|FUNDS_RESERVED|QUEUED|SENT|ACCEPTED|PROCESSING|PARTIALLY_COMPLETED|COMPLETED|REJECTED|CANCELLED|FAILED
+  idempotencyKey String  @unique
+  cardId       String?
+  gtin         String?
+  isPaid       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lines        OrderLine[]
+}
+
+// Снимок единиц маркировки + тарифа (ADR-024): 1 заказ = 1 строка в MVP.
+model OrderLine {
+  id            String   @id @default(cuid())
+  version       Int      @default(0)
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  cardId        String
+  gtin          String
+  places        Int
+  unitsPerPlace Int
+  quantity      Int      // 1 <= quantity <= places*unitsPerPlace
+  totalPrice    BigInt   // целые тенге = quantity * pricePerCodeKZT
+  cisType       String   @default("UNIT")
+  serialNumberType String @default("OPERATOR")
+  tariffId      String
+  pricePerCodeKZT BigInt  // снимок тарифа (смена тарифа заказ не меняет)
 }
