@@ -145,6 +145,40 @@ async function main() {
       fail("orders page", error);
     }
 
+    // ---- W4-02: печать этикетки → скан (APPLIED) ----
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const j = (path) => fetch(`/api${path}`, { headers: h }).then((r) => r.json());
+        const agg = await j("/api/codes");
+        const orderId = agg.items?.[0]?.orderId;
+        if (!orderId) throw new Error("no codes in vault");
+        const detail = await j(`/codes/${orderId}/codes`);
+        const code = detail.items?.find((c) => c.status === "ACTIVE");
+        if (!code) throw new Error("no ACTIVE code to print");
+        const printed = await fetch(`/api/labels/${code.id}/print`, {
+          method: "POST",
+          headers: { ...h, "Content-Type": "application/json" },
+          body: "{}",
+        }).then((r) => r.json());
+        if (!printed.pngBase64) throw new Error(`print failed: ${JSON.stringify(printed)}`);
+        // «скан телефоном»: отправляем распечатанный PNG обратно как apply
+        const applied = await fetch(`/api/codes/${code.id}/apply`, {
+          method: "POST",
+          headers: { ...h, "Content-Type": "application/json" },
+          body: JSON.stringify({ png: printed.pngBase64 }),
+        }).then((r) => r.json());
+        if (applied.status !== "APPLIED") throw new Error(`apply failed: ${JSON.stringify(applied)}`);
+        return { status: applied.status, key: printed.key };
+      });
+      if (result.status !== "APPLIED") throw new Error("apply did not reach APPLIED");
+      pass(`print → scan (APPLIED), label key ${result.key.slice(0, 8)}…`);
+    } catch (error) {
+      fail("print → scan (APPLIED)", error);
+    }
+
     try {
       await page.getByRole("link", { name: "Алерты" }).click();
       await page.getByText("Алерты и задачи", { exact: true }).waitFor({ state: "visible" });

@@ -278,6 +278,7 @@ model CodeVault {
   mask      String   // маска для UI/логов (CV-031)
   status    String   @default("ACTIVE") // MVP-набор (ADR-025): ACTIVE|PRINTED|APPLIED|UTILISED|INTRODUCED|EXPIRED|AGGREGATED|WITHDRAWN|WRITTEN_OFF
   ciphertext String  // base64: nonce(12) + GCM-tag(16) + encrypted(JSON {serial,ai91,ai92})
+  labelKey  String?  // content-addressed key PNG DataMatrix (W4-02): повторная печать = тот же key
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   events    CodeEvent[]

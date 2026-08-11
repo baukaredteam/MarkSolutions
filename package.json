@@ -40,5 +40,9 @@
     "tsx": "^4.23.9",
     "typescript": "^5.5.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@sec-ant/zxing-wasm": "^2.2.0",
+    "bwip-js": "^4.11.2"
   }
 }

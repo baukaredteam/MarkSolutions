@@ -89,6 +89,39 @@ export class VaultService {
     return out;
   }
 
+  // дешифрованный КМ по codeId (W4-02, печать/скан одного кода)
+  async revealOne(codeId: string, tenantId: string): Promise<VaultCode> {
+    const row = await this.prisma.codeVault.findFirst({
+      where: { id: codeId, tenantId },
+    });
+    if (!row) throw new NotFoundException("code not found");
+    const { serial, ai91, ai92 } = await this.open(row.ciphertext);
+    const card = row.cardId
+      ? await this.prisma.productCard.findUnique({ where: { id: row.cardId } })
+      : null;
+    return this.withExtended(
+      { gtin: row.gtin, serial, ai91, ai92, form: "base" },
+      card
+    );
+  }
+
+  // индивидуальные коды заказа для печати (W4-02): id/mask/status, без serial
+  async codesByOrder(
+    orderId: string,
+    tenantId: string
+  ): Promise<{ id: string; gtin: string; mask: string; status: string }[]> {
+    const rows = await this.prisma.codeVault.findMany({
+      where: { orderId, tenantId },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      gtin: r.gtin,
+      mask: r.mask,
+      status: r.status,
+    }));
+  }
+
   // маски для GET /api/codes (без полных serial)
   async masks(
     tenantId: string

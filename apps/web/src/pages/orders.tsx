@@ -14,21 +14,43 @@ interface OrderRow {
 }
 
 interface CodeRow {
+  id: string;
   gtin: string;
   mask: string;
-  quantity: number;
   status: string;
   orderId: string;
 }
 
-// Экран «Заказы» (W3): GET /orders + детали с масками КМ (GET /api/codes),
-// кнопка «Скачать коды» (POST /codes/export CSV + аудит), форма создания заказа.
+interface CodeItem {
+  id: string;
+  gtin: string;
+  mask: string;
+  status: string;
+}
+
+const REPRINT_REASONS = [
+  ["PRINT_DEFECT", "Брак печати"],
+  ["DAMAGED_BEFORE_APPLY", "Повреждена до нанесения"],
+  ["LOST_LABEL", "Потеряна этикетка"],
+  ["OTHER", "Другое"],
+] as const;
+
+// Экран «Заказы» (W3+W4-02): заказы, индивидуальные коды с печатью/перепечаткой
+// этикеток (bwip-js → PNG preview), скачивание CSV, создание заказа.
 export function OrdersPage() {
   const toast = useToast();
   const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [codes, setCodes] = useState<CodeRow[]>([]);
+  const [codes, setCodes] = useState<Record<string, CodeItem[]>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    codeId: string;
+    dataUrl: string;
+  } | null>(null);
+  const [reprintFor, setReprintFor] = useState<string | null>(null);
+  const [reason, setReason] = useState<string>("PRINT_DEFECT");
+  const [comment, setComment] = useState("");
 
   async function load() {
     setLoading(true);
@@ -38,7 +60,14 @@ export function OrdersPage() {
       const c = await api
         .get<{ items: CodeRow[] }>("/api/codes")
         .catch(() => ({ items: [] }));
-      setCodes(c.items);
+      const byOrder: Record<string, CodeItem[]> = {};
+      for (const row of c.items) {
+        const list = await api
+          .get<{ items: CodeItem[] }>(`/codes/${row.orderId}/codes`)
+          .catch(() => ({ items: [] }));
+        byOrder[row.orderId] = list.items;
+      }
+      setCodes(byOrder);
     } catch (e) {
       if (e instanceof ApiErrorResponse)
         toast.push(`${e.error.code}: ${e.error.message}`);
@@ -57,7 +86,6 @@ export function OrdersPage() {
     try {
       const res = await api.postBlob("/codes/export", { orderId });
       if (res.status === 201) {
-        // скачивание CSV (BOM + «;»)
         const blob = new Blob([res.text], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -72,6 +100,48 @@ export function OrdersPage() {
         toast.push(`${e.error.code}: ${e.error.message}`);
       else if (e instanceof ApiUnavailable)
         toast.push("Сервис недоступен. Попробуйте позже.");
+    }
+  }
+
+  async function print(codeId: string) {
+    setBusyCode(codeId);
+    try {
+      const res = await api.post<{ key: string; pngBase64: string }>(
+        `/labels/${codeId}/print`,
+        {}
+      );
+      setPreview({ codeId, dataUrl: `data:image/png;base64,${res.pngBase64}` });
+      toast.push("Этикетка сформирована (PRINTED)");
+    } catch (e) {
+      if (e instanceof ApiErrorResponse)
+        toast.push(`${e.error.code}: ${e.error.message}`);
+      else if (e instanceof ApiUnavailable)
+        toast.push("Сервис недоступен. Попробуйте позже.");
+    } finally {
+      setBusyCode(null);
+      load();
+    }
+  }
+
+  async function reprint(codeId: string) {
+    setBusyCode(codeId);
+    try {
+      const res = await api.post<{ key: string; pngBase64: string }>(
+        `/labels/${codeId}/reprint`,
+        { reasonCode: reason, comment: comment || undefined }
+      );
+      setPreview({ codeId, dataUrl: `data:image/png;base64,${res.pngBase64}` });
+      toast.push("Перепечатано (REPRINTED)");
+      setReprintFor(null);
+      setComment("");
+    } catch (e) {
+      if (e instanceof ApiErrorResponse)
+        toast.push(`${e.error.code}: ${e.error.message}`);
+      else if (e instanceof ApiUnavailable)
+        toast.push("Сервис недоступен. Попробуйте позже.");
+    } finally {
+      setBusyCode(null);
+      load();
     }
   }
 
@@ -110,17 +180,84 @@ export function OrdersPage() {
       <EntityList columns={columns} rows={orders} rowKey={(r) => r.id} />
       {selected && (
         <section>
-          <h2>Коды заказа (маски, без полных serial)</h2>
+          <h2>Коды заказа (печать этикеток DataMatrix)</h2>
           <EntityList
             columns={[
               { key: "gtin", label: "GTIN" },
               { key: "mask", label: "Маска КМ" },
-              { key: "quantity", label: "Кол-во" },
               { key: "status", label: "Статус" },
+              {
+                key: "actions",
+                label: "Этикетка",
+                render: (c: CodeItem) => (
+                  <>
+                    <button
+                      onClick={() => print(c.id)}
+                      disabled={busyCode === c.id || c.status !== "ACTIVE"}
+                    >
+                      Печать
+                    </button>{" "}
+                    <button
+                      onClick={() => {
+                        setReprintFor(reprintFor === c.id ? null : c.id);
+                        setReason("PRINT_DEFECT");
+                        setComment("");
+                      }}
+                      disabled={
+                        busyCode === c.id ||
+                        (c.status !== "ACTIVE" && c.status !== "PRINTED")
+                      }
+                    >
+                      Перепечатать
+                    </button>
+                    {preview?.codeId === c.id && (
+                      <img
+                        src={preview.dataUrl}
+                        alt="DataMatrix"
+                        style={{
+                          maxWidth: 120,
+                          verticalAlign: "middle",
+                          marginLeft: 8,
+                        }}
+                      />
+                    )}
+                  </>
+                ),
+              },
             ]}
-            rows={codes.filter((c) => c.orderId === selected)}
-            rowKey={(c) => `${c.orderId}:${c.gtin}:${c.mask}`}
+            rows={codes[selected] ?? []}
+            rowKey={(c) => c.id}
           />
+          {reprintFor && (
+            <section style={{ marginTop: 8 }}>
+              <label>
+                Причина перепечатки:
+                <select
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                >
+                  {REPRINT_REASONS.map(([code, label]) => (
+                    <option key={code} value={code}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>{" "}
+              {reason === "OTHER" && (
+                <input
+                  placeholder="Комментарий (мин. 5 символов)"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+              )}{" "}
+              <button
+                onClick={() => reprint(reprintFor)}
+                disabled={busyCode === reprintFor}
+              >
+                Подтвердить перепечатку
+              </button>
+            </section>
+          )}
         </section>
       )}
       <OrderForm onCreated={load} />

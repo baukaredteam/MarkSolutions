@@ -7,6 +7,7 @@
   HttpCode,
   Injectable,
   NotFoundException,
+  Param,
   Post,
   Req,
   Res,
@@ -92,6 +93,13 @@ export class VaultController {
       }
     }
     return { items: [...byOrder.values()] };
+  }
+
+  // GET /codes/:orderId/codes — индивидуальные КМ заказа (W4-02, для печати)
+  @Get("codes/:orderId/codes")
+  async orderCodes(@Req() req: Request, @Param("orderId") orderId: string) {
+    const items = await this.vault.codesByOrder(orderId, tenantOf(req));
+    return { items };
   }
 
   // POST /codes/export вЂ” CSV РїРѕР»РЅС‹С… РљРњ (CV-032); С‚РѕР»СЊРєРѕ READY/Completed, РёРЅР°С‡Рµ 409.
