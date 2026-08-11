@@ -34,6 +34,10 @@
 
 **W3 тикет 05 (utilisation+deadline): ЗАКРЫТ** (10.08). Коммит `c70f48b`: POST /utilisation (strict spec: sntins[], releaseType, expirationDate/productionDate/manufacturerCountry обязательные); симулятор ИС МПТ с submitUtilisation+getUtilisation; SUCCESS→SETTLE (п.26) + коды → UTILISED + RELEASE резерва; идемпотентность по settled-флагу; таймер 30 дней как данные (UTIL_DEADLINE_DAYS), алерты 7/3/1 через UtilisationAlert, аннулирование = EXPIRED (не удаление); 136/136 тестов.
 
+**W3 тикет 06 (web-orders): ЗАКРЫТ** (10.08). Коммит `afc4a09`: EntityList (ADR-008) data-driven; экраны Баланс (пополнение идемпотентно по ref1c), Заказы (маски КМ, Скачивание), Создание заказа (валидация quantity, cisType=UNIT, serialNumberType=OPERATOR), Скачать коды (CSV BOM/«;» с аудитом CV-032), Отчёт о нанесении (SUCCESS→SETTLE на экране), Дашборд (модерация + дедлайны 30 дней); browser E2E 8/8; 143/143.
+
+**W3 ЗАКРЫТА: тикеты 01 billing + 02 order + 03 mpt-simulator + 04 code-vault + 05 utilisation + 06 web. Цикл денег замкнут (TOPUP → RESERVE → эмиссия → SUCCESS → SETTLE); все три дорожки бизнеса работают в браузере без терминала; демо 31.08 готово. 143/143 тестов + 8/8 browser E2E.**
+
 | Неделя      | Циклы  | Содержание                                                                                                                                                          | Стоп-тесты                                                                         |
 | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | W1 04–08.08 | C0, C2 | скелет, CI-gate, OpenAPI-скелет, EntityList; IAM+tenant+онбординг (мок 1ecom)                                                                                       | дубль заявки не создаётся (AT-02); запрос без tenant_id падает (AT-16)             |
