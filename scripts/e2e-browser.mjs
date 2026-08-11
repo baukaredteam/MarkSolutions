@@ -145,36 +145,37 @@ async function main() {
       fail("orders page", error);
     }
 
-    // ---- W4-02: печать этикетки → скан (APPLIED) ----
+    // ---- W4-02: печать этикеток → скан (APPLIED) всех ACTIVE кодов заказа ----
     try {
       const result = await page.evaluate(async () => {
         const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
         if (!sess?.token) throw new Error("no session token");
         const h = { Authorization: `Bearer ${sess.token}` };
-        const j = (path) => fetch(`/api${path}`, { headers: h }).then((r) => r.json());
+        const j = (path, method = "GET", body) =>
+          fetch(`/api${path}`, {
+            method,
+            headers: { ...h, "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined,
+          }).then((r) => r.json());
         const agg = await j("/api/codes");
         const orderId = agg.items?.[0]?.orderId;
         if (!orderId) throw new Error("no codes in vault");
         const detail = await j(`/codes/${orderId}/codes`);
-        const code = detail.items?.find((c) => c.status === "ACTIVE");
-        if (!code) throw new Error("no ACTIVE code to print");
-        const printed = await fetch(`/api/labels/${code.id}/print`, {
-          method: "POST",
-          headers: { ...h, "Content-Type": "application/json" },
-          body: "{}",
-        }).then((r) => r.json());
-        if (!printed.pngBase64) throw new Error(`print failed: ${JSON.stringify(printed)}`);
-        // «скан телефоном»: отправляем распечатанный PNG обратно как apply
-        const applied = await fetch(`/api/codes/${code.id}/apply`, {
-          method: "POST",
-          headers: { ...h, "Content-Type": "application/json" },
-          body: JSON.stringify({ png: printed.pngBase64 }),
-        }).then((r) => r.json());
-        if (applied.status !== "APPLIED") throw new Error(`apply failed: ${JSON.stringify(applied)}`);
-        return { status: applied.status, key: printed.key };
+        const codes = detail.items?.filter((c) => c.status === "ACTIVE");
+        if (!codes?.length) throw new Error("no ACTIVE code to print");
+        let lastKey = "";
+        for (const code of codes) {
+          const printed = await j(`/labels/${code.id}/print`, "POST", {});
+          if (!printed.pngBase64) throw new Error(`print failed: ${JSON.stringify(printed)}`);
+          // «скан телефоном»: отправляем распечатанный PNG обратно как apply
+          const applied = await j(`/codes/${code.id}/apply`, "POST", { png: printed.pngBase64 });
+          if (applied.status !== "APPLIED") throw new Error(`apply failed: ${JSON.stringify(applied)}`);
+          lastKey = printed.key;
+        }
+        return { status: "APPLIED", key: lastKey, count: codes.length };
       });
       if (result.status !== "APPLIED") throw new Error("apply did not reach APPLIED");
-      pass(`print → scan (APPLIED), label key ${result.key.slice(0, 8)}…`);
+      pass(`print → scan (APPLIED ×${result.count}), label key ${result.key.slice(0, 8)}…`);
     } catch (error) {
       fail("print → scan (APPLIED)", error);
     }
