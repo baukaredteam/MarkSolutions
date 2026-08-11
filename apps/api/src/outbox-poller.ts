@@ -8,6 +8,7 @@ import {
 } from "./integrations";
 import { BillingService } from "./billing.service";
 import { VaultService } from "./vault.service";
+import { UtilisationService } from "./utilisation.service";
 
 // OutboxPoller: асинхронные интеграции.
 // 1) nkt-register (T3): Approved → Registering → Registered (НКТ).
@@ -23,6 +24,7 @@ export class OutboxPoller implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
     private readonly vault: VaultService,
+    private readonly utilisation: UtilisationService,
     @Inject(NKT_ADAPTER) private readonly nkt: INktAdapter,
     @Inject(MPT_ADAPTER) private readonly mpt: IMptAdapter
   ) {}
@@ -74,10 +76,80 @@ export class OutboxPoller implements OnModuleDestroy {
       }
       // 2) заказы КМ (W3): отправить новые, догнать статусы, таймауты
       await this.pollMptOrders();
+      // 3) отчёты о нанесении (W3, п.26): доводим до SUCCESS/ERROR
+      await this.utilisation.pollReports();
+      // 4) таймер 30 дней (п.25, ADR-012): алерты 7/3/1 + аннулирование EXPIRED
+      await this.pollUtilisationDeadlines();
     } catch (e) {
       // поллер фоновый: падение не должно становиться unhandled-rejection
       // (например, prisma закрыт при остановке приложения)
       void e;
+    }
+  }
+
+  // ---- Таймер 30 дней (п.25, ADR-012): дедлайн = данные (конфиг), отсчёт от даты получения КМ ----
+  private get deadlineDays(): number {
+    return Number(process.env.UTIL_DEADLINE_DAYS ?? 30);
+  }
+
+  private async pollUtilisationDeadlines(): Promise<void> {
+    const orders = await this.prisma.order.findMany({
+      where: { status: { in: ["COMPLETED", "PARTIALLY_COMPLETED"] } },
+      take: 50,
+    });
+    for (const order of orders) {
+      // отсчёт от updatedAt (дата получения/обновления КМ)
+      const days = Math.floor(
+        (Date.now() - order.updatedAt.getTime()) / 86400000
+      );
+      const daysLeft = this.deadlineDays - days;
+      // алерты 7/3/1
+      if (daysLeft === 7 || daysLeft === 3 || daysLeft === 1) {
+        const existing = await this.prisma.utilisationAlert.findFirst({
+          where: { orderId: order.id, daysLeft },
+        });
+        if (!existing) {
+          await this.prisma.utilisationAlert.create({
+            data: {
+              tenantId: order.tenantId,
+              orderId: order.id,
+              daysLeft,
+              kind: "alert",
+            },
+          });
+          await this.prisma.outbox.create({
+            data: {
+              aggregate: "mpt-order-timeout",
+              status: "FAILED",
+              payload: {
+                orderId: order.id,
+                tenantId: order.tenantId,
+                reason: `utilisation deadline in ${daysLeft} day(s)`,
+              },
+            },
+          });
+        }
+      }
+      // аннулирование после дедлайна: смена статуса (EXPIRED), не удаление
+      if (daysLeft <= 0) {
+        const active = await this.prisma.codeVault.count({
+          where: { orderId: order.id, status: { not: "EXPIRED" } },
+        });
+        if (active > 0) {
+          await this.prisma.codeVault.updateMany({
+            where: { orderId: order.id },
+            data: { status: "EXPIRED" },
+          });
+          await this.prisma.utilisationAlert.create({
+            data: {
+              tenantId: order.tenantId,
+              orderId: order.id,
+              daysLeft: 0,
+              kind: "expire",
+            },
+          });
+        }
+      }
     }
   }
 
