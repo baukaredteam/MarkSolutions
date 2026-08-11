@@ -25,7 +25,15 @@ export class ApiUnavailable extends Error {
 export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
-  postRaw<T>(path: string, body: unknown): Promise<{ status: number; body: T }>;
+  postRaw<T>(
+    path: string,
+    body: unknown,
+    idempotencyKey?: string
+  ): Promise<{ status: number; body: T }>;
+  postBlob(
+    path: string,
+    body: unknown
+  ): Promise<{ status: number; text: string }>;
 }
 
 export class FetchApiClient implements ApiClient {
@@ -43,15 +51,56 @@ export class FetchApiClient implements ApiClient {
 
   async postRaw<T>(
     path: string,
-    body: unknown
+    body: unknown,
+    idempotencyKey?: string
   ): Promise<{ status: number; body: T }> {
-    return this.request("POST", path, body);
+    return this.request("POST", path, body, idempotencyKey);
+  }
+
+  // POST с текстовым/CSV ответом (например, POST /codes/export). Возвращает текст, не JSON.
+  async postBlob(
+    path: string,
+    body: unknown
+  ): Promise<{ status: number; text: string }> {
+    const sess = sessionStore.get();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "*/*",
+    };
+    if (sess?.token) headers["Authorization"] = `Bearer ${sess.token}`;
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new ApiUnavailable();
+    }
+    const text = await res.text();
+    if (res.ok) return { status: res.status, text };
+    let err: ApiError;
+    try {
+      err = JSON.parse(text) as ApiError;
+    } catch {
+      err = {
+        code: res.status,
+        message: res.statusText,
+        details: null,
+        fieldErrors: {},
+        correlationId: "",
+        retryable: res.status >= 500,
+      };
+    }
+    throw new ApiErrorResponse(err);
   }
 
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    idempotencyKey?: string
   ): Promise<{ status: number; body: T }> {
     const sess = sessionStore.get();
     const headers: Record<string, string> = {
@@ -59,6 +108,7 @@ export class FetchApiClient implements ApiClient {
       Accept: "*/*",
     };
     if (sess?.token) headers["Authorization"] = `Bearer ${sess.token}`;
+    if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
     let res: Response;
     try {
       res = await fetch(`${this.base}${path}`, {

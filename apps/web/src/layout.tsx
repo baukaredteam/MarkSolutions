@@ -6,6 +6,9 @@ const links = [
   { to: "/status", label: "Статус" },
   { to: "/login", label: "Вход" },
   { to: "/products", label: "Товары" },
+  { to: "/balance", label: "Баланс" },
+  { to: "/orders", label: "Заказы" },
+  { to: "/dashboard", label: "Алерты" },
 ];
 
 export function Layout() {
