@@ -20,7 +20,7 @@ async function main() {
 
   try {
     try {
-      await page.goto(`${baseUrl}/apply`, { waitUntil: "networkidle" });
+      await page.goto(`${baseUrl}/apply`, { waitUntil: "domcontentloaded" });
       await page.locator('input[name="name"]').fill("ТОО Автодеталь");
       await page.locator('input[name="bin"]').fill(bin);
       await page.locator('input[name="email"]').fill("demo@avtodetal.kz");
@@ -37,7 +37,7 @@ async function main() {
       }
       pass("application submit is accepted (201 or existing duplicate)");
 
-      await page.goto(`${baseUrl}/apply`, { waitUntil: "networkidle" });
+      await page.goto(`${baseUrl}/apply`, { waitUntil: "domcontentloaded" });
       await page.locator('input[name="name"]').fill("ТОО Автодеталь");
       await page.locator('input[name="bin"]').fill(bin);
       await page.locator('input[name="email"]').fill("demo@avtodetal.kz");
@@ -104,6 +104,54 @@ async function main() {
       pass("demo invoice shows 38 red + 2 green rows and TNVED hint");
     } catch (error) {
       fail("demo invoice", error);
+    }
+
+    // ---- W3-web: баланс, пополнение, заказы, дашборд ----
+    try {
+      await page.getByRole("link", { name: "Баланс" }).click();
+      await page.getByRole("button", { name: "Пополнить" }).waitFor({ state: "visible" });
+      const ref1c = `e2e-${Date.now()}`;
+      await page.getByPlaceholder("ref1c").fill(ref1c);
+      await page.getByPlaceholder("Сумма (тенге)").fill("1000");
+      const topupResp = page.waitForResponse((r) =>
+        r.url().includes("/api/billing/payments/import")
+      );
+      await page.getByRole("button", { name: "Пополнить" }).click();
+      const topup = await topupResp;
+      if (topup.status() !== 201 && topup.status() !== 200) {
+        throw new Error(`top-up HTTP ${topup.status()}: ${await topup.text()}`);
+      }
+      await page.getByPlaceholder("ref1c").fill(ref1c);
+      await page.getByPlaceholder("Сумма (тенге)").fill("1000");
+      const topup2Resp = page.waitForResponse((r) =>
+        r.url().includes("/api/billing/payments/import")
+      );
+      await page.getByRole("button", { name: "Пополнить" }).click();
+      const topup2 = await topup2Resp;
+      if (topup2.status() !== 200) {
+        throw new Error(`duplicate top-up expected 200, got ${topup2.status()}`);
+      }
+      pass("balance visible and top-up is idempotent by ref1c");
+    } catch (error) {
+      fail("balance / top-up", error);
+    }
+
+    try {
+      await page.getByRole("link", { name: "Заказы" }).click();
+      await page.getByText("Заказы кодов", { exact: true }).waitFor({ state: "visible" });
+      await page.getByPlaceholder("cardId").waitFor({ state: "visible" });
+      pass("orders page renders (list + create form)");
+    } catch (error) {
+      fail("orders page", error);
+    }
+
+    try {
+      await page.getByRole("link", { name: "Алерты" }).click();
+      await page.getByText("Алерты и задачи", { exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Дедлайны 30 дней" }).waitFor({ state: "visible" });
+      pass("dashboard renders alerts/tasks tabs");
+    } catch (error) {
+      fail("dashboard", error);
     }
   } finally {
     await browser.close();

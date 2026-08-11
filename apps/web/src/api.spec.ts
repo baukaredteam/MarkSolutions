@@ -62,4 +62,53 @@ describe("api-client", () => {
       Authorization: "Bearer jwt",
     });
   });
+
+  it("sends Idempotency-Key header when provided", async () => {
+    sessionStore.set({ tenantId: "t-1", token: "jwt" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchApiClient();
+    await client.postRaw("/orders", { cardId: "c" }, "key-123");
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init as RequestInit).headers).toMatchObject({
+      "Idempotency-Key": "key-123",
+    });
+  });
+
+  it("postBlob returns text (CSV) with status; 409 maps to ApiErrorResponse", async () => {
+    sessionStore.set({ tenantId: "t-1", token: "jwt" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      text: async () => "\uFEFFgtin;serial;km_full",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new FetchApiClient();
+    const res = await client.postBlob("/codes/export", { orderId: "o1" });
+    expect(res.status).toBe(201);
+    expect(res.text).toContain("gtin;serial");
+
+    // ошибка 409 → ApiErrorResponse
+    const errFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: async () =>
+        JSON.stringify({
+          code: 409,
+          message: "коды ещё не эмитированы",
+          details: null,
+          fieldErrors: {},
+          correlationId: "c",
+          retryable: false,
+        }),
+    });
+    vi.stubGlobal("fetch", errFetch);
+    await expect(
+      client.postBlob("/codes/export", { orderId: "o1" })
+    ).rejects.toMatchObject({
+      error: { code: 409 },
+    });
+  });
 });

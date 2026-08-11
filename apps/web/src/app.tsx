@@ -4,6 +4,9 @@ import { ApplyPage } from "./pages/apply";
 import { StatusPage } from "./pages/status";
 import { LoginPage } from "./pages/login";
 import { ProductsPage } from "./pages/products";
+import { BalancePage } from "./pages/balance";
+import { OrdersPage } from "./pages/orders";
+import { DashboardPage } from "./pages/dashboard";
 
 export function AppRoutes() {
   return (
@@ -13,6 +16,9 @@ export function AppRoutes() {
         <Route path="/status" element={<StatusPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/balance" element={<BalancePage />} />
+        <Route path="/orders" element={<OrdersPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="*" element={<ApplyPage />} />
       </Route>
     </Routes>
