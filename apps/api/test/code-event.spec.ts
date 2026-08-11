@@ -125,15 +125,23 @@ describe("code events + status machine (W4, ADR-025)", () => {
     expect(after!.status).toBe("WITHDRAWN");
   });
 
-  it("SsscCounter: генерация SSCC детерминирована из tenantId (ADR-025 Q4)", async () => {
-    const s1 = service.generateSssc(tenantId, 1);
-    const s2 = service.generateSssc(tenantId, 2);
+  it("SsscCounter: tenant-scoped автоинкремент, SSCC уникальны, prefix детерминирован (ADR-025 Q4)", async () => {
+    const s1 = await service.generateSssc(tenantId);
+    const s2 = await service.generateSssc(tenantId);
     expect(s1).toMatch(/^\d{18}$/);
     expect(verifyGs1(s1)).toBe(true);
     expect(s2).toMatch(/^\d{18}$/);
-    // разные seq → разные SSCC, общий префикс
+    expect(verifyGs1(s2)).toBe(true);
+    // автоинкремент: seq 1, 2 → разные SSCC, общий префикс
     expect(s1.slice(0, 8)).toBe(s2.slice(0, 8));
     expect(s1).not.toBe(s2);
+    expect(Number(s1.slice(8, 17))).toBe(1);
+    expect(Number(s2.slice(8, 17))).toBe(2);
+    // счётчик сохранён в БД
+    const counter = await prisma.ssscCounter.findUnique({
+      where: { tenantId },
+    });
+    expect(counter!.nextSeq).toBe(3);
   });
 });
 

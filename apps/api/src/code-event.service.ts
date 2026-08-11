@@ -121,7 +121,15 @@ export class CodeEventService {
     return String(gcp).padStart(7, "0");
   }
 
-  generateSssc(tenantId: string, seq: number): string {
+  // tenant-scoped auto-increment: SsscCounter.nextSeq атомарно увеличивается
+  // (upsert), возвращённое значение — уникальное для тенанта (ADR-025 Q4).
+  async generateSssc(tenantId: string): Promise<string> {
+    const counter = await this.prisma.ssscCounter.upsert({
+      where: { tenantId },
+      update: { nextSeq: { increment: 1 } },
+      create: { tenantId, nextSeq: 2 },
+    });
+    const seq = counter.nextSeq - 1;
     const gcp = this.tenantSsscPrefix(tenantId);
     const base = `0${gcp}${String(seq).padStart(9, "0")}`;
     const check = gs1Mod10CheckDigit(base);
