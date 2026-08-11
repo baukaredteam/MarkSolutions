@@ -140,6 +140,33 @@ export interface IMptAdapter {
     status: "IN_PROCESS" | "SUCCESS" | "ERROR";
     rejectReason?: string;
   }>;
+  // W4-04: doc/import + doc/withdrawal (CONTRACT-IS-MPT)
+  submitImport(input: {
+    tenantId: string;
+    codes: string[]; // codeKeys (Vault)
+    customsDate: string;
+    customsNumber: string;
+    authorityCode?: string;
+  }): Promise<{
+    documentId: string;
+    status: "IN_PROCESS" | "ERROR";
+    rejectReason?: string;
+  }>;
+  submitWithdrawal(input: {
+    tenantId: string;
+    codes: string[];
+    withdrawalType: "WITHDRAWAL" | "WRITE_OFF";
+    withdrawalReason: string;
+    childrenWriteOff: boolean;
+  }): Promise<{
+    documentId: string;
+    status: "IN_PROCESS" | "ERROR";
+    rejectReason?: string;
+  }>;
+  getDocument(documentId: string): Promise<{
+    status: "IN_PROCESS" | "SUCCESS" | "ERROR";
+    rejectReason?: string;
+  }>;
 }
 
 // Симулятор ИС МПТ (W3): stateless — статус = f(now, createdAt, SIM_MPT_EMISSION_MS).
@@ -336,6 +363,132 @@ export class MockMptAdapter implements IMptAdapter {
         });
         await this.prisma.mptUtilisation.update({
           where: { id: report.id },
+          data: { status: "SUCCESS" },
+        });
+      }
+      return { status: "SUCCESS" };
+    }
+    return { status: "IN_PROCESS" };
+  }
+
+  // ---- Документы (W4-04): doc/import + doc/withdrawal ----
+  private get docSlaMs(): number {
+    return Number(process.env.DOC_SLA_MS ?? 3000);
+  }
+
+  async submitImport(input: {
+    tenantId: string;
+    codes: string[];
+    customsDate: string;
+    customsNumber: string;
+    authorityCode?: string;
+  }): Promise<{
+    documentId: string;
+    status: "IN_PROCESS" | "ERROR";
+    rejectReason?: string;
+  }> {
+    // валидация по контракту (CONTRACT-IS-MPT: date+number обязательны)
+    if (!input.customsDate || !input.customsNumber) {
+      return {
+        documentId: "",
+        status: "ERROR",
+        rejectReason: "customsDeclaration.date and number required",
+      };
+    }
+    // коды должны быть tenant-scoped и APPLIED
+    let invalid: string | null = null;
+    for (const codeKey of input.codes) {
+      const code = await this.prisma.codeVault.findFirst({
+        where: { id: codeKey, tenantId: input.tenantId },
+      });
+      if (!code) {
+        invalid = `unknown code: ${codeKey}`;
+        break;
+      }
+      if (code.status !== "APPLIED") {
+        invalid = `code not applied: ${codeKey} (${code.status})`;
+        break;
+      }
+    }
+    const documentId = `imp-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    await this.prisma.mptDocument.create({
+      data: {
+        documentId,
+        tenantId: input.tenantId,
+        kind: "import",
+        codes: input.codes,
+        payload: {
+          customsDate: input.customsDate,
+          customsNumber: input.customsNumber,
+          authorityCode: input.authorityCode ?? null,
+        },
+        status: invalid ? "ERROR" : "IN_PROCESS",
+        rejectReason: invalid ?? null,
+      },
+    });
+    return invalid
+      ? { documentId, status: "ERROR" as const, rejectReason: invalid }
+      : { documentId, status: "IN_PROCESS" as const };
+  }
+
+  async submitWithdrawal(input: {
+    tenantId: string;
+    codes: string[];
+    withdrawalType: "WITHDRAWAL" | "WRITE_OFF";
+    withdrawalReason: string;
+    childrenWriteOff: boolean;
+  }): Promise<{
+    documentId: string;
+    status: "IN_PROCESS" | "ERROR";
+    rejectReason?: string;
+  }> {
+    if (!input.withdrawalType) {
+      return {
+        documentId: "",
+        status: "ERROR",
+        rejectReason: "withdrawalType required",
+      };
+    }
+    if (!input.withdrawalReason) {
+      return {
+        documentId: "",
+        status: "ERROR",
+        rejectReason: "withdrawalReason required",
+      };
+    }
+    const documentId = `wdr-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    await this.prisma.mptDocument.create({
+      data: {
+        documentId,
+        tenantId: input.tenantId,
+        kind: "withdrawal",
+        codes: input.codes,
+        payload: {
+          withdrawalType: input.withdrawalType,
+          withdrawalReason: input.withdrawalReason,
+          childrenWriteOff: input.childrenWriteOff,
+        },
+        status: "IN_PROCESS",
+      },
+    });
+    return { documentId, status: "IN_PROCESS" };
+  }
+
+  async getDocument(documentId: string): Promise<{
+    status: "IN_PROCESS" | "SUCCESS" | "ERROR";
+    rejectReason?: string;
+  }> {
+    const doc = await this.prisma.mptDocument.findUnique({
+      where: { documentId },
+    });
+    if (!doc) return { status: "ERROR", rejectReason: "document not found" };
+    if (doc.status === "ERROR")
+      return { status: "ERROR", rejectReason: doc.rejectReason ?? undefined };
+    const age = Date.now() - doc.createdAt.getTime();
+    if (age >= this.docSlaMs) {
+      if (doc.status !== "SUCCESS") {
+        await this.prisma.mptDocument.update({
+          where: { id: doc.id },
           data: { status: "SUCCESS" },
         });
       }

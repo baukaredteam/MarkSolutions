@@ -22,6 +22,29 @@ Auth: POST /api/users/authenticate (JSON login/password) → accessToken (BEARER
 - POST /api/utilisation (sntins[], businessPlaceId int32, releaseType PRODUCTION|IMPORT|CIRCULATION, expirationDate ОБЯЗ, productionDate ОБЯЗ, manufacturerCountry ОБЯЗ ISO2, seriesNumber) → reportId; GET /api/utilisation/<reportid> → IN_PROCESS|SUCCESS|ERROR (+rejectReason). Не «готово» по факту отправки!
 - public/cod: public/codes (краткая; isHadExtendedCode), private/codes (полная; MARKING-CODE.READ; 307-redirect на public при отсутствии прав; baseCode/extendedCode), exports → id; exports/:id/status (CREATED|IN_PROCESSING|SUCCESS|ERROR|EXPIRED); exports/:id/result (ZIP).
 - doc/: correction (CODE-CORRECTION), validation (printQualityClass A|B|C|D|F), aggregation (AGGREGATION; aggregationUnits[shouldBeUnbundled, aggregationItemsCount, aggregationUnitCapacity, codes, unitSerialNumber]), transport-code-disaggregation, import (CODES-IMPORT; customsDeclaration{date, number обяз, authorityCode}), withdrawal (WITHDRAWAL; withdrawalType WITHDRAWAL|WRITE_OFF, withdrawalReason, childrenWriteOff, withdrawPartialQuantity, primaryDocument, codes[partialQuantity]).
+
+### POST /public/api/v1/doc/import (CODES-IMPORT, Q5, W4-04)
+
+Вход (JSON):
+
+- `codes` string[] — коды маркировки (codeKey из Vault), **обязательно**
+- `customsDeclaration` object — **обязателен**: `date` (обяз), `number` (обяз), `authorityCode` (опц.)
+
+Валидация симулятора: `customsDeclaration.date` + `number` непустые; каждый код — tenant-scoped и `APPLIED`. Выход: `{documentId, status: IN_PROCESS|ERROR}` (паттерн utilisation). При SUCCESS MarkFlow пишет `INTRODUCED`-событие по каждому коду заказа (write-through CodeVault.status=INTRODUCED). При ERROR статус кодов не меняется + задача оператору (outbox `mpt-order-timeout` FAILED).
+
+### POST /public/api/v1/doc/withdrawal (WITHDRAWAL, Q9, W4-04)
+
+Вход (JSON):
+
+- `withdrawalType` string — `WITHDRAWAL` | `WRITE_OFF`, **обязателен**
+- `withdrawalReason` string — словарик `{DEFECT, LOST, EXPIRY, RETURN_SUPPLIER, DESTRUCTION, OTHER}`; OTHER → comment ≥5
+- `childrenWriteOff` boolean — рекурсивный вывод членов агрегата
+- `withdrawPartialQuantity` boolean — `true` → 400 «не поддерживается в MVP-1»
+- `primaryDocument` object {type, date, number} — опц.
+- `codes` — codeKey или `{code, partialQuantity}` (partialQuantity → 400)
+
+Маппинг статусов: `WITHDRAWAL → WITHDRAWN`, `WRITE_OFF → WRITTEN_OFF`. При childrenWriteOff=true на активном агрегате — `DISAGGREGATED`-события для членов + вывод членов. Член активного (SEALED/OPEN) агрегата в одиночку → 409 «сначала расформирование». Повторный вывод (уже WITHDRAWN/WRITTEN_OFF/EXPIRED) → 409.
+
 - storage docs/search (статусы CREATED|VALIDATING|IN_PROCESS|PARTIALLY_PROCESSED|SUCCESS|ERROR), docs/:id, json/:id, errors/:id (propertyName, index, errorCode).
 
 Ошибки: 200/400/401/403/404/405/500/503/504. Retry только идемпотентные+временные, backoff+jitter.

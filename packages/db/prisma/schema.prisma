@@ -27,6 +27,9 @@ model Tenant {
   ssscCounters SsscCounter[]
   utilisationReports UtilisationReport[]
   utilisationAlerts UtilisationAlert[]
+  importDocuments ImportDocument[]
+  withdrawalDocuments WithdrawalDocument[]
+  aggregationUnits AggregationUnit[]
   products  Product[]
   users     User[]
   productCards ProductCard[]
@@ -364,4 +367,81 @@ model UtilisationAlert {
   kind      String   // alert|expire
   status    String   @default("OPEN") // OPEN|RESOLVED
   createdAt DateTime @default(now())
+}
+
+// ДТ на партию (W4-04, Q5): одна ДТ на заказ; после SUCCESS — INTRODUCED по всем кодам.
+// unique(tenantId, customsDeclaration.number) → 409 при повторе.
+model ImportDocument {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orderId   String
+  customsDate   String   // дата ДТ (customsDeclaration.date)
+  customsNumber String   // номер ДТ (customsDeclaration.number)
+  authorityCode String?  // customsDeclaration.authorityCode
+  status    String   @default("EXPECTED") // EXPECTED|SUBMITTED|SUCCESS|ERROR
+  rejectReason String?
+  externalDocumentId String?
+  createdAt DateTime @default(now())
+  submittedAt DateTime?
+  @@unique([tenantId, customsNumber])
+}
+
+// Вывод из оборота (W4-04, Q9): WITHDRAWAL→WITHDRAWN, WRITE_OFF→WRITTEN_OFF.
+model WithdrawalDocument {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  codes     Json     // массив codeId (или codeKeys)
+  withdrawalType String // WITHDRAWAL|WRITE_OFF
+  withdrawalReason String // DEFECT|LOST|EXPIRY|RETURN_SUPPLIER|DESTRUCTION|OTHER
+  comment   String?
+  childrenWriteOff Boolean @default(false)
+  primaryDocument Json?  // {type,date,number}
+  status    String   @default("SUBMITTED") // SUBMITTED|SUCCESS|ERROR
+  rejectReason String?
+  createdAt DateTime @default(now())
+  submittedAt DateTime?
+}
+
+// Документы симулятора ИС МПТ (W4-04): import/withdrawal, stateless по SLA.
+model MptDocument {
+  id           String   @id @default(cuid())
+  documentId   String   @unique
+  tenantId     String
+  kind         String   // import|withdrawal
+  codes        Json     // массив codeKey
+  payload      Json?    // тип/причина и пр.
+  status       String   @default("IN_PROCESS") // IN_PROCESS|SUCCESS|ERROR
+  rejectReason String?
+  createdAt    DateTime @default(now())
+}
+
+// Агрегация (W4-03/04, ADR-025): транспортная упаковка SSCC. Для childrenWriteOff.
+model AggregationUnit {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  sscc      String   @unique
+  type      String   // BOX_LV_1|BOX_LV_2|PALLET
+  parentId  String?
+  status    String   @default("OPEN") // OPEN|SEALED|DISAGGREGATED
+  sealedAt  DateTime?
+  createdAt DateTime @default(now())
+  members   AggregationMember[]
+}
+
+model AggregationMember {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  unitId    String
+  unit      AggregationUnit @relation(fields: [unitId], references: [id])
+  tenantId  String
+  codeKey   String
+  addedAt   DateTime @default(now())
+  addedBy   String
+  @@unique([unitId, codeKey])
 }

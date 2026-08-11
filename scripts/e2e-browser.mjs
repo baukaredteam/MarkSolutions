@@ -179,6 +179,52 @@ async function main() {
       fail("print → scan (APPLIED)", error);
     }
 
+    // ---- W4-04: ввоз (ДТ → INTRODUCED) + вывод (WRITE_OFF/WITHDRAWAL) ----
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const j = (path, method = "GET", body) =>
+          fetch(`/api${path}`, {
+            method,
+            headers: { ...h, "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined,
+          }).then((r) => r.json());
+        // ввоз: ДТ по заказу → INTRODUCED
+        const agg = await j("/api/codes");
+        const orderId = agg.items?.[0]?.orderId;
+        if (!orderId) throw new Error("no codes in vault");
+        const detail = await j(`/codes/${orderId}/codes`);
+        const applied = detail.items?.filter((c) => c.status === "APPLIED");
+        if (!applied?.length) throw new Error("no APPLIED codes for import");
+        const imp = await j("/import", "POST", {
+          orderId,
+          customsDeclaration: {
+            date: "2026-08-11",
+            number: `10002000/010826/${Date.now() % 100000}`,
+            authorityCode: "702",
+          },
+        });
+        if (imp.status !== "SUCCESS") throw new Error(`import failed: ${JSON.stringify(imp)}`);
+        // вывод единичного кода WRITE_OFF (брак)
+        const single = detail.items.find((c) => c.status === "ACTIVE");
+        if (single) {
+          const wd = await j("/withdrawal", "POST", {
+            codes: [single.id],
+            withdrawalType: "WRITE_OFF",
+            withdrawalReason: "DEFECT",
+          });
+          if (wd.status !== "SUCCESS") throw new Error(`withdrawal failed: ${JSON.stringify(wd)}`);
+        }
+        return { orderId };
+      });
+      if (!result.orderId) throw new Error("no order");
+      pass("import (ДТ → INTRODUCED) + single WRITE_OFF → WRITTEN_OFF");
+    } catch (error) {
+      fail("import / withdrawal docs", error);
+    }
+
     try {
       await page.getByRole("link", { name: "Алерты" }).click();
       await page.getByText("Алерты и задачи", { exact: true }).waitFor({ state: "visible" });

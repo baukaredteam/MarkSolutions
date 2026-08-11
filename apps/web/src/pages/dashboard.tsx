@@ -17,12 +17,21 @@ interface ExceptionRow {
   createdAt: string;
 }
 
+interface DocRow {
+  id: string;
+  type: string;
+  date: string;
+  status: string;
+  rejectReason: string | null;
+}
+
 // Дашборд «Алерты/Задачи» (W3): GET /moderation/exceptions.
-// admin видит алерты дедлайнов (payload.reason содержит deadline), operator — полную очередь.
+// W4-04: вкладка «Документы» (GET /documents, EntityList ADR-008).
 export function DashboardPage() {
   const toast = useToast();
   const [rows, setRows] = useState<ExceptionRow[]>([]);
-  const [tab, setTab] = useState<"deadline" | "all">("deadline");
+  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [tab, setTab] = useState<"deadline" | "all" | "docs">("deadline");
   const [loading, setLoading] = useState(false);
 
   async function load() {
@@ -32,6 +41,10 @@ export function DashboardPage() {
         "/moderation/exceptions"
       );
       setRows(r.items);
+      const d = await api
+        .get<{ items: DocRow[] }>("/documents")
+        .catch(() => ({ items: [] }));
+      setDocs(d.items);
     } catch (e) {
       if (e instanceof ApiErrorResponse)
         toast.push(`${e.error.code}: ${e.error.message}`);
@@ -69,15 +82,32 @@ export function DashboardPage() {
     { key: "createdAt", label: "Время" },
   ];
 
+  const docColumns: Column<DocRow>[] = [
+    { key: "id", label: "ID" },
+    { key: "type", label: "Тип" },
+    { key: "status", label: "Статус" },
+    {
+      key: "rejectReason",
+      label: "Причина отказа",
+      render: (d) => d.rejectReason ?? "-",
+    },
+    { key: "date", label: "Дата" },
+  ];
+
   return (
     <section>
       <h1>Алерты и задачи</h1>
       <button onClick={() => setTab("deadline")}>Дедлайны 30 дней</button>
       <button onClick={() => setTab("all")}>Все исключения</button>
+      <button onClick={() => setTab("docs")}>Документы</button>
       <button onClick={load} disabled={loading}>
         Обновить
       </button>
-      <EntityList columns={columns} rows={visible} rowKey={(r) => r.id} />
+      {tab === "docs" ? (
+        <EntityList columns={docColumns} rows={docs} rowKey={(r) => r.id} />
+      ) : (
+        <EntityList columns={columns} rows={visible} rowKey={(r) => r.id} />
+      )}
     </section>
   );
 }
