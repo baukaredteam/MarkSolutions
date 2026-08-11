@@ -16,6 +16,8 @@ import {
 import type { Request } from "express";
 import { PrismaService } from "./prisma.service";
 import { ModerationService } from "./moderation.service";
+import { KMS_ADAPTER, IKmsAdapter } from "./kms.adapter";
+import { Inject } from "@nestjs/common";
 import {
   tnvedHint,
   heuristicStrengthensFix,
@@ -425,7 +427,11 @@ export class CatalogController {
 
 @Controller("demo")
 export class DemoController {
-  constructor(private readonly catalog: CatalogService) {}
+  constructor(
+    private readonly catalog: CatalogService,
+    private readonly prisma: PrismaService,
+    @Inject(KMS_ADAPTER) private readonly kms: IKmsAdapter
+  ) {}
 
   @HttpCode(201)
   @Post("seed-invoice")
@@ -437,5 +443,124 @@ export class DemoController {
     if (!tenantId) throw new ForbiddenException("tenant required");
     const count = await this.catalog.seedInvoice(tenantId);
     return { count };
+  }
+
+  // W4-06: демо-история для дашборда одним кликом (идемпотентно).
+  // 2 APPLIED-кода (a), COMPLETED-заказ со сдвигом updatedAt −24 дня (b),
+  // ImportDocument EXPECTED (d), outbox FAILED (e), WithdrawalDocument WRITE_OFF.
+  @HttpCode(201)
+  @Post("w4-seed")
+  async w4Seed(@Req() req: Request) {
+    if (process.env.DEMO_ENABLED !== "true") {
+      throw new NotFoundException("demo endpoint disabled");
+    }
+    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
+    if (!tenantId) throw new ForbiddenException("tenant required");
+    return this.runW4Seed(tenantId);
+  }
+
+  private async runW4Seed(tenantId: string) {
+    const existingApplied = await this.prisma.codeVault.count({
+      where: { tenantId, status: "APPLIED" },
+    });
+    if (existingApplied < 2) {
+      const order = await this.prisma.order.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: "asc" },
+      });
+      const orderId = order?.id ?? "demo-w4-order";
+      if (!order) {
+        await this.prisma.order.create({
+          data: {
+            id: orderId,
+            tenantId,
+            status: "COMPLETED",
+            idempotencyKey: `w4-seed-order-${tenantId}`,
+          },
+        });
+      }
+      const { ciphertext } = await this.kms.encrypt(
+        Buffer.from(
+          JSON.stringify({ serial: "9000001", ai91: null, ai92: null })
+        )
+      );
+      for (let i = 0; i < 2; i++) {
+        await this.prisma.codeVault.create({
+          data: {
+            tenantId,
+            orderId,
+            gtin: "04014835723399",
+            mask: `04014835723399:90…0${i + 1}`,
+            status: "APPLIED",
+            ciphertext: ciphertext.toString("base64"),
+          },
+        });
+      }
+    }
+
+    // b) сдвинуть updatedAt COMPLETED-заказа на 24 дня назад (дедлайн ≤7 суток)
+    const completed = await this.prisma.order.findFirst({
+      where: { tenantId, status: { in: ["COMPLETED", "PARTIALLY_COMPLETED"] } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (completed) {
+      await this.prisma.order.update({
+        where: { id: completed.id },
+        data: { updatedAt: new Date(Date.now() - 24 * 86400000) },
+      });
+    }
+
+    // d) ImportDocument EXPECTED (если нет)
+    const expectedDt = await this.prisma.importDocument.count({
+      where: { tenantId, status: "EXPECTED" },
+    });
+    if (expectedDt === 0) {
+      await this.prisma.importDocument.create({
+        data: {
+          tenantId,
+          orderId: "demo-w4-order",
+          customsDate: "",
+          customsNumber: `EXPECTED-${tenantId.slice(0, 6)}`,
+          status: "EXPECTED",
+        },
+      });
+    }
+
+    // e) outbox mpt-order-timeout FAILED (если нет, tenant-scoped по payload)
+    const failedTasks = await this.prisma.outbox.findMany({
+      where: { aggregate: "mpt-order-timeout", status: "FAILED" },
+      select: { payload: true },
+    });
+    const hasForTenant = failedTasks.some(
+      (t) => (t.payload as { tenantId?: string }).tenantId === tenantId
+    );
+    if (!hasForTenant) {
+      await this.prisma.outbox.create({
+        data: {
+          aggregate: "mpt-order-timeout",
+          status: "FAILED",
+          payload: { orderId: "demo-w4-order", tenantId, reason: "demo task" },
+        },
+      });
+    }
+
+    // WithdrawalDocument WRITE_OFF для демо-сценария (если нет)
+    const wd = await this.prisma.withdrawalDocument.count({
+      where: { tenantId },
+    });
+    if (wd === 0) {
+      await this.prisma.withdrawalDocument.create({
+        data: {
+          tenantId,
+          codes: ["demo-code-1"],
+          withdrawalType: "WRITE_OFF",
+          withdrawalReason: "DEFECT",
+          status: "SUCCESS",
+          submittedAt: new Date(),
+        },
+      });
+    }
+
+    return { ok: true };
   }
 }

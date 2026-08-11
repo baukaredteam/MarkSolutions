@@ -343,28 +343,22 @@ export class DocumentService {
     return { status: "SUCCESS" };
   }
 
-  // GET /documents — EntityList (ADR-008) по всем типам
+  // GET /documents — EntityList (ADR-008) по всем типам (без SERVICE_ACT_EXPORT: тикет 05)
   async list(tenantId: string) {
-    const [imports, withdrawals, utilisations, serviceActs] = await Promise.all(
-      [
-        this.prisma.importDocument.findMany({
-          where: { tenantId },
-          orderBy: { createdAt: "desc" },
-        }),
-        this.prisma.withdrawalDocument.findMany({
-          where: { tenantId },
-          orderBy: { createdAt: "desc" },
-        }),
-        this.prisma.utilisationReport.findMany({
-          where: { tenantId },
-          orderBy: { createdAt: "desc" },
-        }),
-        this.prisma.vaultExport.findMany({
-          where: { tenantId, kind: "export" },
-          orderBy: { createdAt: "desc" },
-        }),
-      ]
-    );
+    const [imports, withdrawals, utilisations] = await Promise.all([
+      this.prisma.importDocument.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.prisma.withdrawalDocument.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.prisma.utilisationReport.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
     const items = [
       ...imports.map((d) => ({
         id: d.id,
@@ -387,14 +381,11 @@ export class DocumentService {
         status: d.status,
         rejectReason: d.rejectReason ?? null,
       })),
-      ...serviceActs.map((d) => ({
-        id: d.id,
-        type: "SERVICE_ACT_EXPORT",
-        date: d.createdAt,
-        status: "SUCCESS",
-        rejectReason: null,
-      })),
     ];
+    // общая сортировка desc по дате (Q10: единый список документов)
+    items.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
     return { items };
   }
 }

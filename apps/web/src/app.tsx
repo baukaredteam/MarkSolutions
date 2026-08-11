@@ -19,6 +19,24 @@ export function AppRoutes() {
         <Route path="/balance" element={<BalancePage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route
+          path="/aggregation"
+          element={
+            <section>
+              <h1>Агрегация</h1>
+              <p>Доступно после тикета 03 (stretch после демо).</p>
+            </section>
+          }
+        />
+        <Route
+          path="/documents"
+          element={
+            <section>
+              <h1>Документы</h1>
+              <p>См. вкладку «Документы» на дашборде.</p>
+            </section>
+          }
+        />
         <Route path="*" element={<ApplyPage />} />
       </Route>
     </Routes>

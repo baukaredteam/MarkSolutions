@@ -227,11 +227,35 @@ async function main() {
 
     try {
       await page.getByRole("link", { name: "Алерты" }).click();
-      await page.getByText("Алерты и задачи", { exact: true }).waitFor({ state: "visible" });
-      await page.getByRole("button", { name: "Дедлайны 30 дней" }).waitFor({ state: "visible" });
-      pass("dashboard renders alerts/tasks tabs");
+      await page.getByText("Дашборд", { exact: true }).waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Документы" }).waitFor({ state: "visible" });
+      pass("dashboard renders summary + documents tabs");
     } catch (error) {
       fail("dashboard", error);
+    }
+
+    // ---- W4-06: w4-seed → summary ненулевые + deep-links ----
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const seed = await fetch("/api/demo/w4-seed", {
+          method: "POST",
+          headers: { ...h, "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (seed.status !== 201) throw new Error(`w4-seed HTTP ${seed.status}: ${await seed.text()}`);
+        const s = await fetch("/api/dashboard/summary", { headers: h }).then((r) => r.json());
+        return s;
+      });
+      if (!result || typeof result.codesNotApplied !== "number")
+        throw new Error(`summary malformed: ${JSON.stringify(result)}`);
+      if (result.docsPendingDt < 1 || result.exceptions < 1)
+        throw new Error(`summary counters too low: ${JSON.stringify(result)}`);
+      pass(`w4-seed → summary non-zero (codes=${result.codesNotApplied}, docs=${result.docsPendingDt}, exc=${result.exceptions})`);
+    } catch (error) {
+      fail("w4-seed → summary", error);
     }
   } finally {
     await browser.close();
