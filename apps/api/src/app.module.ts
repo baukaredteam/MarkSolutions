@@ -45,6 +45,7 @@ import { VaultController } from "./vault.controller";
 import { VaultService } from "./vault.service";
 import { UtilisationController } from "./utilisation.controller";
 import { UtilisationService } from "./utilisation.service";
+import { CodeEventService } from "./code-event.service";
 import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
 import { join } from "node:path";
@@ -122,6 +123,7 @@ export class AdminController {
     OrderService,
     VaultService,
     UtilisationService,
+    CodeEventService,
     {
       provide: KMS_ADAPTER,
       useFactory: () =>

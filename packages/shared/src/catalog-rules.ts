@@ -108,18 +108,22 @@ export function validateFiles(
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
-// GS1 GTIN-14 check digit (mod 10). Проверка контрольного разряда для GTIN
-// (GtinResolver, слой 2 — IGs1Adapter.verify: валидный mod10 → PENDING_REAL).
-export function verifyGtinMod10(gtin: string): boolean {
-  if (!/^\d{14}$/.test(gtin)) return false;
-  const digits = gtin.split("").map(Number);
-  // справа налево: правый разряд данных (i=12) ×3, затем чередуем 3,1,3,1…
-  // (контрольная цифра — последняя, i=13). Проверка sum % 10 == 0.
+// GS1 check digit (mod 10) — общая для GTIN-14 и SSCC-18 (ADR-025, Q4).
+// Веса 3/1 справа налево; контрольная цифра — последняя. Для verify: сумма
+// всех цифр с весами (включая check, вес=1) должна делиться на 10.
+// (GtinResolver слой 2: валидный mod10 → PENDING_REAL).
+export function gs1Mod10CheckDigit(base: string): number {
+  const digits = base.split("").map(Number);
   let sum = 0;
-  for (let i = 0; i < 13; i++) {
-    const weight = (12 - i) % 2 === 0 ? 3 : 1;
+  for (let i = 0; i < digits.length; i++) {
+    const weight = (digits.length - 1 - i) % 2 === 0 ? 3 : 1;
     sum += digits[i] * weight;
   }
-  const check = (10 - (sum % 10)) % 10;
-  return check === digits[13];
+  return (10 - (sum % 10)) % 10;
+}
+
+export function verifyGs1Mod10(code: string, length = 14): boolean {
+  if (!/^\d+$/.test(code) || code.length !== length) return false;
+  const base = code.slice(0, -1);
+  return gs1Mod10CheckDigit(base) === Number(code.slice(-1));
 }

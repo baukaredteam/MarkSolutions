@@ -23,6 +23,8 @@ model Tenant {
   mptOrders MptOrder[]
   codeVaults CodeVault[]
   vaultExports VaultExport[]
+  codeEvents CodeEvent[]
+  ssscCounters SsscCounter[]
   utilisationReports UtilisationReport[]
   utilisationAlerts UtilisationAlert[]
   products  Product[]
@@ -274,11 +276,43 @@ model CodeVault {
   cardId    String?
   gtin      String   // открытый (публичный идентификатор, индекс)
   mask      String   // маска для UI/логов (CV-031)
-  status    String   @default("ACTIVE") // ACTIVE|USED|CANCELLED|EXPIRED (тикет 05 добавит USED/EXPIRED)
+  status    String   @default("ACTIVE") // MVP-набор (ADR-025): ACTIVE|PRINTED|APPLIED|UTILISED|INTRODUCED|EXPIRED|AGGREGATED|WITHDRAWN|WRITTEN_OFF
   ciphertext String  // base64: nonce(12) + GCM-tag(16) + encrypted(JSON {serial,ai91,ai92})
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  events    CodeEvent[]
   @@index([tenantId, gtin])
+}
+
+// Append-only лог статусов КМ (ADR-025): CodeVault.status = производная от последнего события.
+// Write-through: статус обновляется при записи каждого события.
+model CodeEvent {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  codeId    String
+  code      CodeVault @relation(fields: [codeId], references: [id])
+  event     String   // PRINTED|REPRINTED|APPLIED|AGGREGATED|DISAGGREGATED|UTILISED|INTRODUCED|EXPIRED|WITHDRAWN|WRITTEN_OFF
+  at        DateTime @default(now())
+  actor     String
+  reasonCode String?
+  comment   String?
+  relatedId String?  // связанная сущность (агрегат, исходная печать)
+  createdAt DateTime @default(now())
+  @@index([tenantId, codeId])
+  @@index([tenantId, event])
+}
+
+// Тенант-счётчик SSCC (ADR-025, Q4): auto-increment для генерации транспортных упаковок.
+model SsscCounter {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  nextSeq   Int      @default(1)
+  createdAt DateTime @default(now())
+  @@unique([tenantId])
 }
 
 // Аудит выдачи/печати КМ (CV-032): каждая выгрузка/печать фиксирует actor, время, основание, кол-во, orderId.

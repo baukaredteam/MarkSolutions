@@ -1,5 +1,5 @@
 // Порты интеграций модерации (T3, Q5/Q6) + симулятор ИС МПТ (W3, ADR-005/024).
-import { verifyGtinMod10 } from "@markflow/shared";
+import { verifyGs1Mod10 } from "@markflow/shared";
 import { PrismaService } from "./prisma.service";
 import { Injectable } from "@nestjs/common";
 
@@ -16,7 +16,7 @@ export interface IGs1Adapter {
 export class MockGs1Adapter implements IGs1Adapter {
   async verify(gtin: string): Promise<{ status: Gs1VerificationStatus }> {
     return {
-      status: verifyGtinMod10(gtin) ? "PENDING_REAL" : "REJECTED",
+      status: verifyGs1Mod10(gtin) ? "PENDING_REAL" : "REJECTED",
     } as const;
   }
 }

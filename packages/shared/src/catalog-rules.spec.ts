@@ -5,7 +5,8 @@ import {
   tnvedHint,
   heuristicStrengthensFix,
   checkDuplicate,
-  verifyGtinMod10,
+  verifyGs1Mod10,
+  gs1Mod10CheckDigit,
   type FuzzyKey,
 } from "./catalog-rules";
 
@@ -34,23 +35,35 @@ describe("TNVED filter (ADR-022)", () => {
   });
 });
 
-describe("GTIN check digit (mod 10) — GtinResolver слой 2", () => {
-  it("RAVENOL 04014835723399 → valid", () => {
-    expect(verifyGtinMod10("04014835723399")).toBe(true);
+describe("GS1 check digit (mod 10) — GtinResolver слой 2 + SSCC (ADR-025)", () => {
+  it("RAVENOL 04014835723399 → valid GTIN-14", () => {
+    expect(verifyGs1Mod10("04014835723399")).toBe(true);
   });
 
   it("codes_success 04870267100135 → valid", () => {
-    expect(verifyGtinMod10("04870267100135")).toBe(true);
+    expect(verifyGs1Mod10("04870267100135")).toBe(true);
   });
 
   it("corrupted check digit → invalid", () => {
-    expect(verifyGtinMod10("04014835723398")).toBe(false);
+    expect(verifyGs1Mod10("04014835723398")).toBe(false);
   });
 
   it("not 14 digits → invalid", () => {
-    expect(verifyGtinMod10("0401483572339")).toBe(false);
-    expect(verifyGtinMod10("")).toBe(false);
-    expect(verifyGtinMod10("0401483572339a")).toBe(false);
+    expect(verifyGs1Mod10("0401483572339")).toBe(false);
+    expect(verifyGs1Mod10("")).toBe(false);
+    expect(verifyGs1Mod10("0401483572339a")).toBe(false);
+  });
+
+  it("SSCC-18: валиден, check digit вычисляется", () => {
+    const sscc = "012345670000000015"; // check=5
+    expect(verifyGs1Mod10(sscc, 18)).toBe(true);
+    const base = sscc.slice(0, -1);
+    expect(gs1Mod10CheckDigit(base)).toBe(5);
+    expect(verifyGs1Mod10("012345670000000010", 18)).toBe(false);
+  });
+
+  it("gs1Mod10CheckDigit для GTIN-14 base совпадает с последней цифрой", () => {
+    expect(gs1Mod10CheckDigit("0401483572339")).toBe(9);
   });
 });
 
