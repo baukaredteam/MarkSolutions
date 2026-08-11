@@ -4,15 +4,18 @@
 
 **Blocked by:** 02 (W3: заказ КМ), 04 (W3: Code Vault), 05 (W3: нанесение + таймер)
 
-**Status:** ready-for-agent
+**Status:** done (feat/w3-web)
 
-- [ ] Баланс + пополнение: GET /billing/balance (balance/reserved/available), загрузка файла «из 1С» (PaymentImport)
-- [ ] Создание заказа из карточки: выбор товара, превью «места × штук = quantity» (1 ≤ quantity ≤ places×unitsPerPlace), тариф, totalPrice; POST /orders
-- [ ] Список заказов tenant: GET /orders со статусами (ORD-026), масками КМ, кнопки «Скачать коды» и «Отчет о нанесении»
-- [ ] «Скачать коды»: экспорт CSV с аудитом CV-032
-- [ ] Форма «Отчет о нанесении»: обязательные expirationDate/productionDate/manufacturerCountry → POST /api/utilisation → статус SUCCESS
-- [ ] UI не даёт выбрать SELF_MADE / групповую маркировку (cisType=UNIT, serialNumberType=OPERATOR)
-- [ ] Таблицы на EntityList-конфигах (ADR-008), без хардкод-страниц где можно
+- [x] EntityList data-driven (ADR-008): компонент `entity-list.tsx` + unit-тесты (заголовки колонок, render-колонки, empty state)
+- [x] Баланс + пополнение: `balance.tsx` — GET /billing/balance (balance/reserved/available), POST /billing/payments/import {ref1c, amount} (MVP JSON-форма); идемпотентность ref1c визуально (повтор → 200 → «Проводка уже существует»)
+- [x] Создание заказа: `order-form.tsx` — превью «места × штук = quantity», валидация 1 ≤ quantity ≤ произведение (тост), тариф GET /billing/tariff/active + totalPrice; POST /orders с Idempotency-Key = crypto.randomUUID(); 402 → тост «Недостаточно средств»; cisType=UNIT/serialNumberType=OPERATOR (UI не даёт выбрать SELF_MADE/GROUP/SET)
+- [x] Список заказов tenant: `orders.tsx` — GET /orders (EntityList: id/gtin/quantity/totalPrice/status/createdAt), детали с масками КМ (GET /api/codes через Vault), кнопка «Скачать коды»
+- [x] «Скачать коды»: POST /codes/export → скачивание CSV (BOM/«;») + тост «Аудит записан (CV-032)»; повторное скачивание тоже аудируется
+- [x] Форма «Отчет о нанесении»: `utilisation-form.tsx` — orderId, releaseType (PRODUCTION/IMPORT/CIRCULATION), expirationDate/productionDate/manufacturerCountry (ISO2) → POST /utilisation; поллинг статуса через идемпотентный POST с тем же Idempotency-Key → SUCCESS → «Нанесение зарегистрировано, коды списаны» / ERROR → rejectReason
+- [x] Дашборд «Алерты/Задачи»: `dashboard.tsx` — GET /moderation/exceptions, вкладки «Дедлайны 30 дней» (payload.reason содержит deadline) и «Все исключения»
+- [x] api.ts: postRaw с Idempotency-Key header + postBlob (CSV) + unit-тесты
+- [x] Routes/nav: /balance, /orders, /dashboard + layout-ссылки
+- [x] e2e-browser.mjs: домcontentloaded фикс (vite HMR ломает networkidle) + W3-web стоп-тесты (баланс, пополнение идемпотентно, заказы, дашборд) — 8/8 PASS
 
 ## Ограничения
 
