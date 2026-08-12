@@ -89,6 +89,7 @@ export class OrderService {
     if (existing) {
       return {
         id: existing.id,
+        number: existing.number,
         status: existing.status,
         isPaid: existing.isPaid,
         lines: existing.lines.map((l) => ({
@@ -102,9 +103,13 @@ export class OrderService {
     let order;
     try {
       order = await this.prisma.$transaction(async (tx) => {
+        // UI-05: номер заказа (KM-2026-NNNNNN) — инкремент в коде, tenant-агностичный
+        const last = await tx.order.aggregate({ _max: { number: true } });
+        const number = (last._max.number ?? 0) + 1;
         const created = await tx.order.create({
           data: {
             tenantId,
+            number,
             idempotencyKey,
             cardId: card.id,
             gtin: body.gtin,
@@ -173,6 +178,7 @@ export class OrderService {
         if (existing) {
           return {
             id: existing.id,
+            number: existing.number,
             status: existing.status,
             isPaid: existing.isPaid,
             lines: existing.lines.map((l) => ({
@@ -188,6 +194,7 @@ export class OrderService {
 
     return {
       id: order.id,
+      number: order.number,
       status: order.status,
       isPaid: order.isPaid,
       lines: [
@@ -246,6 +253,7 @@ export class OrderService {
     });
     return orders.map((o) => ({
       id: o.id,
+      number: o.number,
       status: o.status,
       gtin: o.gtin,
       quantity: o.lines.reduce((s, l) => s + l.quantity, 0),
@@ -261,6 +269,7 @@ export class OrderService {
     const order = await this.getOwnedOrder(tenantId, orderId);
     return {
       id: order.id,
+      number: order.number,
       status: order.status,
       gtin: order.gtin,
       isPaid: order.isPaid,

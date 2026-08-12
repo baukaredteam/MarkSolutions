@@ -1,4 +1,12 @@
 import { chromium } from "playwright";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  writeFileSync,
+  readFileSync,
+  renameSync,
+  mkdirSync,
+} from "node:fs";
 
 const baseUrl = process.env.WEB_URL ?? "http://localhost:5173";
 const bin = "123456789042";
@@ -535,6 +543,94 @@ async function main() {
       pass(`clone → DRAFT, submit → SUBMITTED (id ${result.cloneId.slice(0, 8)}…)`);
     } catch (error) {
       fail("clone + submit", error);
+    }
+
+    // ---- UI-05: orders page (KPI-4, номер KM-2026) + xlsx выгрузка + vault page ----
+    try {
+      await page.getByRole("link", { name: "Заказы" }).click();
+      await page.waitForURL("**/orders");
+      await page.getByRole("heading", { name: "Заказы кодов" }).waitFor({ state: "visible" });
+      const kpi4 = await page.locator(".grid.four .card").count();
+      if (kpi4 < 4) throw new Error(`KPI-4 не хватает (${kpi4})`);
+      const kmNum = await page.locator("tbody tr").first().innerText();
+      if (!/KM-2026-\d{6}/.test(kmNum)) throw new Error(`номер KM-2026 не найден: ${kmNum}`);
+      pass("orders: KPI-4 + номер KM-2026-######");
+    } catch (error) {
+      fail("orders page", error);
+    }
+
+    // скриншот orders
+    try {
+      const shot = await page.screenshot({ path: "shot-orders.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot orders saved");
+    } catch (error) {
+      fail("screenshot orders", error);
+    }
+
+    // ---- UI-05: xlsx выгрузка — распаковка как ZIP, serial текстом (ведущие нули) ----
+    try {
+      const xlsxBase64 = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const agg = await fetch("/api/api/codes", { headers: { Authorization: `Bearer ${sess.token}` } }).then((r) => r.json());
+        const orderId = agg.items?.[0]?.orderId;
+        if (!orderId) throw new Error("no codes in vault");
+        const res = await fetch("/api/codes/export/xlsx", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${sess.token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId }),
+        });
+        if (!res.ok) throw new Error(`export/xlsx HTTP ${res.status}`);
+        const buf = await res.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        for (const b of bytes) bin += String.fromCharCode(b);
+        return btoa(bin);
+      });
+      const xlsxPath = join(tmpdir(), `e2e-codes-${Date.now()}.xlsx`);
+      writeFileSync(xlsxPath, Buffer.from(xlsxBase64, "base64"));
+      const zipPath = xlsxPath.replace(/\.xlsx$/, ".zip");
+      renameSync(xlsxPath, zipPath);
+      const outDir = join(tmpdir(), `e2e-xlsx-${Date.now()}`);
+      mkdirSync(outDir);
+      await import("child_process").then((cp) =>
+        new Promise((resolve, reject) =>
+          cp.exec(`powershell -NoProfile -Command "Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${outDir}' -Force"`, (e) => (e ? reject(e) : resolve()))
+        )
+      );
+      const sheet = readFileSync(join(outDir, "xl", "worksheets", "sheet1.xml"), "utf8");
+      if (!sheet.includes('t="inlineStr"')) throw new Error("нет inlineStr (значения не текстом)");
+      const serials = [...sheet.matchAll(/<is><t>(\d+)<\/t><\/is>/g)].map((m) => m[1]);
+      if (!serials.length) throw new Error("нет serial в xlsx");
+      const zeroPadded = serials.some((s) => /^0+\d+$/.test(s) && !/^0+$/.test(s));
+      if (!zeroPadded) throw new Error(`serial не с ведущими нулями: ${serials.join(",")}`);
+      pass(`xlsx: inlineStr + serial текстом с ведущими нулями (${serials[0]})`);
+    } catch (error) {
+      fail("xlsx export", error);
+    }
+
+    // ---- UI-05: vault page (KPI-5, пулы, выгрузка) ----
+    try {
+      await page.getByRole("link", { name: "Vault" }).click();
+      await page.waitForURL("**/vault");
+      await page.getByRole("heading", { name: "Code Vault" }).waitFor({ state: "visible" });
+      const kpi5 = await page.locator(".grid.kpis .card").count();
+      if (kpi5 < 5) throw new Error(`KPI-5 не хватает (${kpi5})`);
+      const hint = await page.locator(".hint").first().innerText();
+      if (!/CSV — для 1С; XLSX — для людей/.test(hint)) throw new Error(`хинт выгрузки: ${hint}`);
+      pass("vault: KPI-5 + хинт CSV/XLSX");
+    } catch (error) {
+      fail("vault page", error);
+    }
+
+    // скриншот vault
+    try {
+      const shot = await page.screenshot({ path: "shot-vault.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot vault saved");
+    } catch (error) {
+      fail("screenshot vault", error);
     }
 
     // (d) logout → standalone /login

@@ -12,6 +12,7 @@ import { CodeCheckPage } from "./pages/code-check";
 import { ProductsPage } from "./pages/products";
 import { ProductDetailPage } from "./pages/product-detail";
 import { OrdersPage } from "./pages/orders";
+import { VaultPage } from "./pages/vault";
 import { BalancePage } from "./pages/balance";
 import { PAGES, defaultRoute, type Role } from "./roles";
 import { sessionStore } from "./session";
@@ -65,7 +66,6 @@ function RequireAuth() {
 }
 
 const STUB_IDS = [
-  "vault",
   "labels",
   "operations",
   "warehouse",
@@ -97,6 +97,7 @@ export function AppRoutes() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/productDetail/:id" element={<ProductDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
+        <Route path="/vault" element={<VaultPage />} />
         <Route path="/billing" element={<BalancePage />} />
         {STUB_IDS.map((id) => (
           <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />

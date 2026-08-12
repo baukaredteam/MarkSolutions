@@ -467,4 +467,29 @@ describe("order create (W3, ORD-024..028)", () => {
     expect(BigInt(bal.body.reserved)).toBe(BigInt(60000));
     expect(BigInt(bal.body.balance)).toBe(BigInt(100000));
   });
+
+  it("UI-05: заказ получает number (KM-2026-NNNNNN), /orders и /orders/:id включают number", async () => {
+    const { id: cardId, gtin } = await createCard();
+    const key = `ord-num-${Date.now()}`;
+    const created = await request(app.getHttpServer())
+      .post("/orders")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", key)
+      .send({ cardId, gtin, places: 1, unitsPerPlace: 2 })
+      .expect(201);
+    expect(created.body.number).toBeGreaterThan(0);
+    const list = await request(app.getHttpServer())
+      .get("/orders")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const row = list.body.items.find(
+      (o: { id: string }) => o.id === created.body.id
+    );
+    expect(row.number).toBe(created.body.number);
+    const detail = await request(app.getHttpServer())
+      .get(`/orders/${created.body.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(detail.body.number).toBe(created.body.number);
+  });
 });

@@ -15,6 +15,7 @@
 import type { Request, Response } from "express";
 import { PrismaService } from "./prisma.service";
 import { VaultService } from "./vault.service";
+import { buildXlsx } from "@markflow/shared";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
 
@@ -166,6 +167,79 @@ export class VaultController {
     );
     res.send(csv);
     void attrs;
+  }
+
+  // POST /codes/export/xlsx — Excel для людей (UI-05); CSV для 1С не меняем.
+  // Все значения inlineStr (TEXT): gtin/serial/km_full с ведущими нулями сохраняются.
+  @Roles("admin", "manager", "marking")
+  @HttpCode(200)
+  @Post("codes/export/xlsx")
+  async exportXlsx(
+    @Req() req: Request,
+    @Res() res: Response,
+    @Body() body: { orderId: string; reason?: string }
+  ) {
+    const tenantId = tenantOf(req);
+    const order = await this.prisma.order.findUnique({
+      where: { id: body.orderId },
+    });
+    if (!order || order.tenantId !== tenantId)
+      throw new NotFoundException("order not found");
+    if (
+      order.status !== "COMPLETED" &&
+      order.status !== "PARTIALLY_COMPLETED"
+    ) {
+      throw new ConflictException({
+        code: 409,
+        message: `коды ещё не эмитированы (${order.status})`,
+        details: null,
+        fieldErrors: {},
+        correlationId: "",
+        retryable: false,
+      });
+    }
+    const codes = await this.vault.revealForExport(
+      body.orderId,
+      tenantId,
+      order.cardId
+    );
+    const headers = [
+      "gtin",
+      "serial",
+      "ai91",
+      "ai92",
+      "form",
+      "km_full",
+      "orderId",
+    ];
+    const rows = codes.map((c) => [
+      c.gtin,
+      c.serial,
+      c.ai91 ?? "",
+      c.ai92 ?? "",
+      c.form,
+      kmFull(c),
+      body.orderId,
+    ]);
+    const xlsx = buildXlsx("codes", headers, rows);
+    const ts = Date.now();
+    await this.vault.logExport(
+      tenantId,
+      body.orderId,
+      (req as unknown as { actor: string }).actor,
+      "export",
+      codes.length,
+      body.reason
+    );
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="markflow-codes-${body.orderId}-${ts}.xlsx"`
+    );
+    res.send(xlsx);
   }
 
   // POST /codes/print вЂ” РїРѕР»РЅС‹Рµ РљРњ РґР»СЏ РїРµС‡Р°С‚Рё (Р·Р°РґРµР» W4); Р°СѓРґРёС‚ CV-032.

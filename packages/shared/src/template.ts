@@ -166,6 +166,65 @@ export function buildMotorOilTemplate(): Buffer {
   return Buffer.from(zipBuf);
 }
 
+// Универсальный XLSX из строк (все значения — inlineStr, т.е. TEXT: ведущие
+// нули GTIN/serial сохраняются). Используется POST /codes/export/xlsx (UI-05).
+export function buildXlsx(
+  sheetName: string,
+  headers: string[],
+  rows: (string | null | undefined)[][]
+): Buffer {
+  const enc = new TextEncoder();
+  const all = [headers, ...rows];
+  const sheet = all
+    .map(
+      (r, i) =>
+        `<row r="${i + 1}">${r
+          .map(
+            (c, ci) =>
+              `<c r="${String.fromCharCode(65 + ci)}${i + 1}" t="inlineStr"><is><t>${xmlEscape(String(c ?? ""))}</t></is></c>`
+          )
+          .join("")}</row>`
+    )
+    .join("");
+  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${sheet}</worksheet>`;
+  const zipBuf = zip([
+    {
+      name: "[Content_Types].xml",
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+    },
+    {
+      name: "_rels/.rels",
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+    },
+    {
+      name: "xl/workbook.xml",
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      data: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+    },
+    { name: "xl/worksheets/sheet1.xml", data: enc.encode(sheetXml) },
+  ]);
+  return Buffer.from(zipBuf);
+}
+
 export function templateFor(group: string): Buffer | null {
   if (group === "motor-oils") return buildMotorOilTemplate();
   return null;

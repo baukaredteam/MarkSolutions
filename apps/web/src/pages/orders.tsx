@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
+import { sessionStore } from "../session";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
 import { OrderForm } from "./order-form";
 
 interface OrderRow {
   id: string;
+  number?: number;
   gtin: string | null;
   quantity: number;
   totalPrice: string;
@@ -34,6 +36,21 @@ const REPRINT_REASONS = [
   ["LOST_LABEL", "Потеряна этикетка"],
   ["OTHER", "Другое"],
 ] as const;
+
+const ORD_BADGE: Record<string, string> = {
+  DRAFT: "b-gray",
+  VALIDATING: "b-yellow",
+  FUNDS_RESERVED: "b-yellow",
+  QUEUED: "b-blue",
+  SENT: "b-blue",
+  ACCEPTED: "b-blue",
+  PROCESSING: "b-blue",
+  PARTIALLY_COMPLETED: "b-yellow",
+  COMPLETED: "b-green",
+  REJECTED: "b-red",
+  CANCELLED: "b-gray",
+  FAILED: "b-red",
+};
 
 // Экран «Заказы» (W3+W4-02): заказы, индивидуальные коды с печатью/перепечаткой
 // этикеток (bwip-js → PNG preview), скачивание CSV, создание заказа.
@@ -103,6 +120,40 @@ export function OrdersPage() {
     }
   }
 
+  // UI-05: выгрузка XLSX (для людей, Excel)
+  async function downloadXlsx(orderId: string) {
+    try {
+      const sess = sessionStore.get();
+      const res = await fetch(`/api/codes/export/xlsx`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${sess?.token}`,
+          "Content-Type": "application/json",
+          Accept: "*/*",
+        },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(`HTTP ${res.status}: ${err?.message ?? ""}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `markflow-codes-${orderId}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.push("Аудит записан (CV-032)");
+    } catch (e) {
+      toast.push(`Ошибка выгрузки XLSX: ${(e as Error).message}`, "error");
+    }
+  }
+
+  function fmtOrderNumber(n: number | undefined): string {
+    return `KM-2026-${String(n ?? 0).padStart(6, "0")}`;
+  }
+
   async function print(codeId: string) {
     setBusyCode(codeId);
     try {
@@ -149,26 +200,68 @@ export function OrdersPage() {
     status === "COMPLETED" || status === "PARTIALLY_COMPLETED";
 
   const columns: Column<OrderRow>[] = [
-    { key: "id", label: "ID" },
+    {
+      key: "number",
+      label: "Номер",
+      render: (r) => <b>{fmtOrderNumber(r.number)}</b>,
+    },
     { key: "gtin", label: "GTIN" },
     { key: "quantity", label: "Кол-во" },
     { key: "totalPrice", label: "Сумма" },
-    { key: "status", label: "Статус" },
+    {
+      key: "status",
+      label: "Статус",
+      render: (r) => (
+        <span className={`badge ${ORD_BADGE[r.status] ?? "b-gray"}`}>
+          {r.status}
+        </span>
+      ),
+    },
     { key: "createdAt", label: "Создан" },
     {
       key: "actions",
       label: "Действия",
       render: (r) => (
         <>
-          <button onClick={() => setSelected(selected === r.id ? null : r.id)}>
+          <button
+            className="btn btn-light btn-sm"
+            onClick={() => setSelected(selected === r.id ? null : r.id)}
+          >
             {selected === r.id ? "Скрыть" : "Коды"}
           </button>{" "}
           {canDownload(r.status) && (
-            <button onClick={() => downloadCodes(r.id)}>Скачать коды</button>
+            <>
+              <button
+                className="btn btn-light btn-sm"
+                onClick={() => downloadCodes(r.id)}
+              >
+                Скачать CSV
+              </button>{" "}
+              <button
+                className="btn btn-light btn-sm"
+                onClick={() => downloadXlsx(r.id)}
+              >
+                Скачать XLSX
+              </button>
+            </>
           )}
         </>
       ),
     },
+  ];
+
+  const inWork = orders.filter((o) =>
+    ["QUEUED", "SENT", "PROCESSING", "PARTIALLY_COMPLETED"].includes(o.status)
+  ).length;
+  const todayReceived = orders.filter((o) => o.status === "COMPLETED").length;
+  const kpis = [
+    { label: "В обработке", value: inWork },
+    { label: "Получено", value: todayReceived },
+    {
+      label: "Требует внимания",
+      value: orders.filter((o) => o.status === "FAILED").length,
+    },
+    { label: "Заказов всего", value: orders.length },
   ];
 
   return (
@@ -181,7 +274,15 @@ export function OrdersPage() {
           </div>
         </div>
       </div>
-      <div className="card">
+      <div className="grid four">
+        {kpis.map((k) => (
+          <div className="card" key={k.label}>
+            <b>{k.value}</b>
+            <p className="sub">{k.label}</p>
+          </div>
+        ))}
+      </div>
+      <div className="card" style={{ marginTop: 15 }}>
         <div className="toolbar">
           <button className="btn btn-light" onClick={load} disabled={loading}>
             ↻ Обновить

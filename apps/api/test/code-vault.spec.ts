@@ -238,14 +238,12 @@ describe("code vault (W3, CV-030..033)", () => {
     const t2 = await prisma.tenant.create({
       data: { bin: "777000111333", name: "Чужой", status: "ACTIVE" },
     });
-    const token2 = app
-      .get(JwtService)
-      .sign({
-        sub: `u-${t2.id}`,
-        tenantId: t2.id,
-        roles: ["admin"],
-        mfaCompleted: true,
-      });
+    const token2 = app.get(JwtService).sign({
+      sub: `u-${t2.id}`,
+      tenantId: t2.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
     await request(app.getHttpServer())
       .get("/api/codes")
       .set("Authorization", `Bearer ${token2}`)
@@ -331,5 +329,34 @@ describe("code vault (W3, CV-030..033)", () => {
     });
     expect(audit).toBeTruthy();
     expect(audit!.count).toBe(1);
+  });
+
+  it("UI-05: POST /codes/export/xlsx — xlsx с inlineStr-строками (serial как текст), аудит CV-032", async () => {
+    const orderId = await completedOrder("k-vault-xlsx", 1, 2); // 2 КМ
+    const res = await request(app.getHttpServer())
+      .post("/codes/export/xlsx")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ orderId })
+      .expect(200);
+    expect(res.headers["content-type"]).toMatch(/spreadsheetml/);
+    // супертест отдаёт тело как res.text (JS string, binary-safe для latin1)
+    const str = res.text;
+    // ZIP: find "xl/worksheets/sheet1.xml" (stored, no compression)
+    const idx = str.indexOf("sheet1.xml");
+    expect(idx).toBeGreaterThan(-1);
+    // после имени файла (30-byte local header) идёт XML с inlineStr
+    const xmlStart = idx + "sheet1.xml".length + 30;
+    const xml = str.slice(xmlStart, xmlStart + 3000);
+    // serial от симулятора — 7-значный с ведущими нулями; проверим inlineStr (t="inlineStr")
+    expect(xml).toContain('t="inlineStr"');
+    // найдём серийный номер в виде строки (после <t>)
+    const m = xml.match(/<is><t>0+(\d+)<\/t><\/is>/);
+    expect(m).toBeTruthy();
+    // аудит
+    const audit = await prisma.vaultExport.findFirst({
+      where: { orderId, kind: "export" },
+    });
+    expect(audit).toBeTruthy();
+    expect(audit!.count).toBe(2);
   });
 });
