@@ -19,6 +19,26 @@ async function main() {
   const page = await browser.newPage();
 
   try {
+    // (a) неавторизованный / → standalone /login (нет sidebar в DOM)
+    try {
+      await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded" });
+      await page.getByRole("heading", { name: "Вход в систему" }).waitFor({ state: "visible" });
+      const sidebarCount = await page.locator(".sidebar").count();
+      if (sidebarCount !== 0) throw new Error(`sidebar present on / (${sidebarCount})`);
+      pass("неавторизованный / → standalone login (без sidebar)");
+    } catch (error) {
+      fail("standalone login (/)", error);
+    }
+
+    // (e) скриншот standalone login
+    try {
+      const shot = await page.screenshot({ path: "shot-login-standalone.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot standalone login saved");
+    } catch (error) {
+      fail("screenshot standalone login", error);
+    }
+
     try {
       // UI-02 shell: login → sidebar → Ctrl+K → products
       await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
@@ -29,6 +49,35 @@ async function main() {
       pass("admin login reaches /dashboard (shell)");
     } catch (error) {
       fail("admin login (shell)", error);
+    }
+
+    // (b) авторизованный лендинг: KPI + степпер
+    try {
+      await page.locator(".kpis").waitFor({ state: "visible" });
+      await page.locator(".process").waitFor({ state: "visible" });
+      await page.locator(".card-title").filter({ hasText: "Сквозной процесс маркировки" }).first().waitFor({ state: "visible" });
+      pass("landing /dashboard: KPI-карточки + степпер видны");
+    } catch (error) {
+      fail("landing dashboard (KPI + степпер)", error);
+    }
+
+    // (c) авторизованный reload "/" → /dashboard (не login внутри shell)
+    try {
+      await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded" });
+      await page.waitForURL("**/dashboard");
+      await page.locator(".sidebar").waitFor({ state: "visible" });
+      pass("авторизованный reload / → /dashboard (sidebar виден)");
+    } catch (error) {
+      fail("авторизованный reload /", error);
+    }
+
+    // (e) скриншот авторизованного dashboard
+    try {
+      const shot = await page.screenshot({ path: "shot-dashboard-authed.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot authed dashboard saved");
+    } catch (error) {
+      fail("screenshot authed dashboard", error);
     }
 
     try {
@@ -345,6 +394,16 @@ async function main() {
       fail("w4-seed → summary", error);
     }
 
+    // (d) logout → standalone /login
+    try {
+      await page.getByRole("button", { name: "Выйти" }).click();
+      await page.getByRole("heading", { name: "Вход в систему" }).waitFor({ state: "visible" });
+      const sidebarAfter = await page.locator(".sidebar").count();
+      if (sidebarAfter !== 0) throw new Error("sidebar остался после logout");
+      pass("logout → standalone /login (без sidebar)");
+    } catch (error) {
+      fail("logout", error);
+    }
   } finally {
     await browser.close();
   }

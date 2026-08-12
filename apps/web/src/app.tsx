@@ -1,11 +1,18 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { Layout } from "./layout";
 import { LoginPage } from "./pages/login";
 import { DashboardPage } from "./pages/dashboard";
 import { ProductsPage } from "./pages/products";
 import { OrdersPage } from "./pages/orders";
 import { BalancePage } from "./pages/balance";
-import { PAGES } from "./roles";
+import { PAGES, defaultRoute, type Role } from "./roles";
+import { sessionStore } from "./session";
 
 function StubPage({ id }: { id: string }) {
   const meta = PAGES.find((p) => p.id === id);
@@ -34,6 +41,27 @@ function StubPage({ id }: { id: string }) {
   );
 }
 
+// /login вне Layout: есть сессия → редирект на default-route; иначе standalone LoginPage.
+function LoginGate() {
+  const sess = sessionStore.get();
+  if (sess) {
+    return (
+      <Navigate
+        to={defaultRoute((sess.roles ?? ["viewer"]) as Role[])}
+        replace
+      />
+    );
+  }
+  return <LoginPage />;
+}
+
+// Layout только при сессии; иначе → /login.
+function RequireAuth() {
+  const sess = sessionStore.get();
+  if (!sess) return <Navigate to="/login" replace />;
+  return <Layout />;
+}
+
 const STUB_IDS = [
   "codecheck",
   "vault",
@@ -57,10 +85,13 @@ const STUB_IDS = [
 ];
 
 export function AppRoutes() {
+  const loc = useLocation();
+  // ре-рендер при навигации (sessionStore изменился после login/logout)
+  void loc;
   return (
     <Routes>
-      <Route element={<Layout />}>
-        <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<LoginGate />} />
+      <Route element={<RequireAuth />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/orders" element={<OrdersPage />} />
@@ -68,7 +99,7 @@ export function AppRoutes() {
         {STUB_IDS.map((id) => (
           <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />
         ))}
-        <Route path="*" element={<LoginPage />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
   );

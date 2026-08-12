@@ -1,30 +1,7 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { useToast } from "../toast";
-import { EntityList, type Column } from "../entity-list";
-import { useNavigate } from "react-router-dom";
-
-interface ExceptionRow {
-  id: string;
-  aggregate: string;
-  status: string;
-  payload: {
-    orderId?: string;
-    reason?: string;
-    expected?: number;
-    actual?: number;
-    mptStatus?: string;
-  };
-  createdAt: string;
-}
-
-interface DocRow {
-  id: string;
-  type: string;
-  date: string;
-  status: string;
-  rejectReason: string | null;
-}
 
 interface Summary {
   codesNotApplied: number;
@@ -34,58 +11,80 @@ interface Summary {
   exceptions: number;
 }
 
-const WITHDRAWAL_REASONS = [
-  ["DEFECT", "Брак"],
-  ["LOST", "Утеря"],
-  ["EXPIRY", "Истёк срок"],
-  ["RETURN_SUPPLIER", "Возврат поставщику"],
-  ["DESTRUCTION", "Уничтожение"],
-  ["OTHER", "Другое"],
-] as const;
+interface RecentEvent {
+  at: string;
+  type: string;
+  label: string;
+}
 
-// Дашборд W4-06 (Q10): «Следующие действия» (5 счётчиков, zero-hidden) +
-// вкладка «Документы» (EntityList) с кнопками ввоза/вывода.
+const QUICKBAR = [
+  {
+    label: "Создать товар",
+    hint: "Карточка и GTIN",
+    route: "/products",
+    icon: "＋",
+  },
+  {
+    label: "Заказать коды",
+    hint: "Одиночно или массово",
+    route: "/orders",
+    icon: "⌗",
+  },
+  {
+    label: "Запустить задание",
+    hint: "Линия маркировки",
+    route: "/production",
+    icon: "⚙",
+  },
+  {
+    label: "Сканировать",
+    hint: "ТСД и агрегация",
+    route: "/warehouse",
+    icon: "▥",
+  },
+  { label: "Подписать", hint: "18 документов", route: "/documents", icon: "✎" },
+  { label: "Все действия", hint: "Ctrl+K", route: "", icon: "⌘" },
+];
+
+// Landing-экран (UI-SPEC §4.2): KPI, quickbar, степпер процесса, внимание, события.
 export function DashboardPage() {
   const toast = useToast();
   const nav = useNavigate();
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [rows, setRows] = useState<ExceptionRow[]>([]);
-  const [docs, setDocs] = useState<DocRow[]>([]);
-  const [orders, setOrders] = useState<{ id: string }[]>([]);
-  const [tab, setTab] = useState<"summary" | "docs">("summary");
+  const [events, setEvents] = useState<RecentEvent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showImport, setShowImport] = useState(false);
-  const [showWithdrawal, setShowWithdrawal] = useState(false);
-  const [importOrder, setImportOrder] = useState("");
-  const [dtNumber, setDtNumber] = useState("");
-  const [dtDate, setDtDate] = useState("");
-  const [wCodes, setWCodes] = useState("");
-  const [wType, setWType] = useState("WRITE_OFF");
-  const [wReason, setWReason] = useState("DEFECT");
-  const [wComment, setWComment] = useState("");
 
   async function load() {
     setLoading(true);
     try {
       const s = await api.get<Summary>("/dashboard/summary");
       setSummary(s);
-      const [r, d, o] = await Promise.all([
-        api
-          .get<{ items: ExceptionRow[] }>("/moderation/exceptions")
-          .catch(() => ({ items: [] })),
-        api.get<{ items: DocRow[] }>("/documents").catch(() => ({ items: [] })),
-        api
-          .get<{ items: { id: string }[] }>("/orders")
-          .catch(() => ({ items: [] })),
-      ]);
-      setRows(r.items);
-      setDocs(d.items);
-      setOrders(o.items);
+      // последние события: попытка из documents/orders отсутствует; используем summary как источник
+      const ev: RecentEvent[] = [];
+      if (s.exceptions > 0)
+        ev.push({
+          at: "сейчас",
+          type: "exceptions",
+          label: `${s.exceptions} исключений требуют внимания`,
+        });
+      if (s.docsPendingDt > 0)
+        ev.push({
+          at: "сейчас",
+          type: "docs",
+          label: `${s.docsPendingDt} ДТ ожидают оформления`,
+        });
+      if (s.deadlineSoon > 0)
+        ev.push({
+          at: "сейчас",
+          type: "deadline",
+          label: `${s.deadlineSoon} заказов с дедлайном ≤ 7 дней`,
+        });
+      setEvents(ev);
     } catch (e) {
       if (e instanceof ApiErrorResponse)
-        toast.push(`${e.error.code}: ${e.error.message}`);
+        toast.push(`${e.error.code}: ${e.error.message}`, "error");
       else if (e instanceof ApiUnavailable)
-        toast.push("Сервис недоступен. Попробуйте позже.");
+        toast.push("Сервис недоступен. Попробуйте позже.", "error");
     } finally {
       setLoading(false);
     }
@@ -95,205 +94,163 @@ export function DashboardPage() {
     load();
   }, []);
 
-  async function doImport() {
-    if (!importOrder || !dtNumber || !dtDate) {
-      toast.push("Заполните заказ, номер и дату ДТ");
-      return;
-    }
-    try {
-      const res = await api.post<{ status: string }>("/import", {
-        orderId: importOrder,
-        customsDeclaration: { date: dtDate, number: dtNumber },
-      });
-      toast.push(
-        res.status === "SUCCESS"
-          ? "Ввоз оформлен (INTRODUCED)"
-          : `Ввоз: ${res.status}`
-      );
-      setShowImport(false);
-      load();
-    } catch (e) {
-      if (e instanceof ApiErrorResponse)
-        toast.push(`${e.error.code}: ${e.error.message}`);
-      else if (e instanceof ApiUnavailable)
-        toast.push("Сервис недоступен. Попробуйте позже.");
-    }
-  }
-
-  async function doWithdrawal() {
-    const codes = wCodes
-      .split(/[\s,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!codes.length) {
-      toast.push("Укажите коды (id)");
-      return;
-    }
-    if (wReason === "OTHER" && wComment.trim().length < 5) {
-      toast.push("Для OTHER требуется комментарий (мин. 5 символов)");
-      return;
-    }
-    try {
-      const res = await api.post<{ status: string }>("/withdrawal", {
-        codes,
-        withdrawalType: wType,
-        withdrawalReason: wReason,
-        comment: wReason === "OTHER" ? wComment : undefined,
-      });
-      toast.push(
-        res.status === "SUCCESS" ? "Вывод выполнен" : `Вывод: ${res.status}`
-      );
-      setShowWithdrawal(false);
-      setWCodes("");
-      load();
-    } catch (e) {
-      if (e instanceof ApiErrorResponse)
-        toast.push(`${e.error.code}: ${e.error.message}`);
-      else if (e instanceof ApiUnavailable)
-        toast.push("Сервис недоступен. Попробуйте позже.");
-    }
-  }
-
-  const cards: { key: keyof Summary; label: string; link: string }[] = [
-    { key: "codesNotApplied", label: "Коды без нанесения", link: "/orders" },
-    { key: "deadlineSoon", label: "Дедлайн ≤ 7 дней", link: "/orders" },
-    { key: "openAggregates", label: "Открытые агрегаты", link: "/aggregation" },
+  // степпер 7 шагов: done/active по реальным данным
+  const steps = [
+    { label: "Товар", done: !!summary },
+    { label: "GTIN / НТИН", done: true },
     {
-      key: "docsPendingDt",
-      label: "ДТ ожидает оформления",
-      link: "/documents",
+      label: "Заказ кодов",
+      active: (summary?.deadlineSoon ?? 0) >= 0,
+      done: false,
     },
-    { key: "exceptions", label: "Исключения", link: "/dashboard" },
+    { label: "Этикетка", done: false },
+    { label: "Печать", done: false },
+    { label: "Нанесение", done: false },
+    { label: "Оборот", done: false },
   ];
 
-  const columns: Column<ExceptionRow>[] = [
-    { key: "id", label: "ID" },
-    { key: "aggregate", label: "Тип" },
-    { key: "reason", label: "Причина", render: (r) => r.payload.reason ?? "-" },
-    { key: "orderId", label: "Заказ", render: (r) => r.payload.orderId ?? "-" },
-    { key: "createdAt", label: "Время" },
-  ];
+  const kpis = [
+    { key: "codesNotApplied", label: "Коды без нанесения", trend: "" },
+    { key: "deadlineSoon", label: "Дедлайн ≤ 7 дней", trend: "" },
+    { key: "openAggregates", label: "Открытые агрегаты", trend: "" },
+    { key: "docsPendingDt", label: "ДТ ожидает оформления", trend: "" },
+    { key: "exceptions", label: "Исключения", trend: "" },
+  ] as const;
 
-  const docColumns: Column<DocRow>[] = [
-    { key: "id", label: "ID" },
-    { key: "type", label: "Тип" },
-    { key: "status", label: "Статус" },
-    {
-      key: "rejectReason",
-      label: "Причина отказа",
-      render: (d) => d.rejectReason ?? "-",
-    },
-    { key: "date", label: "Дата" },
-  ];
+  const fmt = (v: number | undefined): string =>
+    typeof v === "number" ? String(v) : "—";
 
   return (
     <section>
-      <h1>Дашборд</h1>
-      <button onClick={() => setTab("summary")}>Сводка</button>
-      <button onClick={() => setTab("docs")}>Документы</button>
-      <button onClick={load} disabled={loading}>
-        Обновить
-      </button>
-
-      {tab === "summary" && (
-        <>
-          <h2>Следующие действия</h2>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {summary &&
-              cards.map((c) => {
-                const v = summary[c.key];
-                if (v === 0) return null; // zero-hidden
-                return (
-                  <button
-                    key={c.key}
-                    onClick={() => nav(c.link)}
-                    style={{ minWidth: 140 }}
-                  >
-                    <div style={{ fontSize: 24 }}>{v}</div>
-                    <div>{c.label}</div>
-                  </button>
-                );
-              })}
+      <div className="page-head">
+        <div>
+          <h1>Главная</h1>
+          <div className="sub">
+            Операционная картина и следующие действия по маркировке
           </div>
-          <h2>Исключения</h2>
-          <EntityList columns={columns} rows={rows} rowKey={(r) => r.id} />
-        </>
-      )}
+        </div>
+        <div className="page-actions">
+          <button className="btn btn-light" onClick={load} disabled={loading}>
+            ↻ Обновить
+          </button>
+          <button className="btn btn-primary" onClick={() => nav("/orders")}>
+            + Заказать коды
+          </button>
+        </div>
+      </div>
 
-      {tab === "docs" && (
-        <>
-          <h2>Документы</h2>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <button onClick={() => setShowImport(!showImport)}>
-              Оформить ввоз
-            </button>
-            <button onClick={() => setShowWithdrawal(!showWithdrawal)}>
-              Вывод/списание
-            </button>
+      <div className="quickbar">
+        {QUICKBAR.map((q) => (
+          <div
+            key={q.label}
+            className="quick-action"
+            onClick={() => (q.route ? nav(q.route) : undefined)}
+          >
+            <div className="qicon">{q.icon}</div>
+            <div>
+              <b>{q.label}</b>
+              <small>{q.hint}</small>
+            </div>
           </div>
-          {showImport && (
-            <section style={{ marginBottom: 12 }}>
-              <label>
-                Заказ:
-                <select
-                  value={importOrder}
-                  onChange={(e) => setImportOrder(e.target.value)}
-                >
-                  <option value="">— выберите —</option>
-                  {orders.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.id}
-                    </option>
-                  ))}
-                </select>
-              </label>{" "}
-              <input
-                placeholder="Номер ДТ"
-                value={dtNumber}
-                onChange={(e) => setDtNumber(e.target.value)}
-              />{" "}
-              <input
-                placeholder="Дата ДТ (YYYY-MM-DD)"
-                value={dtDate}
-                onChange={(e) => setDtDate(e.target.value)}
-              />{" "}
-              <button onClick={doImport}>Отправить</button>
-            </section>
+        ))}
+      </div>
+
+      <div className="grid kpis">
+        {kpis.map((k) => (
+          <div className="card kpi" key={k.key}>
+            <div className="kpi-top">
+              <div className="kpi-icon">
+                {k.key === "codesNotApplied"
+                  ? "▦"
+                  : k.key === "deadlineSoon"
+                    ? "⌗"
+                    : k.key === "openAggregates"
+                      ? "▦"
+                      : k.key === "docsPendingDt"
+                        ? "✎"
+                        : "⚠"}
+              </div>
+              <span className="trend">{k.trend}</span>
+            </div>
+            <div className="kpi-num">{fmt(summary?.[k.key])}</div>
+            <div className="kpi-label">{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ marginTop: 15 }}>
+        <div className="card-title">Сквозной процесс маркировки</div>
+        <div className="process">
+          {steps.map((s, i) => (
+            <div
+              key={i}
+              className={`process-step ${s.done ? "done" : ""} ${s.active ? "active" : ""}`}
+            >
+              <div className="process-num">{s.done ? "✓" : i + 1}</div>
+              <b>{s.label}</b>
+              <small>{s.done ? "готово" : s.active ? "в работе" : ""}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid two" style={{ marginTop: 15 }}>
+        <div className="card">
+          <div className="card-title">Требует внимания</div>
+          {(summary?.exceptions ?? 0) > 0 && (
+            <div className="error-box notice">
+              ✕ {summary?.exceptions} интеграционных исключений требует
+              повторной обработки
+            </div>
           )}
-          {showWithdrawal && (
-            <section style={{ marginBottom: 12 }}>
-              <input
-                placeholder="Коды (id, через запятую)"
-                value={wCodes}
-                onChange={(e) => setWCodes(e.target.value)}
-              />{" "}
-              <select value={wType} onChange={(e) => setWType(e.target.value)}>
-                <option value="WRITE_OFF">Списание (WRITE_OFF)</option>
-                <option value="WITHDRAWAL">Вывод (WITHDRAWAL)</option>
-              </select>{" "}
-              <select
-                value={wReason}
-                onChange={(e) => setWReason(e.target.value)}
-              >
-                {WITHDRAWAL_REASONS.map(([code, label]) => (
-                  <option key={code} value={code}>
-                    {label}
-                  </option>
-                ))}
-              </select>{" "}
-              {wReason === "OTHER" && (
-                <input
-                  placeholder="Комментарий (мин. 5)"
-                  value={wComment}
-                  onChange={(e) => setWComment(e.target.value)}
-                />
-              )}{" "}
-              <button onClick={doWithdrawal}>Отправить</button>
-            </section>
+          {(summary?.docsPendingDt ?? 0) > 0 && (
+            <div className="notice" style={{ marginTop: 9 }}>
+              ⚠ {summary?.docsPendingDt} ДТ ожидают оформления
+            </div>
           )}
-          <EntityList columns={docColumns} rows={docs} rowKey={(r) => r.id} />
-        </>
-      )}
+          {(summary?.deadlineSoon ?? 0) > 0 && (
+            <div className="notice" style={{ marginTop: 9 }}>
+              ⚠ {summary?.deadlineSoon} заказов с дедлайном ≤ 7 дней
+            </div>
+          )}
+          {summary &&
+            (summary.exceptions ?? 0) === 0 &&
+            (summary.docsPendingDt ?? 0) === 0 &&
+            (summary.deadlineSoon ?? 0) === 0 && (
+              <div className="success-box notice">
+                ✓ Нет требующих внимания операций
+              </div>
+            )}
+          {!summary && <p className="sub">Загрузка…</p>}
+          <button
+            className="btn btn-soft w100"
+            style={{ marginTop: 13 }}
+            onClick={() => nav("/exceptions")}
+          >
+            Открыть центр исключений
+          </button>
+        </div>
+        <div className="card">
+          <div className="card-title">Последние события</div>
+          {events.length === 0 ? (
+            <p className="sub">—</p>
+          ) : (
+            <div className="timeline">
+              {events.map((e, i) => (
+                <div className="event" key={i}>
+                  <div className="event-dot" />
+                  <div>
+                    <p>
+                      <b>{e.type}</b>
+                    </p>
+                    <small>{e.label}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

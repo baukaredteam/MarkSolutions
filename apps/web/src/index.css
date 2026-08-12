@@ -148,8 +148,6 @@ a {
 
 /* ---------- Layout: sidebar + main ---------- */
 .shell {
-  display: grid;
-  grid-template-columns: var(--side) 1fr;
   min-height: 100vh;
 }
 .sidebar {

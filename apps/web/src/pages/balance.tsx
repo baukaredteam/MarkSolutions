@@ -83,25 +83,38 @@ export function BalancePage() {
 
   return (
     <section>
-      <h1>Баланс</h1>
-      <button onClick={load} disabled={loading}>
-        Обновить
-      </button>
-      <EntityList columns={columns} rows={rows} rowKey={() => "bal"} />
-      <h2>Пополнить (файл «из 1С», MVP — JSON)</h2>
-      <input
-        placeholder="ref1c"
-        value={ref1c}
-        onChange={(e) => setRef1c(e.target.value)}
-      />
-      <input
-        placeholder="Сумма (тенге)"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-      />
-      <button onClick={topUp} disabled={loading}>
-        Пополнить
-      </button>
+      <div className="page-head">
+        <div>
+          <h1>Биллинг</h1>
+          <div className="sub">
+            Лицевой счёт, резервы, списания и закрывающие документы
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="toolbar">
+          <button className="btn btn-light" onClick={load} disabled={loading}>
+            ↻ Обновить
+          </button>
+        </div>
+        <EntityList columns={columns} rows={rows} rowKey={() => "bal"} />
+        <h2>Пополнить (файл «из 1С», MVP — JSON)</h2>
+        <input
+          className="input"
+          placeholder="ref1c"
+          value={ref1c}
+          onChange={(e) => setRef1c(e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="Сумма (тенге)"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+        <button className="btn btn-primary" onClick={topUp} disabled={loading}>
+          Пополнить
+        </button>
+      </div>
     </section>
   );
 }

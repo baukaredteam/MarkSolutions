@@ -101,6 +101,7 @@ export function Layout() {
   }, [sess]);
 
   if (!sess) {
+    // RequireAuth гарантирует сессию; fallback — пустой outlet (страница не рендерится)
     return (
       <ToastProvider>
         <Outlet />

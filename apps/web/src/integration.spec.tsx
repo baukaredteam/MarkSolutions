@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AppRoutes } from "./app";
@@ -26,6 +34,10 @@ describe("T2 web-backend integration", () => {
   afterAll(() => {
     vi.unstubAllGlobals();
     cleanup();
+  });
+
+  beforeEach(() => {
+    sessionStore.clear();
   });
 
   it("api-client sends Authorization Bearer token after login", async () => {

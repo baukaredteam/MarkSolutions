@@ -173,11 +173,22 @@ export function OrdersPage() {
 
   return (
     <section>
-      <h1>Заказы кодов</h1>
-      <button onClick={load} disabled={loading}>
-        Обновить
-      </button>
-      <EntityList columns={columns} rows={orders} rowKey={(r) => r.id} />
+      <div className="page-head">
+        <div>
+          <h1>Заказы кодов</h1>
+          <div className="sub">
+            Создание пулов, получение из ИС МПТ, контроль статусов
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="toolbar">
+          <button className="btn btn-light" onClick={load} disabled={loading}>
+            ↻ Обновить
+          </button>
+        </div>
+        <EntityList columns={columns} rows={orders} rowKey={(r) => r.id} />
+      </div>
       {selected && (
         <section>
           <h2>Коды заказа (печать этикеток DataMatrix)</h2>

@@ -49,9 +49,9 @@ describe("shell: Ctrl+K + role-switch + EntityList v2", () => {
     );
     const sw = screen.getByRole("combobox");
     fireEvent.change(sw, { target: { value: "accountant" } });
-    // accountant → /billing (BalancePage заголовок)
+    // accountant → /billing (BalancePage заголовок «Биллинг»)
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /Баланс/ })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: /Биллинг/ })).toBeTruthy();
     });
   });
 

@@ -87,58 +87,86 @@ export function ProductsPage() {
 
   return (
     <section>
-      <h1>Товары</h1>
-      <button onClick={seedInvoice} disabled={loading}>
-        Загрузить инвойс (демо)
-      </button>
-      <button onClick={() => setChip("all")}>Все</button>
-      <button onClick={() => setChip("out")}>Вне перечня</button>
-      <button onClick={() => setChip("in")}>Из перечня</button>
-      <table>
-        <thead>
-          <tr>
-            <th>Наименование</th>
-            <th>ТНВЭД</th>
-            <th>Статус</th>
-            <th>Действия</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((r) => {
-            const tnved = r.proposed.tnved ?? "";
-            const inList = IN_LIST.includes(tnved);
-            return (
-              <tr key={r.id} style={{ color: inList ? "green" : "red" }}>
-                <td>
-                  {r.proposed.name}
-                  {r.demo && <strong> [demo]</strong>}
-                  {r.proposed.gtinManual && (
-                    <em> [GTIN подтверждён вручную]</em>
-                  )}
-                </td>
-                <td>
-                  {tnved}
-                  {!inList && <em> — {HINT}</em>}
-                </td>
-                <td>{r.status}</td>
-                <td>
-                  <button onClick={() => toast.push("Карточка: заглушка")}>
-                    Карточка
-                  </button>
-                  <button
-                    onClick={() => toast.push("Создать карточку: заглушка")}
-                  >
-                    Создать карточку
-                  </button>
-                  <button onClick={() => toast.push("Скопировать: заглушка")}>
-                    Скопировать
-                  </button>
-                </td>
+      <div className="page-head">
+        <div>
+          <h1>Товары</h1>
+          <div className="sub">Карточки, GTIN/НТИН, модерация и версии</div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="toolbar">
+          <button
+            className="btn btn-light"
+            onClick={seedInvoice}
+            disabled={loading}
+          >
+            Загрузить инвойс (демо)
+          </button>
+          <button className="btn btn-light" onClick={() => setChip("all")}>
+            Все
+          </button>
+          <button className="btn btn-light" onClick={() => setChip("out")}>
+            Вне перечня
+          </button>
+          <button className="btn btn-light" onClick={() => setChip("in")}>
+            Из перечня
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Наименование</th>
+                <th>ТНВЭД</th>
+                <th>Статус</th>
+                <th>Действия</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {filtered.map((r) => {
+                const tnved = r.proposed.tnved ?? "";
+                const inList = IN_LIST.includes(tnved);
+                return (
+                  <tr key={r.id} style={{ color: inList ? "green" : "red" }}>
+                    <td>
+                      {r.proposed.name}
+                      {r.demo && <strong> [demo]</strong>}
+                      {r.proposed.gtinManual && (
+                        <em> [GTIN подтверждён вручную]</em>
+                      )}
+                    </td>
+                    <td>
+                      {tnved}
+                      {!inList && <em> — {HINT}</em>}
+                    </td>
+                    <td>{r.status}</td>
+                    <td>
+                      <button
+                        className="btn btn-light btn-sm"
+                        onClick={() => toast.push("Карточка: заглушка")}
+                      >
+                        Карточка
+                      </button>
+                      <button
+                        className="btn btn-light btn-sm"
+                        onClick={() => toast.push("Создать карточку: заглушка")}
+                      >
+                        Создать карточку
+                      </button>
+                      <button
+                        className="btn btn-light btn-sm"
+                        onClick={() => toast.push("Скопировать: заглушка")}
+                      >
+                        Скопировать
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }
