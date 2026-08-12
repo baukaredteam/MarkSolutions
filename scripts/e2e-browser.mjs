@@ -394,6 +394,57 @@ async function main() {
       fail("w4-seed → summary", error);
     }
 
+    // ---- UI-03: lookup по codeKey → история PRINTED + APPLIED ----
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const j = (path, method = "GET", body) =>
+          fetch(`/api${path}`, {
+            method,
+            headers: { ...h, "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined,
+          }).then((r) => r.json());
+        const agg = await j("/api/codes");
+        const orderId = agg.items?.[0]?.orderId;
+        if (!orderId) throw new Error("no codes in vault");
+        const detail = await j(`/codes/${orderId}/codes`);
+        const code = detail.items?.[0];
+        if (!code) throw new Error("no codes");
+        const lk = await j("/codes/lookup", "POST", { code: code.id });
+        if (!lk.codeKey) throw new Error(`lookup failed: ${JSON.stringify(lk)}`);
+        return { history: lk.history, status: lk.status, serialMask: lk.serialMask };
+      });
+      const events = result.history.map((e) => e.event);
+      if (!events.includes("PRINTED") || !events.includes("APPLIED"))
+        throw new Error(`history missing PRINTED/APPLIED: ${JSON.stringify(events)}`);
+      if (!result.serialMask?.includes("…"))
+        throw new Error(`serialMask not masked: ${result.serialMask}`);
+      pass(`lookup по codeKey → история ${events.join(" → ")} (маска ${result.serialMask})`);
+    } catch (error) {
+      fail("code lookup", error);
+    }
+
+    // ---- UI-03: codecheck страница UI (input + Проверить) ----
+    try {
+      await page.getByRole("link", { name: "Информация о коде" }).click();
+      await page.waitForURL("**/codecheck");
+      await page.getByPlaceholder(/Введите Data Matrix/).waitFor({ state: "visible" });
+      pass("codecheck страница рендерит input поиска");
+    } catch (error) {
+      fail("codecheck page", error);
+    }
+
+    // скриншот codecheck
+    try {
+      const shot = await page.screenshot({ path: "shot-codecheck.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot codecheck saved");
+    } catch (error) {
+      fail("screenshot codecheck", error);
+    }
+
     // (d) logout → standalone /login
     try {
       await page.getByRole("button", { name: "Выйти" }).click();

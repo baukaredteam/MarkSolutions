@@ -9,6 +9,12 @@ interface Summary {
   openAggregates: number;
   docsPendingDt: number;
   exceptions: number;
+  hasCards: boolean;
+  hasRegistered: boolean;
+  hasOrders: boolean;
+  hasPrinted: boolean;
+  hasApplied: boolean;
+  hasIntroduced: boolean;
 }
 
 interface RecentEvent {
@@ -94,19 +100,35 @@ export function DashboardPage() {
     load();
   }, []);
 
-  // степпер 7 шагов: done/active по реальным данным
-  const steps = [
-    { label: "Товар", done: !!summary },
-    { label: "GTIN / НТИН", done: true },
+  // степпер 7 шагов: done/active ТОЛЬКО из summary-флагов (UI-03)
+  const steps: { label: string; done: boolean; active: boolean }[] = [
+    { label: "Товар", done: summary?.hasCards ?? false, active: false },
+    {
+      label: "GTIN / НТИН",
+      done: summary?.hasRegistered ?? false,
+      active: false,
+    },
     {
       label: "Заказ кодов",
-      active: (summary?.deadlineSoon ?? 0) >= 0,
-      done: false,
+      done: summary?.hasOrders ?? false,
+      active: !summary?.hasOrders && summary?.hasCards ? true : false,
     },
-    { label: "Этикетка", done: false },
-    { label: "Печать", done: false },
-    { label: "Нанесение", done: false },
-    { label: "Оборот", done: false },
+    {
+      label: "Этикетка",
+      done: (summary?.hasPrinted ?? false) && (summary?.hasApplied ?? false),
+      active: false,
+    },
+    { label: "Печать", done: summary?.hasPrinted ?? false, active: false },
+    {
+      label: "Нанесение",
+      done: summary?.hasApplied ?? false,
+      active: !summary?.hasApplied && summary?.hasPrinted ? true : false,
+    },
+    {
+      label: "Оборот",
+      done: summary?.hasIntroduced ?? false,
+      active: !summary?.hasIntroduced && summary?.hasApplied ? true : false,
+    },
   ];
 
   const kpis = [

@@ -897,6 +897,24 @@ textarea:focus {
   font-weight: 800;
 }
 
+/* ---------- Scan area (codecheck) ---------- */
+.scan-area {
+  min-height: 340px;
+  border: 2px dashed #cfdbe6;
+  border-radius: 17px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  background: #fbfdff;
+}
+.scan-icon {
+  font-size: 54px;
+  color: #4d8fcf;
+}
+.scan-area h3 {
+  margin: 10px 0 4px;
+}
+
 /* ---------- Stub ---------- */
 .stub {
   padding: 48px;

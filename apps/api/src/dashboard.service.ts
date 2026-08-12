@@ -21,6 +21,12 @@ export class DashboardService {
       docsPendingDt,
       failedTasks,
       alertsOpen,
+      hasCards,
+      hasRegistered,
+      hasOrders,
+      hasPrinted,
+      hasApplied,
+      hasIntroduced,
     ] = await Promise.all([
       this.prisma.codeVault.count({
         where: {
@@ -52,6 +58,21 @@ export class DashboardService {
       this.prisma.utilisationAlert.count({
         where: { tenantId, firedAt: null },
       }),
+      // степпер-флаги (UI-03): прогрессия жизненного цикла
+      this.prisma.productCard.count({ where: { tenantId } }),
+      this.prisma.productCard.count({
+        where: { tenantId, status: "REGISTERED" },
+      }),
+      this.prisma.order.count({ where: { tenantId } }),
+      this.prisma.codeEvent.count({
+        where: { tenantId, event: "PRINTED" },
+      }),
+      this.prisma.codeEvent.count({
+        where: { tenantId, event: "APPLIED" },
+      }),
+      this.prisma.codeEvent.count({
+        where: { tenantId, event: "INTRODUCED" },
+      }),
     ]);
     const failedForTenant = failedTasks.filter((t) => {
       const p = t.payload as { tenantId?: string };
@@ -63,6 +84,12 @@ export class DashboardService {
       openAggregates,
       docsPendingDt,
       exceptions: failedForTenant + alertsOpen,
+      hasCards: hasCards > 0,
+      hasRegistered: hasRegistered > 0,
+      hasOrders: hasOrders > 0,
+      hasPrinted: hasPrinted > 0,
+      hasApplied: hasApplied > 0,
+      hasIntroduced: hasIntroduced > 0,
     };
   }
 }

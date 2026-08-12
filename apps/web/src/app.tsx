@@ -8,6 +8,7 @@ import {
 import { Layout } from "./layout";
 import { LoginPage } from "./pages/login";
 import { DashboardPage } from "./pages/dashboard";
+import { CodeCheckPage } from "./pages/code-check";
 import { ProductsPage } from "./pages/products";
 import { OrdersPage } from "./pages/orders";
 import { BalancePage } from "./pages/balance";
@@ -63,7 +64,6 @@ function RequireAuth() {
 }
 
 const STUB_IDS = [
-  "codecheck",
   "vault",
   "labels",
   "operations",
@@ -93,6 +93,7 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginGate />} />
       <Route element={<RequireAuth />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/codecheck" element={<CodeCheckPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/billing" element={<BalancePage />} />

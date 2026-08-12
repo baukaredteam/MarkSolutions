@@ -52,6 +52,8 @@ import { DocumentController } from "./document.controller";
 import { DocumentService } from "./document.service";
 import { DashboardController } from "./dashboard.controller";
 import { DashboardService } from "./dashboard.service";
+import { CodeLookupController } from "./code-lookup.controller";
+import { CodeLookupService } from "./code-lookup.service";
 import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
 import { join } from "node:path";
@@ -118,6 +120,7 @@ export class AdminController {
     LabelController,
     DocumentController,
     DashboardController,
+    CodeLookupController,
   ],
   providers: [
     PrismaService,
@@ -136,6 +139,7 @@ export class AdminController {
     LabelService,
     DocumentService,
     DashboardService,
+    CodeLookupService,
     {
       provide: KMS_ADAPTER,
       useFactory: () =>

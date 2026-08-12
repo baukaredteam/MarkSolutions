@@ -195,4 +195,97 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     for (let i = 1; i < dates.length; i++)
       expect(dates[i]).toBeLessThanOrEqual(dates[i - 1]);
   });
+
+  it("степпер-флаги (UI-03): пустой tenant → все false; после данных → прогрессия по порядку", async () => {
+    // новый пустой tenant
+    const tEmpty = await prisma.tenant.create({
+      data: { bin: "777000111999", name: "Пустой", status: "ACTIVE" },
+    });
+    const tokenEmpty = app.get(JwtService).sign({
+      sub: "u-empty",
+      tenantId: tEmpty.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+    const s0 = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenEmpty}`)
+      .expect(200);
+    expect(s0.body.hasCards).toBe(false);
+    expect(s0.body.hasRegistered).toBe(false);
+    expect(s0.body.hasOrders).toBe(false);
+    expect(s0.body.hasPrinted).toBe(false);
+    expect(s0.body.hasApplied).toBe(false);
+    expect(s0.body.hasIntroduced).toBe(false);
+
+    // прогрессия: карточка → registered → заказ → PRINTED → APPLIED → INTRODUCED
+    const card = await prisma.productCard.create({
+      data: {
+        tenantId,
+        gtin: "04014835723399",
+        status: "REGISTERED",
+        attributes: { name: "Test" },
+      },
+    });
+    await prisma.order.create({
+      data: {
+        id: "o-flags",
+        tenantId,
+        status: "COMPLETED",
+        idempotencyKey: "flags-order",
+      },
+    });
+    const kms = app.get(KMS_ADAPTER);
+    const { ciphertext } = await kms.encrypt(
+      Buffer.from(JSON.stringify({ serial: "9000001", ai91: null, ai92: null }))
+    );
+    const code = await prisma.codeVault.create({
+      data: {
+        tenantId,
+        orderId: "o-flags",
+        gtin: "04014835723399",
+        mask: "04014835723399:90…01",
+        status: "PRINTED",
+        ciphertext: ciphertext.toString("base64"),
+        cardId: card.id,
+      },
+    });
+    await prisma.codeEvent.create({
+      data: {
+        tenantId,
+        codeId: code.id,
+        event: "PRINTED",
+        at: new Date(),
+        actor: "u1",
+      },
+    });
+    await prisma.codeEvent.create({
+      data: {
+        tenantId,
+        codeId: code.id,
+        event: "APPLIED",
+        at: new Date(),
+        actor: "u1",
+      },
+    });
+    await prisma.codeEvent.create({
+      data: {
+        tenantId,
+        codeId: code.id,
+        event: "INTRODUCED",
+        at: new Date(),
+        actor: "u1",
+      },
+    });
+    const s1 = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(s1.body.hasCards).toBe(true);
+    expect(s1.body.hasRegistered).toBe(true);
+    expect(s1.body.hasOrders).toBe(true);
+    expect(s1.body.hasPrinted).toBe(true);
+    expect(s1.body.hasApplied).toBe(true);
+    expect(s1.body.hasIntroduced).toBe(true);
+  });
 });
