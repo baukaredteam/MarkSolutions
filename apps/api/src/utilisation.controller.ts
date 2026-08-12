@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { UtilisationService } from "./utilisation.service";
+import { Roles } from "./guards";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -22,6 +23,7 @@ function tenantOf(req: Request): string {
 export class UtilisationController {
   constructor(private readonly utilisation: UtilisationService) {}
 
+  @Roles("admin", "manager", "marking")
   @HttpCode(201)
   @Post()
   async submit(

@@ -15,6 +15,8 @@
 import type { Request, Response } from "express";
 import { PrismaService } from "./prisma.service";
 import { VaultService } from "./vault.service";
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -70,6 +72,7 @@ export class VaultController {
   ) {}
 
   // GET /api/codes вЂ” РјР°СЃРєРё РљРњ tenant (CV-031): Р±РµР· РїРѕР»РЅС‹С… serial, РѕРґРЅР° СЃС‚СЂРѕРєР° РЅР° Р·Р°РєР°Р·
+  @Roles(...READ_ROLES)
   @Get("api/codes")
   async codes(@Req() req: Request) {
     const items = await this.vault.masks(tenantOf(req));
@@ -96,6 +99,7 @@ export class VaultController {
   }
 
   // GET /codes/:orderId/codes — индивидуальные КМ заказа (W4-02, для печати)
+  @Roles(...READ_ROLES)
   @Get("codes/:orderId/codes")
   async orderCodes(@Req() req: Request, @Param("orderId") orderId: string) {
     const items = await this.vault.codesByOrder(orderId, tenantOf(req));
@@ -103,6 +107,7 @@ export class VaultController {
   }
 
   // POST /codes/export вЂ” CSV РїРѕР»РЅС‹С… РљРњ (CV-032); С‚РѕР»СЊРєРѕ READY/Completed, РёРЅР°С‡Рµ 409.
+  @Roles("admin", "manager", "marking")
   @HttpCode(201)
   @Post("codes/export")
   async export(
@@ -164,6 +169,7 @@ export class VaultController {
   }
 
   // POST /codes/print вЂ” РїРѕР»РЅС‹Рµ РљРњ РґР»СЏ РїРµС‡Р°С‚Рё (Р·Р°РґРµР» W4); Р°СѓРґРёС‚ CV-032.
+  @Roles("admin", "manager", "marking")
   @HttpCode(200)
   @Post("codes/print")
   async print(

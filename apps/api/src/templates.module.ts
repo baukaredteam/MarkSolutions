@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { templateFor } from "@markflow/shared";
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 
 const XLSX_CT =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -16,6 +18,7 @@ const XLSX_CT =
 // Tenant-guard глобальный в AppModule; шаблон per-product-group одинаков для всех tenant.
 @Controller("templates")
 export class TemplatesController {
+  @Roles(...READ_ROLES)
   @Get(":productGroup")
   get(@Param("productGroup") group: string, @Res() res: Response) {
     const xlsx = templateFor(group);

@@ -49,11 +49,12 @@
 - **T1 апдейт**: tenant читается ИСКЛЮЧИТЕЛЬНО из JWT-клейма; заголовок `x-tenant-id` игнорируется (атака header-spoofing закрыта).
 - **T1 апдейт**: TenantGuard + RolesGuard глобальные (APP_GUARD). Публичные роуты помечаются `@Public()`: /health, /onboarding/applications (POST), /auth/login — ровно три; в MVP также GET /onboarding/applications/:id (для веб-статуса без JWT) и /operator/approvals (оператор-мок без auth — будет закрыт при появлении операторского UI, см. review-t1.md).
 
-## ADR-020 — MFA обязательный для ролей admin/accountant/operator при MFA_ENABLED=true
+## ADR-020 — MFA обязательный для ролей admin/accountant/operator/marking при MFA_ENABLED=true
 
 Фикс ловушки IAM-006: в изначальной трактовке MFA требовался только если `user.mfaEnabled == true`. Это позволяло обойти второй фактор, не включая флаг у пользователя (ловушка в тесте: токен выдавался с mfaCompleted=true даже при MFA_ENABLED=true).
 
-- **При MFA_ENABLED=true** обязательные роли (admin, accountant, operator) требуют второй фактор НЕЗАВИСИМО от `user.mfaEnabled`.
+- **При MFA_ENABLED=true** обязательные роли (admin, accountant, operator, **marking**) требуют второй фактор НЕЗАВИСИМО от `user.mfaEnabled`. marking — оператор маркировки+печати, имеет доступ к КМ (печать/apply/экспорт) → MFA-обязательна (T0-RBAC).
+- manager, warehouse, viewer — MFA НЕ обязательна (нет прямого доступа к КМ; warehouse получает доступ в будущем через WMS-POST, будет пересмотрен).
 - Поле `user.mfaEnabled` НЕ участвует в расчёте `mfaRequired` (IAM-006 заглушка: все обязательные роли требуют фактор при включённом флаге, юзер-флаг — для будущих настроек на пользователя).
 - Негативный тест: MFA_ENABLED=true на момент probe, JWT без mfaCompleted → 403 Forbidden. Флаг НЕ сбрасывается до проверки.
 

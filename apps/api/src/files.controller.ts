@@ -21,7 +21,8 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 import { StorageAdapter, FILE_LABELS, FileDescriptor } from "@markflow/shared";
-
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 export const STORAGE_ADAPTER = "STORAGE_ADAPTER";
 
 interface UploadedMulterFile {
@@ -129,6 +130,7 @@ export class FilesService {
 export class FilesController {
   constructor(private readonly files: FilesService) {}
 
+  @Roles("admin", "manager")
   @HttpCode(201)
   @UseInterceptors(FileInterceptor("file"))
   @Post(":id/files")
@@ -143,6 +145,7 @@ export class FilesController {
     return this.files.upload(tenantId, id, body.label, file);
   }
 
+  @Roles(...READ_ROLES)
   @Get(":id/files/:key")
   async getFile(
     @Req() req: Request,
@@ -160,6 +163,7 @@ export class FilesController {
     res.send(data);
   }
 
+  @Roles("admin", "manager")
   @HttpCode(201)
   @Post(":id/clone")
   async clone(@Req() req: Request, @Param("id") id: string) {

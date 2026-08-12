@@ -15,6 +15,18 @@ import type { JwtClaims } from "./auth.service";
 export const Roles = (...roles: string[]): CustomDecorator =>
   SetMetadata("roles", roles);
 
+// T0-RBAC: клиентские роли (матрица в CONTEXT.md). operator — глобальная без tenant.
+export const CLIENT_ROLES = [
+  "admin",
+  "manager",
+  "accountant",
+  "marking",
+  "warehouse",
+  "viewer",
+] as const;
+// GET-эндпоинты доступны ВСЕМ клиентским ролям (ТЗ: чтение разрешено по политике)
+export const READ_ROLES = [...CLIENT_ROLES] as const;
+
 // tenant-guard читает tenant ТОЛЬКО из JWT-клейма (ADR-017 апдейт).
 // x-tenant-id header игнорируется. Без/невалидный JWT → 401.
 @Injectable()

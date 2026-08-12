@@ -11,6 +11,8 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { BillingService } from "./billing.service";
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -27,6 +29,7 @@ function toStr(v: bigint): string {
 export class BillingController {
   constructor(private readonly billing: BillingService) {}
 
+  @Roles("admin", "accountant")
   @Post("payments/import")
   async importPayment(
     @Req() req: Request,
@@ -88,6 +91,7 @@ export class BillingController {
     return { ...entry, amount: toStr(entry.amount) };
   }
 
+  @Roles(...READ_ROLES)
   @Get("balance")
   async balance(@Req() req: Request) {
     const b = await this.billing.getBalance(tenantOf(req));

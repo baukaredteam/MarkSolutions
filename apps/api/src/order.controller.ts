@@ -12,6 +12,8 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { OrderService } from "./order.service";
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -24,6 +26,7 @@ function tenantOf(req: Request): string {
 export class OrderController {
   constructor(private readonly orders: OrderService) {}
 
+  @Roles("admin", "manager")
   @HttpCode(201)
   @Post()
   async create(
@@ -43,17 +46,20 @@ export class OrderController {
     return this.orders.create(tenantOf(req), idempotencyKey ?? "", body);
   }
 
+  @Roles("admin", "manager")
   @HttpCode(200)
   @Post(":id/cancel")
   async cancel(@Req() req: Request, @Param("id") id: string) {
     return this.orders.cancel(tenantOf(req), id);
   }
 
+  @Roles(...READ_ROLES)
   @Get()
   async list(@Req() req: Request) {
     return { items: await this.orders.list(tenantOf(req)) };
   }
 
+  @Roles(...READ_ROLES)
   @Get(":id")
   async get(@Req() req: Request, @Param("id") id: string) {
     return this.orders.get(tenantOf(req), id);

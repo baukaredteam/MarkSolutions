@@ -25,7 +25,7 @@ export class AuthService {
   async login(
     login: string,
     password: string
-  ): Promise<{ token: string; tenantId: string | null }> {
+  ): Promise<{ token: string; tenantId: string | null; roles: string[] }> {
     const user = await this.prisma.user.findUnique({ where: { login } });
     if (!user) throw new UnauthorizedException("invalid credentials");
     const hash = AuthService.hashPassword(password);
@@ -40,10 +40,11 @@ export class AuthService {
 
     const mfaEnabled = process.env.MFA_ENABLED === "true";
     // IAM-006 заглушка: при MFA_ENABLED=true обязательные роли требуют второй фактор
+    // (ADR-020 апдейт T0-RBAC: marking — доступ к КМ/печати → MFA-обязательная)
     const mfaRequired =
       mfaEnabled &&
       roles.some((r: string) =>
-        ["admin", "accountant", "operator"].includes(r)
+        ["admin", "accountant", "operator", "marking"].includes(r)
       );
 
     const claims: JwtClaims = {
@@ -55,6 +56,7 @@ export class AuthService {
     return {
       token: this.jwt.sign(claims),
       tenantId: user.tenantId ?? null,
+      roles,
     };
   }
 }

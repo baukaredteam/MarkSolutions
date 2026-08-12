@@ -10,6 +10,8 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import { DocumentService } from "./document.service";
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -23,6 +25,7 @@ export class DocumentController {
   constructor(private readonly documents: DocumentService) {}
 
   // Q5: импорт партии по ДТ
+  @Roles("admin", "manager", "marking")
   @HttpCode(201)
   @Post("import")
   submitImport(
@@ -41,6 +44,7 @@ export class DocumentController {
   }
 
   // Q9: вывод из оборота / списание
+  @Roles("admin", "manager", "marking")
   @HttpCode(201)
   @Post("withdrawal")
   submitWithdrawal(
@@ -59,6 +63,7 @@ export class DocumentController {
   }
 
   // дашборд: все документы tenant
+  @Roles(...READ_ROLES)
   @Get("documents")
   list(@Req() req: Request) {
     return this.documents.list(tenantOf(req));
