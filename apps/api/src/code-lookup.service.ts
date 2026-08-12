@@ -53,10 +53,14 @@ export class CodeLookupService {
   ): Promise<{ gtin?: string; serial?: string; codeId?: string }> {
     void tenantId;
     const raw = code.trim();
-    // raw-КМ: 01{gtin14}21{serial...}
-    if (raw.startsWith("01") && raw.includes("21") && raw.length >= 18) {
+    // raw-КМ (ФИКС 2, позиционно): 01{gtin14}21{serial...}
+    if (
+      raw.length >= 18 &&
+      raw.startsWith("01") &&
+      raw.slice(16, 18) === "21"
+    ) {
       const gtin = raw.slice(2, 16);
-      const serial = raw.slice(raw.indexOf("21") + 2);
+      const serial = raw.slice(18);
       return { gtin, serial };
     }
     // 14 цифр → GTIN

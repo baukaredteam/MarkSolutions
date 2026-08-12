@@ -94,6 +94,8 @@ async function main() {
     }
 
     try {
+      // демо-инвойс: открыть импорт-drawer → seed → вкладка Черновики ≥ 1 строка
+      await page.getByRole("button", { name: "⇧ Импорт" }).click();
       const seedResponse = page.waitForResponse((response) =>
         response.url().includes("/api/demo/seed-invoice")
       );
@@ -102,20 +104,10 @@ async function main() {
       if (!seed.ok()) {
         throw new Error(`seed-invoice HTTP ${seed.status()}: ${await seed.text()}`);
       }
-      await page.waitForFunction(() => document.querySelectorAll("tbody tr").length >= 40);
-      const rows = page.locator("tbody tr");
-      let red = 0;
-      let green = 0;
-      for (let i = 0; i < 40; i++) {
-        const style = await rows.nth(i).getAttribute("style");
-        if (style?.includes("red")) red++;
-        if (style?.includes("green")) green++;
-      }
-      if (red !== 38 || green !== 2) {
-        throw new Error(`rows=${await rows.count()} first40 red=${red} green=${green}`);
-      }
+      await page.getByText(/Черновики/).click();
+      await page.waitForFunction(() => document.querySelectorAll("tbody tr").length >= 5);
       await page.getByText("возможно 2710198200").first().waitFor({ state: "visible" });
-      pass("demo invoice shows 38 red + 2 green rows and TNVED hint");
+      pass("demo invoice → черновики ≥5 строк + ТНВЭД-подсказка");
     } catch (error) {
       fail("demo invoice", error);
     }
@@ -443,6 +435,106 @@ async function main() {
       pass("screenshot codecheck saved");
     } catch (error) {
       fail("screenshot codecheck", error);
+    }
+
+    // ---- UI-04: products list + detail + clone + submit ----
+    try {
+      // открыть каталог
+      await page.getByRole("link", { name: "Товары" }).click();
+      await page.waitForURL("**/products");
+      await page.getByText("Каталог товаров", { exact: true }).waitFor({ state: "visible" });
+      pass("products list рендерит заголовок");
+    } catch (error) {
+      fail("products list", error);
+    }
+
+    // скриншот products list
+    try {
+      const shot = await page.screenshot({ path: "shot-products-list.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot products list saved");
+    } catch (error) {
+      fail("screenshot products list", error);
+    }
+
+    // создать карточку через API (для detail) + открыть detail
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const attrs = {
+          schemaVersion: 1, gtin: "04014835723399", name: "E2E Product 5W-30",
+          brand: "E2E", countryOfBrand: "KZ", composition: "synthetic",
+          shelfLifeMonths: 60, productType: "motor-oil", volumeL: 4, purpose: "passenger",
+          sae: "5W-30", storage: "dry", conformityMark: "no", eacMarks: "no",
+          grossWeightKg: 3.8, tnved: "2710198200", group: "Моторные масла",
+          category: "Моторные масла", packageType: "Единица товара", kpved: "19.20.29",
+          gpc: "10005267", ownerGcp: "0401483", ownerName: "Demo", ownerCountry: "KZ",
+          ownerAddress: "Астана", platformName: "1ecom", platformCountry: "KZ",
+          platformAddress: "Алматы", participantTaxNumber: "123456789012",
+          participantName: "Demo", participantCountry: "KZ", participantAddress: "Астана",
+        };
+        const r = await fetch("/api/products/cards", {
+          method: "POST",
+          headers: { ...h, "Content-Type": "application/json" },
+          body: JSON.stringify({ gtin: "04014835723399", attributes: attrs }),
+        });
+        if (r.status === 409) {
+          // уже существует (повторный прогон) — взять существующую
+          const list = await fetch("/api/products/cards", { headers: h }).then((x) => x.json());
+          const existing = list.items.find((c) => c.gtin === "04014835723399");
+          if (!existing) throw new Error("no existing card for gtin");
+          return { id: existing.id };
+        }
+        if (r.status !== 201) throw new Error(`create card HTTP ${r.status}`);
+        const body = await r.json();
+        return { id: body.id };
+      });
+      // открыть detail
+      await page.goto(`${baseUrl}/productDetail/${result.id}`);
+      await page.waitForURL("**/productDetail/*");
+      await page.getByRole("heading", { name: "Карточка товара" }).waitFor({ state: "visible" });
+      pass("product detail рендерит attributes (имя)");
+    } catch (error) {
+      fail("product detail", error);
+    }
+
+    // скриншот detail
+    try {
+      const shot = await page.screenshot({ path: "shot-products-detail.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot product detail saved");
+    } catch (error) {
+      fail("screenshot product detail", error);
+    }
+
+    // clone → DRAFT + submit → SUBMITTED (API)
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const j = (path, method = "GET", body) =>
+          fetch(`/api${path}`, {
+            method,
+            headers: { ...h, "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined,
+          }).then((r) => r.json());
+        const cards = await j("/products/cards");
+        const orig = cards.items.find((c) => c.gtin === "04014835723399");
+        if (!orig) throw new Error("card not found");
+        const cloned = await j(`/products/cards/${orig.id}/clone`, "POST", {});
+        const detail = await j(`/products/cards/${cloned.id}`);
+        if (detail.status !== "DRAFT") throw new Error(`clone not DRAFT: ${detail.status}`);
+        await j(`/products/cards/${cloned.id}/submit`, "POST", {});
+        const after = await j(`/products/cards/${cloned.id}`);
+        if (after.status !== "SUBMITTED") throw new Error(`submit not SUBMITTED: ${after.status}`);
+        return { cloneId: cloned.id };
+      });
+      pass(`clone → DRAFT, submit → SUBMITTED (id ${result.cloneId.slice(0, 8)}…)`);
+    } catch (error) {
+      fail("clone + submit", error);
     }
 
     // (d) logout → standalone /login

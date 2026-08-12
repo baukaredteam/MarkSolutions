@@ -46,6 +46,42 @@ interface DraftRow {
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // UI-04: tenant-список карточек (id/name/gtin/ntin/status/updatedAt), sort desc
+  async listCards(tenantId: string) {
+    const rows = await this.prisma.productCard.findMany({
+      where: { tenantId, status: { not: "ARCHIVED" } },
+      orderBy: { updatedAt: "desc" },
+    });
+    return rows.map((r) => {
+      const attrs = (r.attributes as Record<string, unknown>) ?? {};
+      return {
+        id: r.id,
+        name: attrs.name ?? null,
+        gtin: r.gtin,
+        ntin: r.ntin ?? null,
+        status: r.status,
+        updatedAt: r.updatedAt,
+      };
+    });
+  }
+
+  // UI-04: карточка по id (attributes + audit + status); чужой tenant → 404
+  async getCard(tenantId: string, cardId: string) {
+    const card = await this.prisma.productCard.findFirst({
+      where: { id: cardId, tenantId },
+    });
+    if (!card) throw new NotFoundException("card not found");
+    return {
+      id: card.id,
+      gtin: card.gtin,
+      ntin: card.ntin ?? null,
+      status: card.status,
+      attributes: card.attributes,
+      audit: card.audit ?? [],
+      updatedAt: card.updatedAt,
+    };
+  }
+
   async createCard(
     tenantId: string,
     actor: string,
@@ -347,6 +383,18 @@ export class CatalogController {
     const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
     if (!tenantId) throw new ForbiddenException("tenant required");
     return tenantId;
+  }
+
+  @Roles(...READ_ROLES)
+  @Get("cards")
+  async cards(@Req() req: Request) {
+    return { items: await this.catalog.listCards(this.tenantOf(req)) };
+  }
+
+  @Roles(...READ_ROLES)
+  @Get("cards/:id")
+  async card(@Req() req: Request, @Param("id") id: string) {
+    return this.catalog.getCard(this.tenantOf(req), id);
   }
 
   @Roles(...READ_ROLES)

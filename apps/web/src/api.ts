@@ -124,6 +124,26 @@ export class FetchApiClient implements ApiClient {
       return { status: res.status, body: (await res.json()) as T };
     }
 
+    if (res.status === 401) {
+      // ФИКС 1 (UI-04): истёкшая/невалидная сессия — очистить и на /login
+      sessionStore.clear();
+      try {
+        window.dispatchEvent(new Event("auth:expired"));
+        window.location.assign("/login");
+      } catch {
+        // jsdom/тесты: assign может быть не реализован
+      }
+      const err401: ApiError = {
+        code: 401,
+        message: "Сессия истекла — войдите снова",
+        details: null,
+        fieldErrors: {},
+        correlationId: "",
+        retryable: false,
+      };
+      throw new ApiErrorResponse(err401);
+    }
+
     let err: ApiError;
     try {
       err = (await res.json()) as ApiError;

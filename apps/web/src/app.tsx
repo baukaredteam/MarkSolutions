@@ -10,6 +10,7 @@ import { LoginPage } from "./pages/login";
 import { DashboardPage } from "./pages/dashboard";
 import { CodeCheckPage } from "./pages/code-check";
 import { ProductsPage } from "./pages/products";
+import { ProductDetailPage } from "./pages/product-detail";
 import { OrdersPage } from "./pages/orders";
 import { BalancePage } from "./pages/balance";
 import { PAGES, defaultRoute, type Role } from "./roles";
@@ -81,7 +82,6 @@ const STUB_IDS = [
   "processes",
   "exceptions",
   "health",
-  "productDetail",
 ];
 
 export function AppRoutes() {
@@ -95,6 +95,7 @@ export function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/codecheck" element={<CodeCheckPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/productDetail/:id" element={<ProductDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/billing" element={<BalancePage />} />
         {STUB_IDS.map((id) => (

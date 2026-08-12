@@ -124,7 +124,33 @@ describe("T2 web-backend integration", () => {
     await waitFor(() => {
       expect(screen.getByText(/Сервис недоступен/)).toBeTruthy();
     });
-    // нет краша: заголовок «Товары» на месте, строк нет
-    expect(screen.getByRole("heading", { name: "Товары" })).toBeTruthy();
+    // нет краша: заголовок «Каталог товаров» на месте, строк нет
+    expect(
+      screen.getByRole("heading", { name: "Каталог товаров" })
+    ).toBeTruthy();
+  });
+
+  it("ФИКС 1: fetch 401 → сессия очищена + событие auth:expired + redirect /login", async () => {
+    let dispatched = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({ code: 401, message: "jwt expired" }),
+      })
+    );
+    const onExpired = () => {
+      dispatched++;
+    };
+    window.addEventListener("auth:expired", onExpired);
+    sessionStore.set({ tenantId: "t-1", token: "expired-jwt" });
+
+    await expect(api.get("/orders")).rejects.toMatchObject({
+      error: { code: 401, message: "Сессия истекла — войдите снова" },
+    });
+    expect(sessionStore.get()).toBeNull();
+    expect(dispatched).toBe(1);
+    window.removeEventListener("auth:expired", onExpired);
   });
 });

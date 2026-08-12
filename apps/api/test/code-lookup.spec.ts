@@ -149,6 +149,33 @@ describe("code lookup (UI-03)", () => {
     expect(res.body.serialMask).toContain("…");
   });
 
+  it("ФИКС 2: raw-КМ с gtin, содержащим '21' внутри — позиционный парсинг находит", async () => {
+    // gtin 04210197500019 (валидный mod10) содержит "21" в позиции 3-4
+    const kms = app.get(KMS_ADAPTER);
+    const { ciphertext } = await kms.encrypt(
+      Buffer.from(JSON.stringify({ serial: "5550001", ai91: null, ai92: null }))
+    );
+    const code = await prisma.codeVault.create({
+      data: {
+        tenantId,
+        orderId: "o-lkp2",
+        gtin: "04210197500019",
+        mask: "04210197500019:55…01",
+        status: "ACTIVE",
+        ciphertext: ciphertext.toString("base64"),
+      },
+    });
+    const raw = `0104210197500019215550001`;
+    const res = await request(app.getHttpServer())
+      .post("/codes/lookup")
+      .set("Authorization", `Bearer ${tokenOf(tenantId)}`)
+      .send({ code: raw })
+      .expect(200);
+    expect(res.body.codeKey).toBe(code.id);
+    expect(res.body.gtin).toBe("04210197500019");
+    expect(res.body.serialMask).toContain("…");
+  });
+
   it("lookup по 14-цифровому GTIN: вернуть первый код товара", async () => {
     const res = await request(app.getHttpServer())
       .post("/codes/lookup")
