@@ -16,6 +16,8 @@ import {
 import type { Request } from "express";
 import { PrismaService } from "./prisma.service";
 import { ModerationService } from "./moderation.service";
+import { Roles } from "./guards";
+import { READ_ROLES } from "./guards";
 import { KMS_ADAPTER, IKmsAdapter } from "./kms.adapter";
 import { Inject } from "@nestjs/common";
 import {
@@ -347,11 +349,13 @@ export class CatalogController {
     return tenantId;
   }
 
+  @Roles(...READ_ROLES)
   @Get("drafts")
   async drafts(@Req() req: Request, @Query("status") status?: string) {
     return { items: await this.catalog.listDrafts(this.tenantOf(req), status) };
   }
 
+  @Roles("admin", "manager")
   @HttpCode(201)
   @Post("drafts/import")
   async importDrafts(@Req() req: Request, @Body() body: { rows: DraftRow[] }) {
@@ -362,6 +366,7 @@ export class CatalogController {
     return { jobId: `job-${Date.now()}`, created: body.rows.length };
   }
 
+  @Roles("admin", "manager")
   @HttpCode(201)
   @Post("cards")
   async createCard(
@@ -378,6 +383,7 @@ export class CatalogController {
     return this.catalog.createCard(tenantId, actor, body);
   }
 
+  @Roles("admin", "manager")
   @HttpCode(200)
   @Post("drafts/:id/fix-tnved")
   async fixTnved(
@@ -393,6 +399,7 @@ export class CatalogController {
     );
   }
 
+  @Roles("admin", "manager")
   @HttpCode(200)
   @Post("drafts/:id/out-of-scope")
   async outOfScope(@Req() req: Request, @Param("id") id: string) {
@@ -403,6 +410,7 @@ export class CatalogController {
     );
   }
 
+  @Roles("admin", "manager")
   @HttpCode(200)
   @Post("drafts/:id/submit")
   async submitDraft(@Req() req: Request, @Param("id") id: string) {
@@ -414,6 +422,7 @@ export class CatalogController {
   }
 
   // CAT-013: tenant отправляет карточку на модерацию (Draft/Needs Correction → Validating → Submitted).
+  @Roles("admin", "manager")
   @HttpCode(200)
   @Post("cards/:id/submit")
   async submitCard(@Req() req: Request, @Param("id") id: string) {

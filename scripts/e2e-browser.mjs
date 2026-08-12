@@ -258,6 +258,57 @@ async function main() {
     } catch (error) {
       fail("w4-seed → summary", error);
     }
+
+    // ---- T0-RBAC: marking → /orders 403, print 200; warehouse → GET 200 ----
+    try {
+      const result = await page.evaluate(async () => {
+        const base = "/api";
+        const login = async (user) => {
+          const r = await fetch(`${base}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ login: user, password: "demo-password" }),
+          });
+          if (!r.ok) throw new Error(`login ${user} HTTP ${r.status}`);
+          return r.json();
+        };
+        const marking = await login("marking@demo");
+        const warehouse = await login("warehouse@demo");
+        const mh = { Authorization: `Bearer ${marking.token}` };
+        const wh = { Authorization: `Bearer ${warehouse.token}` };
+        // marking: roles в ответе
+        if (!marking.roles?.includes("marking"))
+          throw new Error(`marking roles missing: ${JSON.stringify(marking.roles)}`);
+        // marking: POST /orders → 403
+        const ord = await fetch(`${base}/orders`, {
+          method: "POST",
+          headers: { ...mh, "Content-Type": "application/json" },
+          body: JSON.stringify({ cardId: "x", gtin: "04014835723399", places: 1, unitsPerPlace: 1 }),
+        });
+        if (ord.status !== 403) throw new Error(`marking /orders expected 403, got ${ord.status}`);
+        // marking: print (нужен ACTIVE код)
+        const agg = await fetch(`${base}/api/codes`, { headers: mh }).then((r) => r.json());
+        const orderId = agg.items?.[0]?.orderId;
+        if (!orderId) throw new Error("no codes in vault");
+        const detail = await fetch(`${base}/codes/${orderId}/codes`, { headers: mh }).then((r) => r.json());
+        const code = detail.items?.find((c) => c.status === "ACTIVE");
+        if (!code) throw new Error("no ACTIVE code");
+        const pr = await fetch(`${base}/labels/${code.id}/print`, {
+          method: "POST",
+          headers: { ...mh, "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (pr.status !== 200) throw new Error(`marking print expected 200, got ${pr.status}`);
+        // warehouse: GET /orders → 200
+        const wo = await fetch(`${base}/orders`, { headers: wh });
+        if (wo.status !== 200) throw new Error(`warehouse /orders expected 200, got ${wo.status}`);
+        return { roles: marking.roles, printStatus: pr.status };
+      });
+      if (!result.roles?.includes("marking")) throw new Error("no marking role");
+      pass(`RBAC: marking roles=${result.roles.join(",")} → /orders 403, print 200; warehouse → GET 200`);
+    } catch (error) {
+      fail("RBAC (marking/warehouse)", error);
+    }
   } finally {
     await browser.close();
   }

@@ -33,7 +33,8 @@ async function main() {
     },
   });
 
-  // seeded-админ (fallback для демо, если заявка/одобрение не прошли)
+  // seeded-пользователи (T0-RBAC, ADR-020 апдейт): admin полный набор;
+  // manager/accountant/marking/warehouse/viewer — по одной роли (демо не ломается).
   await prisma.user.upsert({
     where: { login: "admin@demo" },
     update: {},
@@ -41,9 +42,36 @@ async function main() {
       login: "admin@demo",
       tenantId: tenant.id,
       passwordHash: hashPassword("demo-password"),
-      roles: JSON.stringify(["admin", "accountant", "operator"]),
+      roles: JSON.stringify([
+        "admin",
+        "manager",
+        "accountant",
+        "marking",
+        "warehouse",
+        "viewer",
+        "operator",
+      ]),
     },
   });
+  const demoRoles: [string, string[]][] = [
+    ["manager@demo", ["manager"]],
+    ["accountant@demo", ["accountant"]],
+    ["marking@demo", ["marking"]],
+    ["warehouse@demo", ["warehouse"]],
+    ["viewer@demo", ["viewer"]],
+  ];
+  for (const [login, roles] of demoRoles) {
+    await prisma.user.upsert({
+      where: { login },
+      update: {},
+      create: {
+        login,
+        tenantId: tenant.id,
+        passwordHash: hashPassword("demo-password"),
+        roles: JSON.stringify(roles),
+      },
+    });
+  }
 
   const products = [
     {

@@ -11,6 +11,7 @@ import {
 import type { Request } from "express";
 import { PrismaService } from "./prisma.service";
 import { LabelService } from "./label.service";
+import { Roles } from "./guards";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -32,6 +33,7 @@ export class LabelController {
   ) {}
 
   // POST /labels/:codeKey/print — первая печать (PRINTED-event, write-through)
+  @Roles("admin", "manager", "marking")
   @HttpCode(200)
   @Post("labels/:codeKey/print")
   print(@Req() req: Request, @Param("codeKey") codeKey: string) {
@@ -39,6 +41,7 @@ export class LabelController {
   }
 
   // POST /labels/:codeKey/reprint — перепечатка с обязательной причиной (AT-11)
+  @Roles("admin", "manager", "marking")
   @HttpCode(200)
   @Post("labels/:codeKey/reprint")
   reprint(
@@ -56,6 +59,7 @@ export class LabelController {
   }
 
   // POST /codes/:codeKey/apply — скан-подтверждение: PNG → decode → deepEqual
+  @Roles("admin", "manager", "marking")
   @HttpCode(200)
   @Post("codes/:codeKey/apply")
   apply(

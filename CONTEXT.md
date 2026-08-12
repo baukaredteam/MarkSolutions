@@ -118,3 +118,27 @@ Health: `GET http://localhost:3000/health` → `{"status":"ok","db":"ok"}`. Ош
 
 - Pre-commit: prettier + eslint + tsc --noEmit + secret-scan
 - Прямой push в `main`/`master` заблокирован хукoм `pre-push` — только через pull request
+
+## RBAC-матрица (T0-RBAC, ADR-020 апдейт)
+
+Роли: `admin`, `manager`, `accountant`, `marking`, `warehouse`, `viewer` (клиентские) + `operator` (глобальная модерация, без tenant).
+Seed (dev): `admin@demo` (полный набор), `manager@demo`, `accountant@demo`, `marking@demo`, `warehouse@demo`, `viewer@demo` (по одной роли).
+
+| Эндпоинт                                                                                                                                                                         | Роли                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `POST /orders`, `POST /orders/:id/cancel`                                                                                                                                        | admin \| manager                         |
+| `GET /orders`, `GET /orders/:id`                                                                                                                                                 | admin \| manager \| accountant \| viewer |
+| `POST /labels/:key/print`, `POST /labels/:key/reprint`                                                                                                                           | admin \| manager \| marking              |
+| `POST /codes/:key/apply`                                                                                                                                                         | admin \| manager \| marking              |
+| `POST /import`                                                                                                                                                                   | admin \| manager \| marking              |
+| `POST /withdrawal`                                                                                                                                                               | admin \| manager \| marking              |
+| `POST /utilisation`                                                                                                                                                              | admin \| manager \| marking              |
+| `POST /billing/payments/import`                                                                                                                                                  | admin \| accountant                      |
+| `GET /billing/balance`                                                                                                                                                           | admin \| manager \| accountant \| viewer |
+| `GET /api/codes`, `GET /codes/:orderId/codes`, `GET /documents`, `GET /dashboard/summary`, `GET /products/drafts`, `GET /products/cards/:id/files/:key`, `GET /templates/:group` | admin \| manager \| accountant \| viewer |
+| `POST /products/*` (cards, drafts/import, fix-tnved, out-of-scope, submit), `POST /products/cards/:id/files`, `:id/clone`                                                        | admin \| manager                         |
+| `GET/POST /moderation/*`                                                                                                                                                         | operator                                 |
+| `POST /codes/export`, `POST /codes/print`                                                                                                                                        | admin \| manager \| marking              |
+
+MFA (ADR-020): admin, accountant, operator, **marking** — обязательна при `MFA_ENABLED=true`; manager/warehouse/viewer — нет.
+Незащищённые (tenant-guard только): `GET /api/admin/probe`, `POST /demo/*` (DEMO_ENABLED).
