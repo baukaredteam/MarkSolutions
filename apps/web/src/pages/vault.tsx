@@ -10,26 +10,23 @@ interface Pool {
   mask: string;
   status: string;
   quantity: number;
-}
-
-interface Balance {
-  balance: string;
-  reserved: string;
-  available: string;
+  utilised?: number;
 }
 
 // Vault (UI-SPEC §4.7): KPI, пулы кодов (маски), выгрузка CSV/XLSX, безопасность.
 export function VaultPage() {
   const toast = useToast();
   const [pools, setPools] = useState<Pool[]>([]);
-  const [balance, setBalance] = useState<Balance | null>(null);
+  const [reserved, setReserved] = useState<number>(0);
 
   async function load() {
     try {
       const c = await api.get<{ items: Pool[] }>("/api/codes");
       setPools(c.items);
-      const b = await api.get<Balance>("/billing/balance").catch(() => null);
-      setBalance(b);
+      const b = await api
+        .get<{ reserved: string }>("/billing/balance")
+        .catch(() => null);
+      setReserved(Number(b?.reserved ?? 0));
     } catch (e) {
       if (e instanceof ApiErrorResponse)
         toast.push(`${e.error.code}: ${e.error.message}`, "error");
@@ -46,11 +43,12 @@ export function VaultPage() {
   const freeCodes = pools
     .filter((p) => p.status === "ACTIVE" || p.status === "PRINTED")
     .reduce((s, p) => s + p.quantity, 0);
+  const usedCodes = pools.reduce((s, p) => s + (p.utilised ?? 0), 0);
   const kpis = [
     { label: "Всего кодов", value: totalCodes },
     { label: "Свободно", value: freeCodes },
-    { label: "Зарезервировано", value: Number(balance?.reserved ?? 0) },
-    { label: "Баланс", value: Number(balance?.available ?? 0) },
+    { label: "Зарезервировано", value: reserved },
+    { label: "Использовано", value: usedCodes },
     { label: "Выбыло", value: 0 },
   ];
 

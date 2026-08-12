@@ -14,7 +14,6 @@ beforeEach(() => {
 // Заглушенные страницы рендерят h1 (требуют сессию — RequireAuth)
 const stubRoutes = [
   ["/codecheck", "Информация о коде"],
-  ["/labels", "Этикетки"],
   ["/operations", "Операции"],
   ["/warehouse", "Склад и ТСД"],
   ["/documents", "Документы"],

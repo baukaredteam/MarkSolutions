@@ -107,6 +107,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     await prisma.order.create({
       data: {
         id: "o-seed-1",
+        number: 101,
         tenantId,
         status: "COMPLETED",
         idempotencyKey: "seed-order-1",
@@ -155,6 +156,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     const order = await prisma.order.create({
       data: {
         id: "o-deadline",
+        number: 102,
         tenantId,
         status: "COMPLETED",
         idempotencyKey: "deadline-order",
@@ -230,6 +232,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     await prisma.order.create({
       data: {
         id: "o-flags",
+        number: 103,
         tenantId,
         status: "COMPLETED",
         idempotencyKey: "flags-order",

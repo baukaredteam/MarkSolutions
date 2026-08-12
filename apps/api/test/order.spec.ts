@@ -492,4 +492,24 @@ describe("order create (W3, ORD-024..028)", () => {
       .expect(200);
     expect(detail.body.number).toBe(created.body.number);
   });
+
+  it("UI-06a: два параллельных POST /orders → разные number (unique + retry P2002)", async () => {
+    const { id: cardId, gtin } = await createCard();
+    const [a, b] = await Promise.all([
+      createOrder({ cardId, gtin, places: 1, unitsPerPlace: 1 }, "k-par-a"),
+      createOrder({ cardId, gtin, places: 1, unitsPerPlace: 1 }, "k-par-b"),
+    ]);
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    const na = a.body.number as number;
+    const nb = b.body.number as number;
+    expect(na).toBeGreaterThan(0);
+    expect(nb).toBeGreaterThan(0);
+    expect(na).not.toBe(nb);
+    // unique-индекс на number реально существует в схеме (защита от гонки max+1)
+    const rows = await prisma.order.findMany({
+      where: { number: { in: [na, nb] } },
+    });
+    expect(rows).toHaveLength(2);
+  });
 });

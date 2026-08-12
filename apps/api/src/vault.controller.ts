@@ -85,15 +85,21 @@ export class VaultController {
         status: string;
         orderId: string;
         quantity: number;
+        utilised: number;
       }
     >();
     for (const i of items) {
       const cur = byOrder.get(i.orderId);
       if (cur) {
         cur.quantity += 1;
-        cur.mask = i.mask; // РїРѕСЃР»РµРґРЅСЏСЏ РјР°СЃРєР°
+        cur.mask = i.mask;
+        if (i.status === "UTILISED") cur.utilised += 1;
       } else {
-        byOrder.set(i.orderId, { ...i, quantity: 1 });
+        byOrder.set(i.orderId, {
+          ...i,
+          quantity: 1,
+          utilised: i.status === "UTILISED" ? 1 : 0,
+        });
       }
     }
     return { items: [...byOrder.values()] };

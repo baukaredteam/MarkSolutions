@@ -75,6 +75,7 @@ describe("RBAC (T0-RBAC, ADR-020 апдейт)", () => {
     await prisma.order.create({
       data: {
         id: "o-rbac",
+        number: 301,
         tenantId,
         status: "COMPLETED",
         idempotencyKey: "rbac-order",

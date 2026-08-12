@@ -45,7 +45,7 @@ export const PAGES: PageMeta[] = [
   {
     id: "labels",
     title: "Этикетки",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse"],
+    roles: ["admin", "manager", "marking"],
   },
   {
     id: "operations",

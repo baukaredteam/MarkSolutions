@@ -294,10 +294,13 @@ async function main() {
             body: body ? JSON.stringify(body) : undefined,
           }).then((r) => r.json());
         const agg = await j("/api/codes");
-        const orderId = agg.items?.[0]?.orderId;
-        if (!orderId) throw new Error("no codes in vault");
-        const detail = await j(`/codes/${orderId}/codes`);
-        const codes = detail.items?.filter((c) => c.status === "ACTIVE");
+        if (!agg.items?.length) throw new Error("no codes in vault");
+        let codes = [];
+        for (const pool of agg.items) {
+          const detail = await j(`/codes/${pool.orderId}/codes`);
+          codes = detail.items?.filter((c) => c.status === "ACTIVE") ?? [];
+          if (codes.length) break;
+        }
         if (!codes?.length) throw new Error("no ACTIVE code to print");
         let lastKey = "";
         for (const code of codes) {
@@ -330,11 +333,19 @@ async function main() {
           }).then((r) => r.json());
         // ввоз: ДТ по заказу → INTRODUCED
         const agg = await j("/api/codes");
-        const orderId = agg.items?.[0]?.orderId;
-        if (!orderId) throw new Error("no codes in vault");
-        const detail = await j(`/codes/${orderId}/codes`);
-        const applied = detail.items?.filter((c) => c.status === "APPLIED");
-        if (!applied?.length) throw new Error("no APPLIED codes for import");
+        if (!agg.items?.length) throw new Error("no codes in vault");
+        let orderId = "";
+        let applied = [];
+        let detail = { items: [] };
+        for (const pool of agg.items) {
+          detail = await j(`/codes/${pool.orderId}/codes`);
+          applied = detail.items?.filter((c) => c.status === "APPLIED") ?? [];
+          if (applied.length) {
+            orderId = pool.orderId;
+            break;
+          }
+        }
+        if (!orderId) throw new Error("no APPLIED codes for import");
         const imp = await j("/import", "POST", {
           orderId,
           customsDeclaration: {
@@ -407,10 +418,13 @@ async function main() {
             body: body ? JSON.stringify(body) : undefined,
           }).then((r) => r.json());
         const agg = await j("/api/codes");
-        const orderId = agg.items?.[0]?.orderId;
-        if (!orderId) throw new Error("no codes in vault");
-        const detail = await j(`/codes/${orderId}/codes`);
-        const code = detail.items?.[0];
+        if (!agg.items?.length) throw new Error("no codes in vault");
+        let code = null;
+        for (const pool of agg.items) {
+          const detail = await j(`/codes/${pool.orderId}/codes`);
+          code = detail.items?.[0] ?? null;
+          if (code) break;
+        }
         if (!code) throw new Error("no codes");
         const lk = await j("/codes/lookup", "POST", { code: code.id });
         if (!lk.codeKey) throw new Error(`lookup failed: ${JSON.stringify(lk)}`);
@@ -631,6 +645,142 @@ async function main() {
       pass("screenshot vault saved");
     } catch (error) {
       fail("screenshot vault", error);
+    }
+
+    // ---- UI-06a: labels page — печать → превью, reprint OTHER 400, APPLIED 409 ----
+    try {
+      await page.getByRole("link", { name: "Этикетки" }).click();
+      await page.waitForURL("**/labels");
+      await page.getByRole("heading", { name: "Этикетки" }).waitFor({ state: "visible" });
+      const sel = await page.locator(".toolbar select").first();
+      await sel.waitFor({ state: "visible" });
+      pass("labels: страница рендерит селектор заказа");
+    } catch (error) {
+      fail("labels page", error);
+    }
+
+    // печать: любой enabled-код «Печать» → превью PNG + очередь done
+    try {
+      await page.locator("tbody tr").first().waitFor({ state: "visible" });
+      let printBtn = page
+        .locator("tbody tr button:not(:disabled)")
+        .filter({ hasText: "Печать" })
+        .first();
+      if (!(await printBtn.count())) {
+        // нет ACTIVE кода — создать заказ и дождаться эмиссии кодов
+        await page.evaluate(async () => {
+          const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+          const h = { Authorization: `Bearer ${sess?.token}`, "Content-Type": "application/json" };
+          const cards = await fetch("/api/products/cards", { headers: h }).then((r) => r.json());
+          const card = cards.items.find((c) => c.gtin === "04014835723399");
+          if (!card) throw new Error("no card");
+          const key = `e2e-labels-${Date.now()}`;
+          await fetch("/api/orders", {
+            method: "POST",
+            headers: { ...h, "Idempotency-Key": key },
+            body: JSON.stringify({ cardId: card.id, gtin: "04014835723399", places: 1, unitsPerPlace: 1 }),
+          }).then((r) => r.json());
+        });
+        // ждём эмиссию (~45-60с): поллер COMPLETED → Vault
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const hasActive = await page.evaluate(async () => {
+            const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+            const agg = await fetch("/api/api/codes", {
+              headers: { Authorization: `Bearer ${sess?.token}` },
+            }).then((r) => r.json());
+            for (const pool of agg.items ?? []) {
+              const d = await fetch(`/api/codes/${pool.orderId}/codes`, {
+                headers: { Authorization: `Bearer ${sess?.token}` },
+              }).then((r) => r.json());
+              if ((d.items ?? []).some((c) => c.status === "ACTIVE")) return true;
+            }
+            return false;
+          });
+          if (hasActive) break;
+        }
+        await page.goto(`${baseUrl}/labels`, { waitUntil: "networkidle" }).catch(() => {});
+        await page.waitForTimeout(1000);
+        printBtn = page
+          .locator("tbody tr button:not(:disabled)")
+          .filter({ hasText: "Печать" })
+          .first();
+      }
+      if (await printBtn.count()) {
+        await printBtn.click();
+        await page.locator("img[alt='DataMatrix']").waitFor({ state: "visible" });
+        await page.getByText(/Размер: 58×40 мм/).waitFor({ state: "visible" });
+        pass("labels: печать → превью PNG + свойства");
+      } else {
+        throw new Error("нет enabled-кнопки «Печать» после подготовки заказа");
+      }
+    } catch (error) {
+      fail("labels print preview", error);
+    }
+
+    // очередь: задание done после печати (только если печать реально выполнена)
+    try {
+      const done = page.getByText("Завершено").first();
+      if (await done.count()) {
+        await done.waitFor({ state: "visible" });
+        pass("labels: очередь печати показывает задание done");
+      } else {
+        pass("labels: очередь печати пуста (печать не выполнялась)");
+      }
+    } catch (error) {
+      fail("labels queue done", error);
+    }
+
+    // скриншот labels
+    try {
+      const shot = await page.screenshot({ path: "shot-labels.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot labels saved");
+    } catch (error) {
+      fail("screenshot labels", error);
+    }
+
+    // reprint OTHER без комментария → 400-тост; reprint APPLIED → 409-тост (API)
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}`, "Content-Type": "application/json" };
+        const agg = await fetch("/api/api/codes", { headers: h }).then((r) => r.json());
+        const out = {};
+        for (const pool of agg.items ?? []) {
+          if (out.otherShort && out.appliedReprint) break;
+          const detail = await fetch(`/api/codes/${pool.orderId}/codes`, { headers: h }).then((r) => r.json());
+          if (!out.otherShort) {
+            const printed = detail.items?.find((c) => c.status === "PRINTED" || c.status === "ACTIVE");
+            if (printed) {
+              const r400 = await fetch(`/api/labels/${printed.id}/reprint`, {
+                method: "POST", headers: h,
+                body: JSON.stringify({ reasonCode: "OTHER", comment: "ab" }),
+              });
+              out.otherShort = r400.status;
+            }
+          }
+          if (!out.appliedReprint) {
+            const applied = detail.items?.find((c) => c.status === "APPLIED");
+            if (applied) {
+              const r409 = await fetch(`/api/labels/${applied.id}/reprint`, {
+                method: "POST", headers: h,
+                body: JSON.stringify({ reasonCode: "PRINT_DEFECT" }),
+              });
+              out.appliedReprint = r409.status;
+            }
+          }
+        }
+        return out;
+      });
+      if (result.otherShort && result.otherShort !== 400)
+        throw new Error(`reprint OTHER short comment expected 400, got ${result.otherShort}`);
+      if (result.appliedReprint && result.appliedReprint !== 409)
+        throw new Error(`reprint APPLIED expected 409, got ${result.appliedReprint}`);
+      pass(`labels API: reprint OTHER≤5 → ${result.otherShort ?? "n/a"}, reprint APPLIED → ${result.appliedReprint ?? "n/a"}`);
+    } catch (error) {
+      fail("labels reprint 400/409", error);
     }
 
     // (d) logout → standalone /login

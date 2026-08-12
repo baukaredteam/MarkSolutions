@@ -56,6 +56,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     await prisma.order.create({
       data: {
         id: ORDER_ID,
+        number: 201,
         tenantId,
         status: "COMPLETED",
         idempotencyKey: `doc-order-${tenantId}`,

@@ -99,96 +99,105 @@ export class OrderService {
       };
     }
 
-    // ОДНА транзакция: заказ + RESERVE (CAS) + outbox; machine Draft→…→Queued
+    // ОДНА транзакция: заказ + RESERVE (CAS) + outbox; machine Draft→…→Queued.
+    // UI-06a: гонка max+1 при параллельных create → P2002 на unique(number) → 1 повтор.
     let order;
-    try {
-      order = await this.prisma.$transaction(async (tx) => {
-        // UI-05: номер заказа (KM-2026-NNNNNN) — инкремент в коде, tenant-агностичный
-        const last = await tx.order.aggregate({ _max: { number: true } });
-        const number = (last._max.number ?? 0) + 1;
-        const created = await tx.order.create({
-          data: {
-            tenantId,
-            number,
-            idempotencyKey,
-            cardId: card.id,
-            gtin: body.gtin,
-            isPaid: true,
-            status: "DRAFT",
-          },
-        });
-        // ORD-026: Draft → Validating → Funds Reserved → Queued
-        await tx.order.update({
-          where: { id: created.id },
-          data: { status: "VALIDATING" },
-        });
-        await this.billing.reserveOn(
-          tx,
-          tenantId,
-          created.id,
-          totalPrice,
-          `order ${created.id}`
-        );
-        await tx.order.update({
-          where: { id: created.id },
-          data: { status: "FUNDS_RESERVED" },
-        });
-        await tx.orderLine.create({
-          data: {
-            orderId: created.id,
-            cardId: card.id,
-            gtin: body.gtin,
-            places: body.places,
-            unitsPerPlace: body.unitsPerPlace,
-            quantity,
-            totalPrice,
-            cisType: "UNIT",
-            serialNumberType: "OPERATOR",
-            tariffId: tariff.id,
-            pricePerCodeKZT: BigInt(pricePerCodeKZT),
-          },
-        });
-        // финал create = QUEUED (вариант b: статус — синхронный финал create,
-        // без лишнего SELECT после транзакции)
-        const queued = await tx.order.update({
-          where: { id: created.id },
-          data: { status: "QUEUED" },
-        });
-        await tx.outbox.create({
-          data: {
-            aggregate: "send-order-to-mpt",
-            payload: {
-              orderId: created.id,
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        order = await this.prisma.$transaction(async (tx) => {
+          // UI-05: номер заказа (KM-2026-NNNNNN) — инкремент в коде, tenant-агностичный
+          const last = await tx.order.aggregate({ _max: { number: true } });
+          const number = (last._max.number ?? 0) + 1;
+          const created = await tx.order.create({
+            data: {
               tenantId,
+              number,
+              idempotencyKey,
+              cardId: card.id,
               gtin: body.gtin,
-              quantity,
+              isPaid: true,
+              status: "DRAFT",
             },
-          },
+          });
+          // ORD-026: Draft → Validating → Funds Reserved → Queued
+          await tx.order.update({
+            where: { id: created.id },
+            data: { status: "VALIDATING" },
+          });
+          await this.billing.reserveOn(
+            tx,
+            tenantId,
+            created.id,
+            totalPrice,
+            `order ${created.id}`
+          );
+          await tx.order.update({
+            where: { id: created.id },
+            data: { status: "FUNDS_RESERVED" },
+          });
+          await tx.orderLine.create({
+            data: {
+              orderId: created.id,
+              cardId: card.id,
+              gtin: body.gtin,
+              places: body.places,
+              unitsPerPlace: body.unitsPerPlace,
+              quantity,
+              totalPrice,
+              cisType: "UNIT",
+              serialNumberType: "OPERATOR",
+              tariffId: tariff.id,
+              pricePerCodeKZT: BigInt(pricePerCodeKZT),
+            },
+          });
+          // финал create = QUEUED (вариант b: статус — синхронный финал create,
+          // без лишнего SELECT после транзакции)
+          const queued = await tx.order.update({
+            where: { id: created.id },
+            data: { status: "QUEUED" },
+          });
+          await tx.outbox.create({
+            data: {
+              aggregate: "send-order-to-mpt",
+              payload: {
+                orderId: created.id,
+                tenantId,
+                gtin: body.gtin,
+                quantity,
+              },
+            },
+          });
+          return queued;
         });
-        return queued;
-      });
-    } catch (e) {
-      // конкурентный повтор того же Idempotency-Key: unique(idempotencyKey) → P2002.
-      // Возвращаем существующий заказ (AT-07), не 500.
-      if ((e as { code?: string }).code === "P2002") {
-        const existing = await this.prisma.order.findUnique({
-          where: { idempotencyKey },
-          include: { lines: true },
-        });
-        if (existing) {
-          return {
-            id: existing.id,
-            number: existing.number,
-            status: existing.status,
-            isPaid: existing.isPaid,
-            lines: existing.lines.map((l) => ({
-              quantity: l.quantity,
-              totalPrice: l.totalPrice.toString(),
-            })),
-          };
+        break;
+      } catch (e) {
+        const code = (e as { code?: string }).code;
+        const target = (e as { meta?: { target?: string[] } }).meta?.target;
+        // конкурентный повтор того же Idempotency-Key: unique(idempotencyKey) → P2002.
+        // Возвращаем существующий заказ (AT-07), не 500.
+        if (code === "P2002" && target?.includes("idempotencyKey")) {
+          const existing = await this.prisma.order.findUnique({
+            where: { idempotencyKey },
+            include: { lines: true },
+          });
+          if (existing) {
+            return {
+              id: existing.id,
+              number: existing.number,
+              status: existing.status,
+              isPaid: existing.isPaid,
+              lines: existing.lines.map((l) => ({
+                quantity: l.quantity,
+                totalPrice: l.totalPrice.toString(),
+              })),
+            };
+          }
         }
+        // гонка на unique(number): пересчитываем max и пробуем ещё раз (UI-06a)
+        if (code === "P2002" && target?.includes("number") && attempt === 0)
+          continue;
+        throw e;
       }
-      throw e;
     }
     if (!order) throw new NotFoundException("order not found");
 
