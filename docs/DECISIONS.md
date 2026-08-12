@@ -18,6 +18,7 @@
 - ADR-022 ТНВЭД-фильтр на уровне карточки, не инвойса (двухфазный, две аудируемые кнопки, эвристика п.15).
 - ADR-023 Закрытие T3 — каталог сквозной; каталог не меняется до второй товарной группы; будущие изменения — только через CAT-010 (конфигурируемые группы) с отдельной фазой.
 - ADR-024 Заказ КМ + Code Vault (W3): снимок единиц маркировки в строке заказа; тарифы = данные (Tariff seed); Ledger TOPUP/RESERVE/RELEASE/SETTLE + optimistic CAS на Account.version; симулятор ИС МПТ stateless (SIM_MPT_EMISSION_MS); Code Vault AES-256-GCM (KMS_PROFILE) + маска; поллер=сверка ORD-029; cisType=UNIT, serialNumberType=OPERATOR.
+- ADR-025 W4 — этикетки/нанесение/документы/1С: DataMatrix ECC200 roundtrip (bwip-js → ZBar WASM, PNG); CodeVault.status MVP-набор (ACTIVE|PRINTED|APPLIED|UTILISED|INTRODUCED|EXPIRED|AGGREGATED|WITHDRAWN|WRITTEN_OFF) + CodeEvent append-only; AggregationUnit SSCC + AT-13; ImportDocument + withdrawal; 1С-экспорт CSV v1 проекции (ServiceAct + MovementJournal с kmHash); REPRINT (AT-11); дашборд «что дальше».
 
 ## ADR-015 — профиль прототипа: SQLite + LocalStorage + OutboxPoller
 
@@ -145,3 +146,42 @@ JSON-схема атрибутов (CATALOG-MM) — единственный и�
 ### Таймер 30 дней (п.25, ADR-012)
 
 - От даты получения КМ; алерты 7/3/1; аннулирование = смена статуса, не физическое удаление; дедлайны = данные.
+
+## ADR-025 — W4: этикетки / нанесение / документы / 1С
+
+Решения грилля W4 (grill-with-docs, 10 вопросов).
+
+### DataMatrix roundtrip (LBL-037)
+
+- Генерация: **bwip-js** (DataMatrix ECC200, includetext=false, parsefnc=true, scale/module=4px, quietzone=4, rotate=N, ASCII ч/б). **ТОЛЬКО PNG** (Zebra/TSC принимают PNG); SVG/PDF — эволюция.
+- Декод: **@nicolo-ribaudo/zbar-wasm** (ZBar WASM, промышленный декодер DataMatrix ECC200, сырые байты, корректный GS 0x1D; НЕ jsQR/QR-only, НЕ zxing — плохой GS). Node + браузер (демо «Сканировать камерой»).
+- Roundtrip-тест: bwip-js → PNG → ZBar → parseGS1(ADR-006) → {gtin,serial,ai91,ai92,form} → deepEqual. base + extended. Тихая зона/контраст = параметры генерации (эталонного сканера нет, ADR-015). SSCC (Code128 AI='00') — отдельный кейс на том же ZBar.
+- Хранение: одна этикетка = один PNG-файл в storage/ (StorageAdapter.write→key); дескриптор {key, mimeType:"image/png", contentHash, createdAt, label:"datamatrix"}. Печать: `<img src="data:image/png;base64">` + window.print().
+
+### Статусы КМ (CodeVault.status, MVP-набор из ТЗ §8.4)
+
+- **ACTIVE | PRINTED | APPLIED | UTILISED | INTRODUCED | EXPIRED | AGGREGATED | WITHDRAWN | WRITTEN_OFF**.
+- APPLIED ≠ UTILISED (п.26): APPLIED = физически нанесён, UTILISED = зарегистрировано в ИС МПТ (SUCCESS). Пропущены: Reserved for Print, In Stock, Shipped, Transferred, Accepted, Damaged, Lost, Replaced, Cancelled.
+- **CodeEvent** — append-only лог: {id, tenantId, codeKey, event: PRINTED|REPRINTED|APPLIED|AGGREGATED|DISAGGREGATED|UTILISED|INTRODUCED|EXPIRED|WITHDRAWN|WRITTEN_OFF, at, actor, reasonCode?, comment?, relatedId?}. CodeVault.status = производная от последнего события.
+
+### Агрегация SSCC (п.20)
+
+- **AggregationUnit** {id, tenantId, sscc, type: BOX_LV_1|BOX_LV_2|PALLET, parentId?, status: OPEN|SEALED|DISAGGREGATED, sealedAt?} + **AggregationMember** {unitId, codeKey, addedAt, addedBy}. SSCC — не КМ, не эмитируется оператором; генерируется участником (GS1). **AT-13**: один codeKey не в двух активных агрегатах. AGGREGATED/DISAGGREGATED — события CodeEvent (relatedId = unit).
+- SSCC-генерация: `"0" + gcp + seq.padStart(9,"0") + mod10`; gcp = первые 7 цифр sha256(tenantId) mod 10^7 (детерминирован, прод — реальный GCP GS1 KZ через ADR-005); seq — tenant-scoped auto-increment (SsscCounter).
+- Общая **verifyGs1Mod10(digits)** + **gs1Mod10CheckDigit(base)** (веса 3/1 справа налево) — заменяет verifyGtinMod10.
+
+### Документы
+
+- **ImportDocument** (уведомление о ввозе, doc/import): одна ДТ на партию (MVP — по заказу, все APPLIED-коды); {id, tenantId, orderId, codes[], customsDeclaration{date,number,authorityCode?}, status EXPECTED|SUBMITTED|SUCCESS|ERROR, rejectReason?}; без date+number → 400 «ДТ не заполнена»; unique (tenantId, number) → повтор 409; SUCCESS → INTRODUCED-события; ERROR → задача оператору (ID-017).
+- **Вывод из оборота** (doc/withdrawal): POST /withdrawal по codeKeys, обязательные withdrawalType (WITHDRAWAL→WITHDRAWN / WRITE_OFF→WRITTEN_OFF) + withdrawalReason (словарик {DEFECT, LOST, EXPIRY, RETURN_SUPPLIER, DESTRUCTION, OTHER}, OTHER→comment ≥5) + withdrawalDate; childrenWriteOff=true → рекурсивный вывод членов агрегата; член активного SEALED-агрегата в одиночку → 409; повторный вывод → 409; partialQuantity → 400 в MVP; primaryDocument{type,date,number} опционален.
+
+### Экспорт 1С (ADR-010, MVP = CSV, v1; проекции append-only источников)
+
+- `markflow-service-act-v1-{from}-{to}.csv` (date;refOrderId;amountKZT;reason — SETTLE-проводки из LedgerEntry, amountKZT целые тенге).
+- `markflow-movement-journal-v1-{from}-{to}.csv` (eventId;date;orderId;gtin;kmHash;event — проекция CodeEvent за [from,to) UTC; kmHash = SHA-256 канонической raw-строки ADR-006 с байтом 0x1D; **полные КМ в 1С не уходят**). eventId — стабильный дедуп-ключ для 1С; пересечения периодов легитимны. Детерминизм: sort (at, eventId), golden-снапшот.
+- Генерация по запросу `POST /1c/export {dateFrom,dateTo}` + аудит генерации; БЕЗ cron. docs/CONTRACT-1C.md (дистиллят контракта v1). Эволюция: XML/правила обмена — с 1С-интегратором (октябрь).
+
+### Повторная печать (AT-11/LBL-040) и дашборд
+
+- REPRINT: кнопка «Перепечатать» + модалка reasonCode {PRINT_DEFECT, DAMAGED_BEFORE_APPLY, LOST_LABEL, OTHER} (OTHER→comment ≥5) → тот же PNG key (content-addressed) + REPRINTED-event {reasonCode, comment?, relatedId}. APPLIED-код → 409 «требуется перемаркировка» (REMARK — эволюция). Без причины → 400. POST /labels/:codeKey/reprint.
+- Дашборд «что дальше»: вкладка «Документы» (EntityList по IMPORT/WITHDRAWAL/UTILISATION/SERVICE_ACT_EXPORT) + GET /dashboard/summary (5 счётчиков COUNT по существующим таблицам, БЕЗ cron/материализации: codesNotApplied, deadlineSoon, openAggregates, docsPendingDt, exceptions; нулевые скрыты). Роли: tenant admin/accountant a–d+свои e; operator — только очередь исключений.
