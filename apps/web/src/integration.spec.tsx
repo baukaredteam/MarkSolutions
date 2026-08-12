@@ -43,7 +43,7 @@ describe("T2 web-backend integration", () => {
     expect(headers["X-Tenant-Id"]).toBeUndefined();
   });
 
-  it("/login page stores JWT in session and navigates to /products on success", async () => {
+  it("/login stores JWT + roles and navigates to default route", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(async (_url: string, init?: RequestInit) => {
@@ -51,7 +51,18 @@ describe("T2 web-backend integration", () => {
         if (body.login === "admin@demo" && body.password === "demo-password") {
           return {
             ok: true,
-            json: async () => ({ tenantId: "t-1", token: "jwt-demo" }),
+            json: async () => ({
+              tenantId: "t-1",
+              token: "jwt-demo",
+              roles: [
+                "admin",
+                "manager",
+                "accountant",
+                "marking",
+                "warehouse",
+                "viewer",
+              ],
+            }),
           };
         }
         return {
@@ -77,44 +88,7 @@ describe("T2 web-backend integration", () => {
     await waitFor(() => {
       expect(sessionStore.get()?.token).toBe("jwt-demo");
       expect(sessionStore.get()?.tenantId).toBe("t-1");
-    });
-  });
-
-  it("/apply handles duplicate BIN (200) gracefully (AT-02 in UI)", async () => {
-    let callCount = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation(async () => {
-        callCount++;
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            id: "app-1",
-            status: "PENDING",
-            bin: "123456789012",
-          }),
-        };
-      })
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/apply"]}>
-        <AppRoutes />
-      </MemoryRouter>
-    );
-
-    const binInput = screen.getByLabelText("БИН");
-    fireEvent.change(binInput, { target: { value: "123456789012" } });
-    fireEvent.click(screen.getByText("Согласен с офертой (v1)"));
-    fireEvent.click(screen.getByText("Отправить заявку"));
-
-    await waitFor(() => {
-      expect(callCount).toBe(1);
-      // После дубля кнопка отключена
-      expect(
-        screen.getByText("Отправить заявку").getAttribute("disabled")
-      ).toBeDefined();
+      expect(sessionStore.get()?.roles).toContain("admin");
     });
   });
 

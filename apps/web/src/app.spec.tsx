@@ -1,25 +1,56 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AppRoutes } from "./app";
 
-const routes = [
-  { path: "/apply", heading: "Заявка на подключение" },
-  { path: "/status", heading: "Статус заявки" },
-  { path: "/login", heading: "Вход" },
-  { path: "/products", heading: "Товары" },
+beforeEach(() => {
+  sessionStorage.clear();
+  localStorage.clear();
+});
+
+// Заглушенные страницы рендерят h1 с заголовком
+const stubRoutes = [
+  ["/codecheck", "Информация о коде"],
+  ["/vault", "Code Vault"],
+  ["/labels", "Этикетки"],
+  ["/operations", "Операции"],
+  ["/warehouse", "Склад и ТСД"],
+  ["/documents", "Документы"],
+  ["/reports", "Отчёты"],
+  ["/integrations", "Интеграции"],
+  ["/support", "Поддержка"],
+  ["/organization", "Организация и доступ"],
+  ["/operator", "Кабинет оператора"],
+  ["/audit", "Журнал аудита"],
+  ["/tasks", "Центр задач"],
+  ["/production", "Производство"],
+  ["/partners", "Контрагенты"],
+  ["/processes", "Конструктор процессов"],
+  ["/exceptions", "Центр исключений"],
+  ["/health", "Состояние платформы"],
 ];
 
-describe("smoke render 4 routes", () => {
-  routes.forEach((r) => {
-    it(`renders ${r.path}`, () => {
+describe("smoke render: login + stub pages", () => {
+  it("renders /login (неавторизован)", () => {
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <AppRoutes />
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByRole("heading", { name: "Вход в систему" })
+    ).toBeTruthy();
+  });
+
+  stubRoutes.forEach(([path, heading]) => {
+    it(`renders stub ${path}`, () => {
       render(
-        <MemoryRouter initialEntries={[r.path]}>
+        <MemoryRouter initialEntries={[path]}>
           <AppRoutes />
         </MemoryRouter>
       );
-      expect(screen.getByRole("heading", { name: r.heading })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
     });
   });
 });

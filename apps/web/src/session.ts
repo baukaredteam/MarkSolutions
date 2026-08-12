@@ -3,6 +3,8 @@ const KEY = "markflow.session";
 export interface Session {
   tenantId: string;
   token: string;
+  roles?: string[];
+  login?: string;
 }
 
 export const sessionStore = {

@@ -6,34 +6,39 @@ import {
   type ReactNode,
 } from "react";
 
+export type ToastKind = "info" | "success" | "error" | "warn";
+
 export interface Toast {
   id: number;
+  kind: ToastKind;
   text: string;
 }
 
 interface ToastCtx {
-  push: (text: string) => void;
+  push: (text: string, kind?: ToastKind) => void;
 }
 
 const Ctx = createContext<ToastCtx>({ push: () => {} });
-
 let nextId = 1;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = useCallback((text: string) => {
+  const push = useCallback((text: string, kind: ToastKind = "info") => {
     const id = nextId++;
-    setToasts((t) => [...t, { id, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
+    setToasts((t) => [...t, { id, kind, text }]);
+    // UI-SPEC §2: 2.3s
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2300);
   }, []);
 
   return (
     <Ctx.Provider value={{ push }}>
       {children}
-      <div aria-live="polite" role="status">
+      <div className="toasts" aria-live="polite" role="status">
         {toasts.map((t) => (
-          <div key={t.id}>{t.text}</div>
+          <div key={t.id} className={`toast ${t.kind}`}>
+            {t.text}
+          </div>
         ))}
       </div>
     </Ctx.Provider>
