@@ -3,6 +3,7 @@ import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
+import { StatusBadge } from "../badge";
 
 interface Pool {
   orderId: string;
@@ -92,7 +93,11 @@ export function VaultPage() {
     { key: "gtin", label: "GTIN" },
     { key: "mask", label: "Маска КМ" },
     { key: "quantity", label: "Всего" },
-    { key: "status", label: "Статус" },
+    {
+      key: "status",
+      label: "Статус",
+      render: (r) => <StatusBadge code={r.status} />,
+    },
     {
       key: "actions",
       label: "Выгрузка",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
+import { StatusBadge } from "../badge";
 import { useToast } from "../toast";
 
 interface CardDetail {
@@ -19,19 +20,6 @@ interface CodeRow {
   mask: string;
   status: string;
 }
-
-const STATUS_BADGE: Record<string, string> = {
-  DRAFT: "b-gray",
-  VALIDATING: "b-yellow",
-  SUBMITTED: "b-blue",
-  IN_REVIEW: "b-blue",
-  NEEDS_CORRECTION: "b-red",
-  APPROVED: "b-green",
-  REGISTERING: "b-yellow",
-  REGISTERED: "b-green",
-  REJECTED: "b-red",
-  SUSPENDED: "b-yellow",
-};
 
 // Product detail (UI-SPEC §4.5): header, табы, действия (duplicate/submit/edit).
 export function ProductDetailPage() {
@@ -177,11 +165,7 @@ export function ProductDetailPage() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <h2 style={{ margin: 0 }}>{String(a.name ?? "—")}</h2>
-              <span
-                className={`badge ${STATUS_BADGE[card.status] ?? "b-gray"}`}
-              >
-                {card.status}
-              </span>
+              <StatusBadge code={card.status} />
             </div>
             <p className="sub">
               GTIN {card.gtin ?? "—"} · НТИН {card.ntin ?? "—"}
@@ -278,11 +262,7 @@ export function ProductDetailPage() {
                     <tr key={c.id}>
                       <td>{c.mask}</td>
                       <td>
-                        <span
-                          className={`badge ${STATUS_BADGE[c.status] ?? "b-gray"}`}
-                        >
-                          {c.status}
-                        </span>
+                        <StatusBadge code={c.status} />
                       </td>
                     </tr>
                   ))}

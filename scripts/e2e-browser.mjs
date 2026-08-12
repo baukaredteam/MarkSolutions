@@ -783,6 +783,39 @@ async function main() {
       fail("labels reprint 400/409", error);
     }
 
+    // ---- UI-i18n: русские статусы — на /products и /vault нет англ. кодов в badge-текстах ----
+    try {
+      await page.goto(`${baseUrl}/products`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.waitForTimeout(800);
+      const prodBadges = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".badge")).map((b) => b.textContent ?? "")
+      );
+      const engInProd = prodBadges.filter((t) =>
+        ["SUBMITTED", "REGISTERED", "DRAFT", "ACTIVE", "PRINTED", "APPLIED"].includes(t.trim())
+      );
+      await page.goto(`${baseUrl}/vault`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.waitForTimeout(800);
+      const vaultBadges = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".badge")).map((b) => b.textContent ?? "")
+      );
+      const engInVault = vaultBadges.filter((t) =>
+        ["SUBMITTED", "REGISTERED", "DRAFT", "ACTIVE", "PRINTED", "APPLIED", "INTRODUCED"].includes(t.trim())
+      );
+      // data-status присутствует и текст совпадает с кодом → статус НЕ локализован
+      const mismatch = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".badge"))
+          .filter((b) => b.getAttribute("data-status"))
+          .filter((b) => b.getAttribute("data-status") === b.textContent?.trim())
+          .map((b) => b.getAttribute("data-status"))
+      );
+      if (engInProd.length) throw new Error(`продукты: англ. статусы ${engInProd.join(",")}`);
+      if (engInVault.length) throw new Error(`vault: англ. статусы ${engInVault.join(",")}`);
+      if (mismatch.length) throw new Error(`badge текст = код: ${mismatch.join(",")}`);
+      pass("i18n: на /products и /vault статусы русские (data-status + подпись)");
+    } catch (error) {
+      fail("i18n статусы", error);
+    }
+
     // (d) logout → standalone /login
     try {
       await page.getByRole("button", { name: "Выйти" }).click();

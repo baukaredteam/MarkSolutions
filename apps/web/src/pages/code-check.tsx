@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
+import { StatusBadge } from "../badge";
 import { useToast } from "../toast";
 
 interface LookupResult {
@@ -11,18 +12,6 @@ interface LookupResult {
   owner: string | null;
   history: { at: string; event: string; reasonCode: string | null }[];
 }
-
-const STATUS_BADGE: Record<string, string> = {
-  ACTIVE: "b-blue",
-  PRINTED: "b-blue",
-  APPLIED: "b-green",
-  UTILISED: "b-green",
-  INTRODUCED: "b-violet",
-  EXPIRED: "b-yellow",
-  AGGREGATED: "b-violet",
-  WITHDRAWN: "b-gray",
-  WRITTEN_OFF: "b-red",
-};
 
 // Code Check (UI-SPEC §4.3): поиск КМ по codeKey/raw/GTIN + история CodeEvent.
 export function CodeCheckPage() {
@@ -135,11 +124,7 @@ export function CodeCheckPage() {
                 }}
               >
                 <h2 style={{ margin: 0 }}>Код найден</h2>
-                <span
-                  className={`badge ${STATUS_BADGE[result.status] ?? "b-gray"}`}
-                >
-                  {result.status}
-                </span>
+                <StatusBadge code={result.status} />
               </div>
               <p className="sub">{result.serialMask}</p>
               <div className="info-grid">

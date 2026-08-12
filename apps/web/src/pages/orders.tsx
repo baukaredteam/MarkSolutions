@@ -3,6 +3,7 @@ import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
+import { StatusBadge } from "../badge";
 import { OrderForm } from "./order-form";
 
 interface OrderRow {
@@ -36,21 +37,6 @@ const REPRINT_REASONS = [
   ["LOST_LABEL", "Потеряна этикетка"],
   ["OTHER", "Другое"],
 ] as const;
-
-const ORD_BADGE: Record<string, string> = {
-  DRAFT: "b-gray",
-  VALIDATING: "b-yellow",
-  FUNDS_RESERVED: "b-yellow",
-  QUEUED: "b-blue",
-  SENT: "b-blue",
-  ACCEPTED: "b-blue",
-  PROCESSING: "b-blue",
-  PARTIALLY_COMPLETED: "b-yellow",
-  COMPLETED: "b-green",
-  REJECTED: "b-red",
-  CANCELLED: "b-gray",
-  FAILED: "b-red",
-};
 
 // Экран «Заказы» (W3+W4-02): заказы, индивидуальные коды с печатью/перепечаткой
 // этикеток (bwip-js → PNG preview), скачивание CSV, создание заказа.
@@ -211,11 +197,7 @@ export function OrdersPage() {
     {
       key: "status",
       label: "Статус",
-      render: (r) => (
-        <span className={`badge ${ORD_BADGE[r.status] ?? "b-gray"}`}>
-          {r.status}
-        </span>
-      ),
+      render: (r) => <StatusBadge code={r.status} />,
     },
     { key: "createdAt", label: "Создан" },
     {

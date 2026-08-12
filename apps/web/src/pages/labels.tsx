@@ -3,6 +3,8 @@ import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
+import { StatusBadge } from "../badge";
+import { statusLabel } from "../status-labels";
 
 interface OrderOption {
   id: string;
@@ -32,16 +34,6 @@ const REPRINT_REASONS = [
   ["LOST_LABEL", "Потеряна этикетка"],
   ["OTHER", "Другое"],
 ] as const;
-
-const CODE_BADGE: Record<string, string> = {
-  ACTIVE: "b-green",
-  PRINTED: "b-blue",
-  APPLIED: "b-gray",
-  INTRODUCED: "b-blue",
-  UTILISED: "b-gray",
-  WITHDRAWN: "b-red",
-  WRITTEN_OFF: "b-red",
-};
 
 // Роли, которым доступны печать/перепечатка (роль-гард бэкенда идентичен)
 const PRINT_ROLES = ["admin", "manager", "marking"];
@@ -197,11 +189,7 @@ export function LabelsPage() {
     {
       key: "status",
       label: "Статус",
-      render: (c) => (
-        <span className={`badge ${CODE_BADGE[c.status] ?? "b-gray"}`}>
-          {c.status}
-        </span>
-      ),
+      render: (c) => <StatusBadge code={c.status} />,
     },
     {
       key: "actions",
@@ -273,7 +261,7 @@ export function LabelsPage() {
           >
             {orders.map((o) => (
               <option key={o.id} value={o.id}>
-                {fmtOrderNumber(o.number)} · {o.gtin} · {o.status}
+                {fmtOrderNumber(o.number)} · {o.gtin} · {statusLabel(o.status)}
               </option>
             ))}
           </select>
@@ -324,11 +312,7 @@ export function LabelsPage() {
                     <td>{t.labels}</td>
                     <td>{t.progress}%</td>
                     <td>
-                      <span
-                        className={`badge ${t.status === "done" ? "b-green" : "b-blue"}`}
-                      >
-                        {t.status === "done" ? "Завершено" : "Печать"}
-                      </span>
+                      <StatusBadge code={t.status} />
                     </td>
                   </tr>
                 ))}
@@ -347,8 +331,8 @@ export function LabelsPage() {
                 300 DPI · Линия №1
               </small>
             </div>
-            <span className="badge b-green" style={{ marginLeft: "auto" }}>
-              Готов
+            <span className="badge b-green" style={{ marginLeft: "auto" }} data-status="ready">
+              {statusLabel("ready")}
             </span>
           </div>
           <div className="device" style={{ marginTop: 9 }}>
@@ -359,8 +343,8 @@ export function LabelsPage() {
                 300 DPI · Линия №2
               </small>
             </div>
-            <span className="badge b-blue" style={{ marginLeft: "auto" }}>
-              Печатает
+            <span className="badge b-blue" style={{ marginLeft: "auto" }} data-status="printing">
+              {statusLabel("printing")}
             </span>
           </div>
         </div>

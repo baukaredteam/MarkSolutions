@@ -62,11 +62,10 @@ describe("ProductsPage (UI-04: cards list + drafts)", () => {
     await waitFor(() => {
       expect(screen.getByText("MarkOil 5W-30")).toBeTruthy();
       expect(screen.getByText("Castrol EDGE")).toBeTruthy();
-      // 2 badge «REGISTERED» (в select-фильтре тоже есть option)
-      const badges = document.querySelectorAll(".badge");
-      expect(
-        Array.from(badges).filter((b) => b.textContent === "REGISTERED")
-      ).toHaveLength(2);
+      // 2 badge c data-status=REGISTERED и русской подписью «Зарегистрирована»
+      const badges = document.querySelectorAll('[data-status="REGISTERED"]');
+      expect(badges).toHaveLength(2);
+      expect(badges[0].textContent).toBe("Зарегистрирована");
     });
   });
 

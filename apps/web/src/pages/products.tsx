@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
+import { StatusBadge } from "../badge";
 import { sessionStore } from "../session";
 
 interface CardRow {
@@ -28,19 +29,6 @@ interface DraftRow {
   demo?: boolean;
   audit?: { action: string }[];
 }
-
-const STATUS_BADGE: Record<string, string> = {
-  DRAFT: "b-gray",
-  VALIDATING: "b-yellow",
-  SUBMITTED: "b-blue",
-  IN_REVIEW: "b-blue",
-  NEEDS_CORRECTION: "b-red",
-  APPROVED: "b-green",
-  REGISTERING: "b-yellow",
-  REGISTERED: "b-green",
-  REJECTED: "b-red",
-  SUSPENDED: "b-yellow",
-};
 
 const IN_LIST = ["2710198200", "3403191000", "3403199000", "3403990000"];
 
@@ -265,11 +253,7 @@ export function ProductsPage() {
     {
       key: "status",
       label: "Статус",
-      render: (r) => (
-        <span className={`badge ${STATUS_BADGE[r.status] ?? "b-gray"}`}>
-          {r.status}
-        </span>
-      ),
+      render: (r) => <StatusBadge code={r.status} />,
     },
     {
       key: "updatedAt",
@@ -300,7 +284,11 @@ export function ProductsPage() {
         );
       },
     },
-    { key: "status", label: "Статус", render: (r) => r.status },
+    {
+      key: "status",
+      label: "Статус",
+      render: (r) => <StatusBadge code={r.status} />,
+    },
     {
       key: "actions",
       label: "Действия",
