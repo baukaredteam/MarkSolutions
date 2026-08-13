@@ -5,13 +5,14 @@ import { MemoryRouter } from "react-router-dom";
 import { BalancePage } from "./balance";
 import { sessionStore } from "../session";
 
-const { postRaw, get } = vi.hoisted(() => ({
+const { postRaw, get, post } = vi.hoisted(() => ({
   postRaw: vi.fn(),
   get: vi.fn(),
+  post: vi.fn(),
 }));
 
 vi.mock("../api", () => ({
-  api: { get, postRaw },
+  api: { get, postRaw, post },
   ApiErrorResponse: class ApiErrorResponse extends Error {
     constructor(readonly error: { code: number; message: string }) {
       super(error.message);
@@ -149,5 +150,60 @@ describe("BalancePage (UI-06c)", () => {
       screen.queryByRole("button", { name: "Пополнить баланс" })
     ).toBeNull();
     expect(screen.getByText("Операции лицевого счёта")).toBeTruthy();
+  });
+
+  it("W5-07: форма счёта — кол-во+группа → POST /billing/invoices; «Оплатил(а)» → confirm", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    get.mockImplementation(async (path: string) => {
+      if (path === "/billing/balance")
+        return { balance: "1200", reserved: "200", available: "1000" };
+      if (path === "/billing/ledger") return { items: [] };
+      if (path === "/billing/invoices")
+        return {
+          items: [
+            {
+              id: "inv-1",
+              number: "MF-2026-0001",
+              productGroup: "motor-oils",
+              quantity: 1000,
+              sumWithVat: "470000",
+              status: "ISSUED",
+            },
+          ],
+        };
+      return { items: [] };
+    });
+    post.mockResolvedValue({
+      id: "inv-2",
+      number: "MF-2026-0002",
+      status: "ISSUED",
+    });
+    render(
+      <MemoryRouter>
+        <BalancePage />
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Счета на оплату")).toBeTruthy()
+    );
+    expect(screen.getByText("MF-2026-0001")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Количество кодов"), {
+      target: { value: "100" },
+    });
+    fireEvent.change(screen.getByLabelText("Товарная группа"), {
+      target: { value: "motor-oils" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Выставить счёт" }));
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    expect(post.mock.calls[0][0]).toBe("/billing/invoices");
+    expect(post.mock.calls[0][1]).toMatchObject({
+      productGroup: "motor-oils",
+      quantity: 100,
+    });
   });
 });

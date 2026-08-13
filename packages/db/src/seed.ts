@@ -105,6 +105,32 @@ async function main() {
     });
   }
 
+  // W5-07: тарифы по товарным группам (тиыны за КМ, цена включает НДС).
+  // Категории маркировки РК (данные, не хардкод).
+  const TARIFFS: { productGroup: string; pricePerCodeKZT: bigint }[] = [
+    { productGroup: "motor-oils", pricePerCodeKZT: BigInt(47000) }, // 470 ₸
+    { productGroup: "medicines", pricePerCodeKZT: BigInt(24000) }, // 240 ₸
+    { productGroup: "footwear", pricePerCodeKZT: BigInt(26800) }, // 268 ₸
+    { productGroup: "tobacco", pricePerCodeKZT: BigInt(26800) },
+    { productGroup: "dietary-supplements", pricePerCodeKZT: BigInt(26800) },
+    { productGroup: "light-industry", pricePerCodeKZT: BigInt(31400) }, // 314 ₸
+  ];
+  const now = Date.now();
+  for (const t of TARIFFS) {
+    await prisma.tariff.upsert({
+      where: { id: `tariff-${t.productGroup}` },
+      update: {},
+      create: {
+        id: `tariff-${t.productGroup}`,
+        productGroup: t.productGroup,
+        pricePerCodeKZT: t.pricePerCodeKZT,
+        validFrom: new Date(now - 86400000),
+        validTo: new Date(now + 2 * 86400000),
+        vatIncluded: true,
+      },
+    });
+  }
+
   console.log(
     `Seeded: tenant=${tenant.bin}, account=${account.balance}, products=${products.length}, admin=admin@demo`
   );

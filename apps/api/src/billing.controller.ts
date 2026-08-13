@@ -36,6 +36,7 @@ export class BillingController {
     @Res({ passthrough: true }) res: Response,
     @Body() body: { ref1c: string; amount: string | number; reason?: string }
   ) {
+    // Служебный (W5-07): сверка с 1С. Счета оплачиваются через /billing/invoices/:id/confirm.
     const amount = BigInt(body.amount);
     const { entry, existing } = await this.billing.topup(
       tenantOf(req),

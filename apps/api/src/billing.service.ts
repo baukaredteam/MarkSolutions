@@ -369,13 +369,26 @@ export class BillingService {
     return result.entry;
   }
 
-  // Активный тариф на дату; нет → 409 «тариф не настроен»
-  async activeTariff() {
+  // Активный тариф на дату (W5-07: по товарной группе, fallback общий); нет → 409
+  async activeTariff(productGroup?: string) {
     const now = new Date();
-    const tariff = await this.prisma.tariff.findFirst({
-      where: { validFrom: { lte: now }, validTo: { gte: now } },
-      orderBy: { validFrom: "desc" },
-    });
+    const where = {
+      validFrom: { lte: now },
+      validTo: { gte: now },
+    };
+    let tariff = null;
+    if (productGroup) {
+      tariff = await this.prisma.tariff.findFirst({
+        where: { ...where, productGroup },
+        orderBy: { validFrom: "desc" },
+      });
+    }
+    if (!tariff) {
+      tariff = await this.prisma.tariff.findFirst({
+        where: { ...where, productGroup: null },
+        orderBy: { validFrom: "desc" },
+      });
+    }
     if (!tariff) {
       throw new ConflictException({
         code: 409,

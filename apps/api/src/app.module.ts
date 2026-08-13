@@ -56,6 +56,8 @@ import { CodeLookupController } from "./code-lookup.controller";
 import { AuditController } from "./audit.controller";
 import { EcomProductsController } from "./ecom-products.controller";
 import { IntegrationsController } from "./integrations.controller";
+import { InvoiceController } from "./invoice.controller";
+import { InvoiceService } from "./invoice.service";
 import { CodeLookupService } from "./code-lookup.service";
 import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
@@ -127,12 +129,14 @@ export class AdminController {
     AuditController,
     EcomProductsController,
     IntegrationsController,
+    InvoiceController,
   ],
   providers: [
     PrismaService,
     AuthService,
     CatalogService,
     ModerationService,
+    InvoiceService,
     GtinResolver,
     OutboxPoller,
     SeedService,

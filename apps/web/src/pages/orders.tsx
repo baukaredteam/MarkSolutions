@@ -4,6 +4,7 @@ import { sessionStore } from "../session";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
 import { StatusBadge } from "../badge";
+import { formatTenge } from "../money";
 import { OrderForm } from "./order-form";
 
 interface OrderRow {
@@ -193,7 +194,11 @@ export function OrdersPage() {
     },
     { key: "gtin", label: "GTIN" },
     { key: "quantity", label: "Кол-во" },
-    { key: "totalPrice", label: "Сумма" },
+    {
+      key: "totalPrice",
+      label: "Сумма",
+      render: (r) => formatTenge(BigInt(r.totalPrice)),
+    },
     {
       key: "status",
       label: "Статус",

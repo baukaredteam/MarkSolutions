@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
+import { formatTenge } from "../money";
 import { useToast } from "../toast";
 
 interface Tariff {
@@ -31,8 +32,10 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
   const unitsNum = Number(unitsPerPlace || 0);
   const product = placesNum * unitsNum;
   const qtyNum = quantity === "" ? product : Number(quantity);
-  const pricePerCode = Number(tariff?.pricePerCodeKZT ?? 0);
-  const totalPrice = Number.isFinite(qtyNum) ? qtyNum * pricePerCode : 0;
+  const pricePerCode = BigInt(tariff?.pricePerCodeKZT ?? 0);
+  const totalPrice = Number.isFinite(qtyNum)
+    ? pricePerCode * BigInt(qtyNum)
+    : BigInt(0);
   const qtyValid = qtyNum >= 1 && qtyNum <= product;
 
   async function submit() {
@@ -116,8 +119,8 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
       </p>
       {tariff && (
         <p>
-          Тариф: {tariff.pricePerCodeKZT} ₸/КМ · totalPrice:{" "}
-          <strong>{totalPrice} ₸</strong>
+          Тариф: {formatTenge(BigInt(tariff.pricePerCodeKZT))}/КМ · totalPrice:{" "}
+          <strong>{formatTenge(totalPrice)}</strong>
         </p>
       )}
       <p>

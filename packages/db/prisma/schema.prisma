@@ -29,6 +29,7 @@ model Tenant {
   utilisationAlerts UtilisationAlert[]
   importDocuments ImportDocument[]
   withdrawalDocuments WithdrawalDocument[]
+  invoices Invoice[]
   aggregationUnits AggregationUnit[]
   products  Product[]
   users     User[]
@@ -42,7 +43,7 @@ model Account {
   version Int     @default(0)
   tenantId String
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  balance BigInt  @default(0) // целые тенге (ADR-016); материализованный кэш, источник истины — LedgerEntry
+  balance BigInt  @default(0) // тиыны (ADR-016 W5-07, 1 ₸ = 100 тиын); кэш, источник — LedgerEntry
   ledgerEntries LedgerEntry[]
   createdAt DateTime @default(now())
 }
@@ -56,7 +57,7 @@ model LedgerEntry {
   accountId String
   account   Account  @relation(fields: [accountId], references: [id])
   kind      String   // TOPUP|RESERVE|RELEASE|SETTLE (ADR-007)
-  amount    BigInt   // целые тенге, положительное число
+  amount    BigInt   // тиыны, положительное число
   refOrderId String? // связь с заказом (RESERVE/RELEASE/SETTLE)
   ref1c     String?  // идемпотентность PaymentImport (ADR-010)
   reason    String?
@@ -70,10 +71,33 @@ model Tariff {
   version         Int      @default(0)
   validFrom       DateTime
   validTo         DateTime
-  pricePerCodeKZT BigInt   // целые тенге (дробных единиц нет)
+  pricePerCodeKZT BigInt   // тиыны за КМ (ADR-016 W5-07)
   unit            String   @default("KM")
   currency        String   @default("KZT")
+  productGroup    String?  // W5-07: товарная группа (null = общий тариф)
+  vatIncluded     Boolean  @default(true) // W5-07: цена включает НДС
   createdAt       DateTime @default(now())
+}
+
+// Счёт на оплату (W5-07): ISSUED|PAID|CANCELLED. number уникален (counter+retry).
+model Invoice {
+  id           String   @id @default(cuid())
+  version      Int      @default(0)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  number       Int      @unique // MF-2026-NNNN (год+N)
+  date         DateTime @default(now())
+  productGroup String
+  quantity     Int
+  unitPrice    BigInt   // тиыны за КМ
+  sumWithoutVat BigInt  // тиыны
+  vat          BigInt   // тиыны
+  sumWithVat   BigInt   // тиыны
+  status       String   @default("ISSUED") // ISSUED|PAID|CANCELLED
+  paymentRef   String?
+  paidAt       DateTime?
+  vatRatePct   Int      @default(16)
+  createdAt    DateTime @default(now())
 }
 
 model Product {
@@ -214,11 +238,11 @@ model OrderLine {
   places        Int
   unitsPerPlace Int
   quantity      Int      // 1 <= quantity <= places*unitsPerPlace
-  totalPrice    BigInt   // целые тенге = quantity * pricePerCodeKZT
+  totalPrice    BigInt   // тиыны = quantity * pricePerCodeKZT
   cisType       String   @default("UNIT")
   serialNumberType String @default("OPERATOR")
   tariffId      String
-  pricePerCodeKZT BigInt  // снимок тарифа (смена тарифа заказ не меняет)
+  pricePerCodeKZT BigInt  // снимок тарифа, тиыны (смена тарифа заказ не меняет)
 }
 
 // Симулятор ИС МПТ (W3, ADR-005/024): state в БД, статус = f(now, createdAt, SIM_MPT_EMISSION_MS).

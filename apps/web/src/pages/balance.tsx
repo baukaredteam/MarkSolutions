@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
+import { formatTenge } from "../money";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
 import { EntityList, type Column } from "../entity-list";
@@ -23,10 +24,32 @@ interface LedgerRow {
 }
 
 const WRITE_ROLES = ["admin", "accountant"];
-const LIMIT_WARN = 100_000; // ₸, лимит предупреждения
+const LIMIT_WARN = 10_000_000n; // 100 000 ₸ в тиынах (W5-07)
 
-function fmt(n: string): string {
-  return Number(n).toLocaleString("ru-RU");
+interface InvoiceRow {
+  id: string;
+  number: string;
+  productGroup: string;
+  quantity: number;
+  unitPrice: string;
+  sumWithoutVat: string;
+  vat: string;
+  sumWithVat: string;
+  status: string;
+  paymentRef: string | null;
+}
+
+const PRODUCT_GROUPS: [string, string][] = [
+  ["motor-oils", "Моторные масла"],
+  ["medicines", "Лекарства"],
+  ["footwear", "Обувь"],
+  ["tobacco", "Табак"],
+  ["dietary-supplements", "БАД"],
+  ["light-industry", "Лёгкая промышленность"],
+];
+
+function fmtTenge(v: bigint | string): string {
+  return formatTenge(BigInt(v));
 }
 
 // Биллинг (UI-SPEC §4.13): KPI-3, пополнение-drawer (ref1c идемпотентно),
@@ -40,6 +63,9 @@ export function BalancePage() {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invGroup, setInvGroup] = useState("motor-oils");
+  const [invQty, setInvQty] = useState("");
 
   const sess = sessionStore.get();
   const roles = sess?.roles ?? [];
@@ -54,6 +80,10 @@ export function BalancePage() {
         .get<{ items: LedgerRow[] }>("/billing/ledger")
         .catch(() => ({ items: [] }));
       setLedger(l.items);
+      const inv = await api
+        .get<{ items: InvoiceRow[] }>("/billing/invoices")
+        .catch(() => ({ items: [] }));
+      setInvoices(inv.items);
     } catch (e) {
       if (e instanceof ApiErrorResponse)
         toast.push(`${e.error.code}: ${e.error.message}`, "error");
@@ -147,6 +177,54 @@ export function BalancePage() {
     }
   }
 
+  // W5-07: выставить счёт (кол-во + группа) → авторасчёт НДС → POST /billing/invoices
+  async function createInvoice() {
+    const qty = Number(invQty);
+    if (!Number.isInteger(qty) || qty < 1) {
+      toast.push("Укажите количество кодов", "warn");
+      return;
+    }
+    setLoading(true);
+    try {
+      const inv = await api.post<InvoiceRow>("/billing/invoices", {
+        productGroup: invGroup,
+        quantity: qty,
+      });
+      toast.push(`Счёт ${inv.number} выставлен (${inv.status})`);
+      setInvQty("");
+      await load();
+    } catch (e) {
+      if (e instanceof ApiErrorResponse)
+        toast.push(`${e.error.code}: ${e.error.message}`, "error");
+      else if (e instanceof ApiUnavailable)
+        toast.push("Сервис недоступен. Попробуйте позже.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // W5-07: «Оплатил(а)» → confirm → TOPUP(ref1c=номер) → PAID
+  async function confirmInvoice(id: string, paymentRef: string) {
+    setLoading(true);
+    try {
+      const inv = await api.post<InvoiceRow>(
+        `/billing/invoices/${id}/confirm`,
+        {
+          paymentRef,
+        }
+      );
+      toast.push(`Счёт ${inv.number} оплачен`);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiErrorResponse)
+        toast.push(`${e.error.code}: ${e.error.message}`, "error");
+      else if (e instanceof ApiUnavailable)
+        toast.push("Сервис недоступен. Попробуйте позже.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const columns: Column<LedgerRow>[] = [
     {
       key: "date",
@@ -180,7 +258,7 @@ export function BalancePage() {
         return (
           <span style={{ color: sign === "−" ? "var(--red)" : "var(--green)" }}>
             {sign}
-            {fmt(r.amount)} ₸
+            {fmtTenge(r.amount)}
           </span>
         );
       },
@@ -188,7 +266,7 @@ export function BalancePage() {
     {
       key: "balance",
       label: "Баланс",
-      render: (r) => `${fmt(r.balance)} ₸`,
+      render: (r) => fmtTenge(r.balance),
     },
     {
       key: "status",
@@ -243,10 +321,10 @@ export function BalancePage() {
             className="kpi-num"
             style={{ color: low ? "var(--red)" : "var(--green)" }}
           >
-            {fmt(balance?.available ?? "0")} ₸
+            {fmtTenge(balance?.available ?? "0")}
           </div>
           <p className="sub">
-            Зарезервировано: {fmt(balance?.reserved ?? "0")} ₸
+            Зарезервировано: {fmtTenge(balance?.reserved ?? "0")}
           </p>
           {low && (
             <p className="sub" style={{ color: "var(--red)" }}>
@@ -256,12 +334,12 @@ export function BalancePage() {
         </div>
         <div className="card">
           <small className="sub">Расходы за месяц</small>
-          <div className="kpi-num">{fmt(String(monthSpend))} ₸</div>
+          <div className="kpi-num">{fmtTenge(String(monthSpend))}</div>
           <p className="sub">Списания (SETTLE) с начала месяца</p>
         </div>
         <div className="card">
           <small className="sub">Лимит предупреждения</small>
-          <div className="kpi-num">{fmt(String(LIMIT_WARN))} ₸</div>
+          <div className="kpi-num">{fmtTenge(LIMIT_WARN)}</div>
           <p className="sub">Автопополнение не настроено</p>
         </div>
       </div>
@@ -294,6 +372,126 @@ export function BalancePage() {
           </div>
         </div>
       </div>
+
+      {canWrite && (
+        <div className="card" style={{ marginTop: 15 }}>
+          <div className="card-title">Счета на оплату</div>
+          <div className="grid two">
+            <div className="card">
+              <div className="card-title">Выставить счёт</div>
+              <div className="field">
+                <label htmlFor="inv-group">Товарная группа</label>
+                <select
+                  id="inv-group"
+                  value={invGroup}
+                  onChange={(e) => setInvGroup(e.target.value)}
+                >
+                  {PRODUCT_GROUPS.map(([g, label]) => (
+                    <option key={g} value={g}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="inv-qty">Количество кодов</label>
+                <input
+                  id="inv-qty"
+                  className="input"
+                  type="number"
+                  min={1}
+                  value={invQty}
+                  onChange={(e) => setInvQty(e.target.value)}
+                />
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={createInvoice}
+                disabled={loading}
+              >
+                Выставить счёт
+              </button>
+            </div>
+            <div className="card">
+              <div className="card-title">Список счетов</div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>№</th>
+                      <th>Группа</th>
+                      <th>Кол-во</th>
+                      <th>Сумма</th>
+                      <th>Статус</th>
+                      <th>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="empty">
+                          Счетов нет
+                        </td>
+                      </tr>
+                    )}
+                    {invoices.map((inv) => (
+                      <tr key={inv.id}>
+                        <td>
+                          <b>{inv.number}</b>
+                        </td>
+                        <td>
+                          {PRODUCT_GROUPS.find(
+                            ([g]) => g === inv.productGroup
+                          )?.[1] ?? inv.productGroup}
+                        </td>
+                        <td>{inv.quantity}</td>
+                        <td>{fmtTenge(inv.sumWithVat)}</td>
+                        <td>
+                          <span
+                            className={`badge ${inv.status === "PAID" ? "b-green" : inv.status === "CANCELLED" ? "b-gray" : "b-yellow"}`}
+                            data-status={inv.status}
+                          >
+                            {inv.status === "PAID"
+                              ? "Оплачен"
+                              : inv.status === "CANCELLED"
+                                ? "Отменён"
+                                : "Выставлен"}
+                          </span>
+                        </td>
+                        <td>
+                          {inv.status === "ISSUED" && (
+                            <>
+                              <button
+                                className="btn btn-light btn-sm"
+                                onClick={() =>
+                                  confirmInvoice(inv.id, `PAY-${inv.number}`)
+                                }
+                                disabled={loading}
+                              >
+                                Оплатил(а)
+                              </button>{" "}
+                              <button
+                                className="btn btn-light btn-sm"
+                                onClick={() =>
+                                  toast.push(
+                                    `Kaspi: оплата счёта ${inv.number} (мок)`
+                                  )
+                                }
+                              >
+                                Kaspi
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 15 }}>
         <div className="card-title">Закрывающие документы</div>
