@@ -116,6 +116,19 @@ async function main() {
     { productGroup: "light-industry", pricePerCodeKZT: BigInt(31400) }, // 314 ₸
   ];
   const now = Date.now();
+  // общий тариф (productGroup=null) — fallback, когда группа товара не определена
+  await prisma.tariff.upsert({
+    where: { id: "tariff-default" },
+    update: {},
+    create: {
+      id: "tariff-default",
+      productGroup: null,
+      pricePerCodeKZT: BigInt(47000), // 470 ₸
+      validFrom: new Date(now - 86400000),
+      validTo: new Date(now + 2 * 86400000),
+      vatIncluded: true,
+    },
+  });
   for (const t of TARIFFS) {
     await prisma.tariff.upsert({
       where: { id: `tariff-${t.productGroup}` },

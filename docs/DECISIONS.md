@@ -34,7 +34,7 @@
 
 - Без enum в Prisma: enum → String + валидация на уровне приложения; статусы — String, не enum.
 - Без массивов: массив → JSON-строка с валидацией на уровне приложения (прод = native array PostgreSQL).
-- Деньги: BigInt в целых тенге (KZT), дробных единиц нет (минимальная единица — 1 тенге); float запрещён.
+- Деньги: BigInt в тиынах (KZT, 1 ₸ = 100 тиын; минорные, float запрещён); формат — formatTenge (W5-07 апдейт ADR-016).
 - Оптимистическая блокировка: поле version Int @default(0); UPDATE только с WHERE version = {n}; конфликт → retry/409.
 - Время: DateTime (Prisma прозрачно: TEXT в SQLite / TIMESTAMP в PostgreSQL).
 - Миграции проверяем на обеих БД контрактным тестом.
