@@ -16,7 +16,6 @@ const stubRoutes = [
   ["/codecheck", "Информация о коде"],
   ["/operations", "Операции"],
   ["/warehouse", "Склад и ТСД"],
-  ["/documents", "Документы"],
   ["/reports", "Отчёты"],
   ["/integrations", "Интеграции"],
   ["/support", "Поддержка"],

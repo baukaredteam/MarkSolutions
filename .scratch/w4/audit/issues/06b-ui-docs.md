@@ -27,3 +27,7 @@
 ## Регламент
 
 worktree `feat/w4-ui-06b-docs` → TDD → /verification-before-completion → диф на текстовый review → мердж.
+
+## Tech-debt (LOW)
+
+- `docs.spec.tsx`: flaky ассерт на текст «Завершён» (множественный match — SUCCESS×2 badge) — заменить `getByText` на селектор по `data-status` (`[data-status="SUCCESS"]`) или `getAllByRole`. Не блокер, тест зелёный.

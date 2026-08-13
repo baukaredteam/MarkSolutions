@@ -783,6 +783,122 @@ async function main() {
       fail("labels reprint 400/409", error);
     }
 
+    // ---- UI-06b: documents — ввоз→INTRODUCED, вывод OTHER без comment→400, страница ----
+    try {
+      await page.goto(`${baseUrl}/documents`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.getByRole("heading", { name: "Документы" }).waitFor({ state: "visible" });
+      const kpi = await page.locator(".grid.four .card").count();
+      if (kpi < 4) throw new Error(`KPI-4 не хватает (${kpi})`);
+      pass("documents: страница рендерит KPI-4");
+    } catch (error) {
+      fail("documents page", error);
+    }
+
+    // ввоз через мастер: создать заказ → эмиссия → print+apply всех → POST /import → INTRODUCED
+    try {
+      const result = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}`, "Content-Type": "application/json" };
+        const j = (path, method = "GET", body) =>
+          fetch(`/api${path}`, { method, headers: { ...h }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+        const cards = await j("/products/cards");
+        const card = cards.items.find((c) => c.gtin === "04014835723399");
+        if (!card) throw new Error("no card");
+        const key = `e2e-docs-imp-${Date.now()}`;
+        const order = await fetch("/api/orders", {
+          method: "POST",
+          headers: { ...h, "Idempotency-Key": key },
+          body: JSON.stringify({ cardId: card.id, gtin: "04014835723399", places: 1, unitsPerPlace: 1 }),
+        }).then((r) => r.json());
+        return { orderId: order.id };
+      });
+      // ждём эмиссию ACTIVE
+      let codes = [];
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        codes = await page.evaluate(async (oid) => {
+          const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+          const h = { Authorization: `Bearer ${sess?.token}` };
+          const d = await fetch(`/api/codes/${oid}/codes`, { headers: h }).then((r) => r.json());
+          return (d.items ?? []).filter((c) => c.status === "ACTIVE");
+        }, result.orderId);
+        if (codes.length) break;
+      }
+      if (!codes.length) throw new Error("emission timeout");
+      // print+apply все коды → APPLIED
+      await page.evaluate(async (oid) => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        const h = { Authorization: `Bearer ${sess?.token}`, "Content-Type": "application/json" };
+        const d = await fetch(`/api/codes/${oid}/codes`, { headers: h }).then((r) => r.json());
+        for (const c of d.items ?? []) {
+          if (c.status !== "ACTIVE") continue;
+          const pr = await fetch(`/api/labels/${c.id}/print`, { method: "POST", headers: h, body: "{}" }).then((r) => r.json());
+          await fetch(`/api/codes/${c.id}/apply`, { method: "POST", headers: h, body: JSON.stringify({ png: pr.pngBase64 }) });
+        }
+      }, result.orderId);
+      // импорт
+      const imp = await page.evaluate(async (oid) => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        const h = { Authorization: `Bearer ${sess?.token}`, "Content-Type": "application/json" };
+        const num = `10002000/010826/${Date.now() % 100000}`;
+        return fetch("/api/import", {
+          method: "POST", headers: h,
+          body: JSON.stringify({ orderId: oid, customsDeclaration: { date: "2026-08-12", number: num, authorityCode: "702" } }),
+        }).then((r) => r.json());
+      }, result.orderId);
+      if (imp.status !== "SUCCESS")
+        throw new Error(`import failed: ${JSON.stringify(imp)}`);
+      // INTRODUCED в истории
+      const hist = await page.evaluate(async (oid) => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        const h = { Authorization: `Bearer ${sess?.token}`, "Content-Type": "application/json" };
+        const d = await fetch(`/api/codes/${oid}/codes`, { headers: h }).then((r) => r.json());
+        const code = d.items?.[0];
+        const lk = await fetch("/api/codes/lookup", { method: "POST", headers: h, body: JSON.stringify({ code: code.id }) }).then((r) => r.json());
+        return (lk.history ?? []).some((e) => e.event === "INTRODUCED");
+      }, result.orderId);
+      if (!hist) throw new Error("INTRODUCED не найден в истории кода");
+      pass(`docs: ввоз → INTRODUCED (заказ ${result.orderId.slice(0, 8)}…)`);
+    } catch (error) {
+      fail("docs import → INTRODUCED", error);
+    }
+
+    // вывод OTHER без комментария → 400
+    try {
+      const r = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}`, "Content-Type": "application/json" };
+        const agg = await fetch("/api/api/codes", { headers: h }).then((r) => r.json());
+        const pool = agg.items?.[0];
+        if (!pool) throw new Error("no codes in vault");
+        const detail = await fetch(`/api/codes/${pool.orderId}/codes`, { headers: h }).then((r) => r.json());
+        const code = detail.items?.[0];
+        if (!code) throw new Error("no codes");
+        const res = await fetch("/api/withdrawal", {
+          method: "POST", headers: h,
+          body: JSON.stringify({ codes: [code.id], withdrawalType: "WRITE_OFF", withdrawalReason: "OTHER", comment: "ab" }),
+        });
+        return res.status;
+      });
+      if (r !== 400) throw new Error(`withdrawal OTHER short expected 400, got ${r}`);
+      pass("docs: вывод OTHER без комментария → 400");
+    } catch (error) {
+      fail("docs withdrawal 400", error);
+    }
+
+    // скриншот docs
+    try {
+      await page.goto(`${baseUrl}/documents`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.waitForTimeout(900);
+      const shot = await page.screenshot({ path: "shot-docs.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot docs saved");
+    } catch (error) {
+      fail("screenshot docs", error);
+    }
+
     // ---- UI-i18n: русские статусы — на /products и /vault нет англ. кодов в badge-текстах ----
     try {
       await page.goto(`${baseUrl}/products`, { waitUntil: "networkidle" }).catch(() => {});
