@@ -16,6 +16,7 @@ export interface AttributeDef {
   ref?: string; // имя справочника
   required: boolean; // ярус A → true
   autofill?: boolean; // ярус A_AUTO → автозаполнение из tenant
+  defaultValue?: string; // дефолт при отсутствии (W5-08: volumeUnit="л")
 }
 
 export const REFERENCES = {
@@ -234,7 +235,7 @@ const A_AUTO: AttributeDef[] = [
   },
   {
     key: "platformName",
-    label: "Наименование площадки",
+    label: "Производитель (наименование)",
     tier: "A_AUTO",
     type: "string",
     required: true,
@@ -242,7 +243,7 @@ const A_AUTO: AttributeDef[] = [
   },
   {
     key: "platformCountry",
-    label: "Страна площадки",
+    label: "Производитель (страна)",
     tier: "A_AUTO",
     type: "string",
     required: true,
@@ -250,7 +251,7 @@ const A_AUTO: AttributeDef[] = [
   },
   {
     key: "platformAddress",
-    label: "Адрес площадки",
+    label: "Производитель (адрес)",
     tier: "A_AUTO",
     type: "string",
     required: true,
@@ -348,6 +349,14 @@ const B: AttributeDef[] = [
     required: false,
   },
   {
+    key: "volumeUnit",
+    label: "Единица объёма",
+    tier: "B",
+    type: "string",
+    required: false,
+    defaultValue: "л",
+  },
+  {
     key: "widthCm",
     label: "Ширина (см)",
     tier: "B",
@@ -422,6 +431,14 @@ export function autofillAttributes(
   for (const def of A_AUTO) {
     if (def.autofill && (out[def.key] === undefined || out[def.key] === "")) {
       out[def.key] = tenant[def.key] ?? "";
+    }
+  }
+  for (const def of motorOilSchemaV1.attributes) {
+    if (
+      def.defaultValue &&
+      (out[def.key] === undefined || out[def.key] === "")
+    ) {
+      out[def.key] = def.defaultValue;
     }
   }
   return out;

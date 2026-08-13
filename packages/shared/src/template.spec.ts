@@ -17,8 +17,8 @@ describe("sheetModel (F2)", () => {
 
   it("headers = attribute names in schema order, tier A starred, B/C not", () => {
     const m = sheetModel(motorOilSchemaV1);
-    // 44 атрибута, порядок схемы
-    expect(m.headers).toHaveLength(44);
+    // 45 атрибутов, порядок схемы (W5-08 +volumeUnit)
+    expect(m.headers).toHaveLength(45);
     // ярус A (required) помечен «*» в рендере; на модели required=true
     expect(m.headers.filter((h) => h.required)).toHaveLength(
       TIER_A_MANUAL.length + TIER_A_AUTO.length

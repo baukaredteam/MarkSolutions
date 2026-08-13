@@ -62,7 +62,7 @@ describe("GET /templates/:productGroup (JWT-protected, F3)", () => {
     const m = sheetModel(motorOilSchemaV1);
     expect(m.descriptor.productGroup).toBe("motor-oils");
     expect(m.descriptor.schemaVersion).toBe(1);
-    expect(m.headers).toHaveLength(44);
+    expect(m.headers).toHaveLength(45); // W5-08 +volumeUnit
     expect(m.headers[0].label).toBe("GTIN");
     expect(m.headers[0].required).toBe(true);
   });

@@ -47,10 +47,19 @@ const fullTenant: Record<string, string> = {
 };
 
 describe("motor-oils schema v1", () => {
-  it("has schemaVersion 1 and 44 attributes across tiers", () => {
+  it("has schemaVersion 1 and 45 attributes across tiers (W5-08 +volumeUnit)", () => {
     expect(motorOilSchemaV1.schemaVersion).toBe(1);
     const total = TIER_A_MANUAL.length + TIER_A_AUTO.length + TIER_B.length;
-    expect(total).toBe(44);
+    expect(total).toBe(45);
+  });
+
+  it("W5-08: volumeUnit дефолт «л», лейблы производителя", () => {
+    const filled = autofillAttributes({ volumeL: 4 }, {});
+    expect(filled.volumeUnit).toBe("л");
+    const platform = motorOilSchemaV1.attributes.find(
+      (a) => a.key === "platformName"
+    );
+    expect(platform?.label).toBe("Производитель (наименование)");
   });
 
   it("tier A empty → error (blocks submission)", () => {
