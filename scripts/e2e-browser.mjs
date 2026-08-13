@@ -1015,6 +1015,22 @@ async function main() {
       fail("screenshots operator/audit", error);
     }
 
+    // ---- W5-02: страница «Интеграции» рендерит статусы адаптеров ----
+    try {
+      await page.goto(`${baseUrl}/integrations`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.getByRole("heading", { name: "Интеграции" }).waitFor({ state: "visible" });
+      await page.getByText("ИС МПТ").waitFor({ state: "visible" });
+      await page.getByText("НКТ").waitFor({ state: "visible" });
+      await page.getByText("GS1 Kazakhstan").waitFor({ state: "visible" });
+      const badges = await page.locator(".badge").count();
+      if (badges < 4) throw new Error(`статусов адаптеров мало (${badges})`);
+      const shot = await page.screenshot({ path: "shot-integrations.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot small");
+      pass("W5-02: страница «Интеграции» рендерит статусы адаптеров");
+    } catch (error) {
+      fail("W5-02 integrations page", error);
+    }
+
     // (d) logout → standalone /login
     try {
       await page.getByRole("button", { name: "Выйти" }).click();

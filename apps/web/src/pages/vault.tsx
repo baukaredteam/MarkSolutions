@@ -201,6 +201,15 @@ export function VaultPage() {
               </small>
             </div>
           </div>
+          <div className="device" style={{ marginTop: 8 }}>
+            <div className="device-icon">🔒</div>
+            <div>
+              <b>ai91/ai92 зашифрованы (AES-256-GCM)</b>
+              <small className="sub" style={{ display: "block" }}>
+                Полный криптохвост — только export/печать с аудитом CV-032
+              </small>
+            </div>
+          </div>
         </div>
       </div>
     </section>

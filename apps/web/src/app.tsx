@@ -18,6 +18,7 @@ import { DocumentsPage } from "./pages/docs";
 import { BalancePage } from "./pages/balance";
 import { OperatorPage } from "./pages/operator";
 import { AuditPage } from "./pages/audit";
+import { IntegrationsPage } from "./pages/integrations";
 import { PAGES, defaultRoute, type Role } from "./roles";
 import { sessionStore } from "./session";
 
@@ -73,7 +74,6 @@ const STUB_IDS = [
   "operations",
   "warehouse",
   "reports",
-  "integrations",
   "support",
   "organization",
   "tasks",
@@ -103,6 +103,7 @@ export function AppRoutes() {
         <Route path="/billing" element={<BalancePage />} />
         <Route path="/operator" element={<OperatorPage />} />
         <Route path="/audit" element={<AuditPage />} />
+        <Route path="/integrations" element={<IntegrationsPage />} />
         {STUB_IDS.map((id) => (
           <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />
         ))}
