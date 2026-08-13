@@ -20,8 +20,6 @@ const stubRoutes = [
   ["/integrations", "Интеграции"],
   ["/support", "Поддержка"],
   ["/organization", "Организация и доступ"],
-  ["/operator", "Кабинет оператора"],
-  ["/audit", "Журнал аудита"],
   ["/tasks", "Центр задач"],
   ["/production", "Производство"],
   ["/partners", "Контрагенты"],

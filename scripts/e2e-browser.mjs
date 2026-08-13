@@ -967,6 +967,38 @@ async function main() {
       fail("i18n статусы", error);
     }
 
+    // ---- UI-07: operator (исключения) + audit журнал ----
+    try {
+      const r = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}` };
+        const exc = await fetch("/api/moderation/exceptions", { headers: h });
+        const jr = await fetch("/api/audit/journal", { headers: h });
+        return { exc: exc.status, jr: jr.status };
+      });
+      if (r.exc !== 200) throw new Error(`operator exceptions HTTP ${r.exc}`);
+      if (r.jr !== 200) throw new Error(`audit journal HTTP ${r.jr}`);
+      pass("operator exceptions + audit journal API доступны (200)");
+    } catch (error) {
+      fail("operator/audit API", error);
+    }
+
+    // скриншоты operator + audit
+    try {
+      await page.goto(`${baseUrl}/operator`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.waitForTimeout(900);
+      const o = await page.screenshot({ path: "shot-operator.png", fullPage: true });
+      if (!o || o.length < 1000) throw new Error("operator screenshot small");
+      await page.goto(`${baseUrl}/audit`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.waitForTimeout(900);
+      const a = await page.screenshot({ path: "shot-audit.png", fullPage: true });
+      if (!a || a.length < 1000) throw new Error("audit screenshot small");
+      pass("screenshots operator + audit saved");
+    } catch (error) {
+      fail("screenshots operator/audit", error);
+    }
+
     // (d) logout → standalone /login
     try {
       await page.getByRole("button", { name: "Выйти" }).click();

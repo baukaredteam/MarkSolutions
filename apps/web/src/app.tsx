@@ -16,6 +16,8 @@ import { VaultPage } from "./pages/vault";
 import { LabelsPage } from "./pages/labels";
 import { DocumentsPage } from "./pages/docs";
 import { BalancePage } from "./pages/balance";
+import { OperatorPage } from "./pages/operator";
+import { AuditPage } from "./pages/audit";
 import { PAGES, defaultRoute, type Role } from "./roles";
 import { sessionStore } from "./session";
 
@@ -74,8 +76,6 @@ const STUB_IDS = [
   "integrations",
   "support",
   "organization",
-  "operator",
-  "audit",
   "tasks",
   "production",
   "partners",
@@ -101,6 +101,8 @@ export function AppRoutes() {
         <Route path="/labels" element={<LabelsPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/billing" element={<BalancePage />} />
+        <Route path="/operator" element={<OperatorPage />} />
+        <Route path="/audit" element={<AuditPage />} />
         {STUB_IDS.map((id) => (
           <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />
         ))}
