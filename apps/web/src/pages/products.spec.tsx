@@ -121,6 +121,39 @@ describe("ProductsPage (UI-04: cards list + drafts)", () => {
     });
   });
 
+  it("W5-01: «⇩ 1ecom» → GET ecom/products + POST ecom/import", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+        if (String(url).includes("ecom/products")) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [{ gtin: "04014835723399", tnved: "2710198200", name: "Castrol EDGE" }],
+            }),
+          };
+        }
+        if (String(url).includes("ecom/import")) {
+          return { ok: true, json: async () => ({ created: 1 }) };
+        }
+        return { ok: true, json: async () => ({ items: [] }) };
+      })
+    );
+    render(
+      <MemoryRouter>
+        <ProductsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      fireEvent.click(screen.getByText("⇩ 1ecom"));
+    });
+    await waitFor(() => {
+      expect(calls.some((c) => c.includes("POST") && c.includes("ecom/import"))).toBe(true);
+    });
+  });
+
   it("создание карточки: POST /products/cards", async () => {
     const calls: string[] = [];
     vi.stubGlobal(

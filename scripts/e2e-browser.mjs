@@ -470,6 +470,22 @@ async function main() {
       fail("products list", error);
     }
 
+    // W5-01: кнопка «⇩ 1ecom» → импорт → черновики source=1ecom
+    try {
+      await page.getByRole("button", { name: "⇩ 1ecom" }).click();
+      await page.waitForTimeout(800);
+      const r = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const drafts = await fetch("/api/products/drafts", { headers: { Authorization: `Bearer ${sess.token}` } }).then((x) => x.json());
+        return { total: drafts.items?.length ?? 0 };
+      });
+      if (r.total < 1) throw new Error("черновики не созданы после 1ecom-импорта");
+      pass(`W5-01: «⇩ 1ecom» → импорт черновиков (итого ${r.total})`);
+    } catch (error) {
+      fail("W5-01 1ecom импорт", error);
+    }
+
     // скриншот products list
     try {
       const shot = await page.screenshot({ path: "shot-products-list.png", fullPage: true });

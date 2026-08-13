@@ -149,6 +149,32 @@ export function ProductsPage() {
     }
   }
 
+  // «⇩ 1ecom» (W5-01): товары из 1ecom → DraftProposal(source=1ecom)
+  async function importEcom() {
+    try {
+      const list = await api.get<{
+        items: {
+          gtin: string;
+          tnved?: string;
+          name?: string;
+          brand?: string;
+          sae?: string;
+          volumeL?: number;
+        }[];
+      }>("/products/ecom/products");
+      const res = await api.post<{ created: number }>("/products/ecom/import", {
+        items: list.items,
+      });
+      toast.push(`Импортировано из 1ecom: ${res.created} черновиков`);
+      load();
+    } catch (e) {
+      if (e instanceof ApiErrorResponse)
+        toast.push(`${e.error.code}: ${e.error.message}`, "error");
+      else if (e instanceof ApiUnavailable)
+        toast.push("Сервис недоступен. Попробуйте позже.", "error");
+    }
+  }
+
   // Мастер создания карточки (4 шага) → POST /products/cards (admin|manager)
   async function createCard() {
     const attrs: Record<string, unknown> = {
@@ -329,6 +355,9 @@ export function ProductsPage() {
         <div className="page-actions">
           <button className="btn btn-light" onClick={downloadTemplate}>
             ⇩ Шаблон импорта
+          </button>
+          <button className="btn btn-light" onClick={importEcom}>
+            ⇩ 1ecom
           </button>
           <button
             className="btn btn-light"

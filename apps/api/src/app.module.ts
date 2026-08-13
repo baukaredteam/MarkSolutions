@@ -54,6 +54,7 @@ import { DashboardController } from "./dashboard.controller";
 import { DashboardService } from "./dashboard.service";
 import { CodeLookupController } from "./code-lookup.controller";
 import { AuditController } from "./audit.controller";
+import { EcomProductsController } from "./ecom-products.controller";
 import { CodeLookupService } from "./code-lookup.service";
 import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
@@ -123,6 +124,7 @@ export class AdminController {
     DashboardController,
     CodeLookupController,
     AuditController,
+    EcomProductsController,
   ],
   providers: [
     PrismaService,

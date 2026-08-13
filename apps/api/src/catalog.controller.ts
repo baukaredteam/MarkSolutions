@@ -40,6 +40,7 @@ interface DraftRow {
   volumeL?: number;
   gtin?: string;
   demo?: boolean;
+  source?: string;
 }
 
 @Injectable()
@@ -234,7 +235,7 @@ export class CatalogService {
     return this.prisma.draftProposal.create({
       data: {
         tenantId,
-        source: "invoice",
+        source: row.source ?? "invoice",
         proposed: {
           schemaVersion: 1,
           name: row.name,
