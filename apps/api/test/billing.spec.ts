@@ -322,4 +322,88 @@ describe("billing core (W3, ADR-007)", () => {
     expect(ok.body.pricePerCodeKZT).toBe("10000");
     expect(ok.body.unit).toBe("KM");
   });
+
+  it("UI-06c: GET /billing/ledger — пустой tenant → пустой список", async () => {
+    // отдельный tenant без проводок
+    const t = await prisma.tenant.create({
+      data: { bin: "777000111666", name: "ПустоТен", status: "ACTIVE" },
+    });
+    await prisma.account.create({
+      data: { tenantId: t.id, balance: BigInt(0) },
+    });
+    const tok = app.get(JwtService).sign({
+      sub: `u-${t.id}`,
+      tenantId: t.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+    const res = await request(app.getHttpServer())
+      .get("/billing/ledger")
+      .set("Authorization", `Bearer ${tok}`)
+      .expect(200);
+    expect(res.body.items).toEqual([]);
+  });
+
+  it("UI-06c: GET /billing/ledger — tenant-scoped, desc, баланс после операции", async () => {
+    // создать проводки вручную (в отдельном tenant, чтобы не мешать предыдущим тестам)
+    const t = await prisma.tenant.create({
+      data: { bin: "777000111777", name: "ЛеджТен", status: "ACTIVE" },
+    });
+    const acc = await prisma.account.create({
+      data: { tenantId: t.id, balance: BigInt(0) },
+    });
+    const tok = app.get(JwtService).sign({
+      sub: `u-${t.id}`,
+      tenantId: t.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+    await prisma.ledgerEntry.create({
+      data: {
+        tenantId: t.id,
+        accountId: acc.id,
+        kind: "TOPUP",
+        amount: BigInt(1000),
+        ref1c: "ledger-t1",
+        createdAt: new Date(Date.now() - 3000),
+      },
+    });
+    await prisma.ledgerEntry.create({
+      data: {
+        tenantId: t.id,
+        accountId: acc.id,
+        kind: "SETTLE",
+        amount: BigInt(300),
+        refOrderId: "o-ledger",
+        createdAt: new Date(Date.now() - 2000),
+      },
+    });
+    await prisma.ledgerEntry.create({
+      data: {
+        tenantId: t.id,
+        accountId: acc.id,
+        kind: "TOPUP",
+        amount: BigInt(500),
+        ref1c: "ledger-t2",
+        createdAt: new Date(Date.now() - 1000),
+      },
+    });
+    const res = await request(app.getHttpServer())
+      .get("/billing/ledger")
+      .set("Authorization", `Bearer ${tok}`)
+      .expect(200);
+    const items = res.body.items;
+    expect(items.length).toBe(3);
+    // desc: самый свежий (TOPUP 500) первым
+    expect(items[0].kind).toBe("TOPUP");
+    expect(items[0].amount).toBe("500");
+    expect(items[0].ref1c).toBe("ledger-t2");
+    // поля целые тенге-строки
+    for (const it of items) {
+      expect(typeof it.amount).toBe("string");
+      expect(/^\d+$/.test(it.amount)).toBe(true);
+    }
+    // баланс после операции: TOPUP 500 после всех = 1000-300+500 = 1200
+    expect(items[0].balance).toBe("1200");
+  });
 });

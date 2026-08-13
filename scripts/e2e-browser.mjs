@@ -899,6 +899,41 @@ async function main() {
       fail("screenshot docs", error);
     }
 
+    // ---- UI-06c: billing — topup 201/повтор 200, ledger desc, скриншот ----
+    try {
+      const r = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const h = { Authorization: `Bearer ${sess.token}`, "Content-Type": "application/json" };
+        const ref1c = `e2e-topup-${Date.now()}`;
+        const f = (path, method = "GET", body) =>
+          fetch(`/api${path}`, { method, headers: { ...h }, body: body ? JSON.stringify(body) : undefined });
+        const t1 = await f("/billing/payments/import", "POST", { ref1c, amount: "2500", reason: "e2e" });
+        const t2 = await f("/billing/payments/import", "POST", { ref1c, amount: "2500", reason: "e2e" });
+        const ledger = await f("/billing/ledger").then((x) => x.json());
+        return { t1: t1.status, t2: t2.status, items: ledger.items };
+      });
+      if (r.t1 !== 201) throw new Error(`первый topup expected 201, got ${r.t1}`);
+      if (r.t2 !== 200) throw new Error(`повтор topup expected 200, got ${r.t2}`);
+      if (!r.items?.length) throw new Error("ledger пуст");
+      // desc: первый элемент — свежий TOPUP (наш e2e-topup)
+      if (r.items[0].kind !== "TOPUP") throw new Error(`ledger не desc: ${r.items[0].kind}`);
+      pass(`billing: topup 201→200 идемпотентно, ledger desc (${r.items.length} проводок)`);
+    } catch (error) {
+      fail("billing topup/ledger", error);
+    }
+
+    // скриншот billing
+    try {
+      await page.goto(`${baseUrl}/billing`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.waitForTimeout(900);
+      const shot = await page.screenshot({ path: "shot-billing.png", fullPage: true });
+      if (!shot || shot.length < 1000) throw new Error("screenshot too small");
+      pass("screenshot billing saved");
+    } catch (error) {
+      fail("screenshot billing", error);
+    }
+
     // ---- UI-i18n: русские статусы — на /products и /vault нет англ. кодов в badge-текстах ----
     try {
       await page.goto(`${baseUrl}/products`, { waitUntil: "networkidle" }).catch(() => {});

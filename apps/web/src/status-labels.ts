@@ -3,12 +3,7 @@
 // на en/kz позже (эволюция). Цвета остаются привязаны к КОДУ (STATUS_BADGE).
 
 export type StatusFamily =
-  | "CARD"
-  | "ORDER"
-  | "CODE"
-  | "DOC"
-  | "QUEUE"
-  | "DEVICE";
+  "CARD" | "ORDER" | "CODE" | "DOC" | "QUEUE" | "DEVICE" | "BILLING";
 
 const RU: Record<string, Record<string, string>> = {
   CARD: {
@@ -68,6 +63,12 @@ const RU: Record<string, Record<string, string>> = {
     printing: "Печатает",
     offline: "Нет связи",
   },
+  BILLING: {
+    TOPUP: "Пополнение",
+    RESERVE: "Резерв",
+    RELEASE: "Освобождение резерва",
+    SETTLE: "Списание",
+  },
 };
 
 // фиксированный порядок семейств (пересечение кодов: CARD/ORDER оба имеют DRAFT)
@@ -78,6 +79,7 @@ const FAMILY_ORDER: StatusFamily[] = [
   "DOC",
   "QUEUE",
   "DEVICE",
+  "BILLING",
 ];
 
 const FLAT = new Map<string, string>();
@@ -87,8 +89,7 @@ for (const f of FAMILY_ORDER) {
   }
 }
 
-export const statusLabel = (code: string): string =>
-  FLAT.get(code) ?? code;
+export const statusLabel = (code: string): string => FLAT.get(code) ?? code;
 
 // Цвет badge привязан к коду (не к тексту): единая карта для всех семейств.
 export const STATUS_BADGE: Record<string, string> = {
@@ -137,4 +138,9 @@ export const STATUS_BADGE: Record<string, string> = {
   done: "b-green",
   ready: "b-green",
   offline: "b-gray",
+  // BILLING (проводки)
+  TOPUP: "b-green",
+  RESERVE: "b-yellow",
+  RELEASE: "b-blue",
+  SETTLE: "b-red",
 };

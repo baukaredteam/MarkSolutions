@@ -102,6 +102,13 @@ export class BillingController {
     };
   }
 
+  // UI-06c: журнал проводок (desc, «баланс после операции»)
+  @Roles(...READ_ROLES)
+  @Get("ledger")
+  async ledger(@Req() req: Request) {
+    return this.billing.ledger(tenantOf(req));
+  }
+
   @Get("tariff/active")
   async activeTariff() {
     const t = await this.billing.activeTariff();

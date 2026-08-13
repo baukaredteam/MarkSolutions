@@ -65,6 +65,37 @@ export class BillingService {
     return { balance, reserved, available: balance - reserved };
   }
 
+  // UI-06c: журнал проводок (desc) с «балансом после операции».
+  // Баланс считаем кумулятивно по хронологии (asc): TOPUP +, SETTLE −,
+  // RESERVE/RELEASE баланс не меняют (влияют только на reserved).
+  async ledger(tenantId: string) {
+    const rows = await this.prisma.ledgerEntry.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "asc" },
+    });
+    let running = BigInt(0);
+    const balanceAfter = new Map<string, bigint>();
+    for (const r of rows) {
+      const amount = BigInt(r.amount);
+      if (r.kind === "TOPUP") running += amount;
+      else if (r.kind === "SETTLE") running -= amount;
+      balanceAfter.set(r.id, running);
+    }
+    const items = [...rows]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((r) => ({
+        id: r.id,
+        date: r.createdAt.toISOString(),
+        kind: r.kind,
+        amount: BigInt(r.amount).toString(),
+        ref1c: r.ref1c ?? null,
+        refOrderId: r.refOrderId ?? null,
+        reason: r.reason ?? null,
+        balance: (balanceAfter.get(r.id) ?? BigInt(0)).toString(),
+      }));
+    return { items };
+  }
+
   // CAS-обновление: повтор до 3 раз с backoff; конфликт версии → 409.
   // Один вызов = одна проводка + атомарный баланс. checkAvailable вызывается
   // ВНУТРИ каждой итерации (после CAS-конфликта), чтобы concurrent-резервы
