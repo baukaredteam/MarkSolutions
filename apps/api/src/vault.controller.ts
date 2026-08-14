@@ -15,6 +15,7 @@
 import type { Request, Response } from "express";
 import { PrismaService } from "./prisma.service";
 import { VaultService } from "./vault.service";
+import { OutboxPoller } from "./outbox-poller";
 import { buildXlsx } from "@markflow/shared";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
@@ -69,7 +70,8 @@ function toCsvRow(
 export class VaultController {
   constructor(
     private readonly vault: VaultService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly poller: OutboxPoller
   ) {}
 
   // GET /api/codes вЂ” РјР°СЃРєРё РљРњ tenant (CV-031): Р±РµР· РїРѕР»РЅС‹С… serial, РѕРґРЅР° СЃС‚СЂРѕРєР° РЅР° Р·Р°РєР°Р·
@@ -103,6 +105,17 @@ export class VaultController {
       }
     }
     return { items: [...byOrder.values()] };
+  }
+
+  // UI-04: ручная сверка «Запустить сверку» (Vault §4.7) — прогоняет полный цикл
+  // поллера (orders/documents/utilisation reconciliation по внешним статусам ИС МПТ).
+  @Roles("admin", "manager")
+  @HttpCode(200)
+  @Post("codes/reconcile")
+  async reconcile(@Req() req: Request) {
+    void tenantOf(req); // tenant-защита: сверка tenant-агностичная, но требует JWT
+    await this.poller.poll();
+    return { ok: true };
   }
 
   // GET /codes/:orderId/codes — индивидуальные КМ заказа (W4-02, для печати)

@@ -354,7 +354,8 @@ async function main() {
             authorityCode: "702",
           },
         });
-        if (imp.status !== "SUCCESS") throw new Error(`import failed: ${JSON.stringify(imp)}`);
+        if (imp.status !== "SUBMITTED")
+          throw new Error(`import failed: ${JSON.stringify(imp)}`);
         // вывод единичного кода WRITE_OFF (брак)
         const single = detail.items.find((c) => c.status === "ACTIVE");
         if (single) {
@@ -363,7 +364,8 @@ async function main() {
             withdrawalType: "WRITE_OFF",
             withdrawalReason: "DEFECT",
           });
-          if (wd.status !== "SUCCESS") throw new Error(`withdrawal failed: ${JSON.stringify(wd)}`);
+          if (wd.status !== "SUBMITTED")
+            throw new Error(`withdrawal failed: ${JSON.stringify(wd)}`);
         }
         return { orderId };
       });
@@ -575,7 +577,7 @@ async function main() {
       fail("clone + submit", error);
     }
 
-    // ---- UI-05: orders page (KPI-4, номер KM-2026) + xlsx выгрузка + vault page ----
+    // ---- UI-04: orders page (KPI-4, номер KM-2026, Товар, Прогресс) ----
     try {
       await page.getByRole("link", { name: "Заказы" }).click();
       await page.waitForURL("**/orders");
@@ -584,7 +586,13 @@ async function main() {
       if (kpi4 < 4) throw new Error(`KPI-4 не хватает (${kpi4})`);
       const kmNum = await page.locator("tbody tr").first().innerText();
       if (!/KM-2026-\d{6}/.test(kmNum)) throw new Error(`номер KM-2026 не найден: ${kmNum}`);
-      pass("orders: KPI-4 + номер KM-2026-######");
+      const headers = await page.locator("th").allInnerTexts();
+      const hd = headers.join("|").toLowerCase();
+      if (!hd.includes("товар")) throw new Error(`нет колонки «Товар»: ${headers.join(",")}`);
+      if (!hd.includes("прогресс")) throw new Error(`нет колонки «Прогресс»: ${headers.join(",")}`);
+      const bars = await page.locator("tbody .progress-bar").count();
+      if (bars < 1) throw new Error("нет прогресс-баров в таблице заказов");
+      pass("orders: KPI-4 + KM-2026-###### + Товар + Прогресс");
     } catch (error) {
       fail("orders page", error);
     }
@@ -654,6 +662,27 @@ async function main() {
       fail("vault page", error);
     }
 
+    // UI-04: «Запустить сверку» → POST /codes/reconcile → 200 (поллер прогнан)
+    try {
+      const rc = await page.evaluate(async () => {
+        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+        if (!sess?.token) throw new Error("no session token");
+        const res = await fetch("/api/codes/reconcile", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${sess.token}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        });
+        return res.status;
+      });
+      if (rc !== 200) throw new Error(`reconcile HTTP ${rc}`);
+      pass("vault: «Запустить сверку» (POST /codes/reconcile) → 200");
+    } catch (error) {
+      fail("vault reconcile", error);
+    }
+
     // скриншот vault
     try {
       const shot = await page.screenshot({ path: "shot-vault.png", fullPage: true });
@@ -715,7 +744,7 @@ async function main() {
           });
           if (hasActive) break;
         }
-        await page.goto(`${baseUrl}/labels`, { waitUntil: "networkidle" }).catch(() => {});
+        await page.goto(`${baseUrl}/labels`, { waitUntil: "load" }).catch(() => {});
         await page.waitForTimeout(1000);
         printBtn = page
           .locator("tbody tr button:not(:disabled)")
@@ -801,7 +830,7 @@ async function main() {
 
     // ---- UI-06b: documents — ввоз→INTRODUCED, вывод OTHER без comment→400, страница ----
     try {
-      await page.goto(`${baseUrl}/documents`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/documents`, { waitUntil: "load" }).catch(() => {});
       await page.getByRole("heading", { name: "Документы" }).waitFor({ state: "visible" });
       const kpi = await page.locator(".grid.four .card").count();
       if (kpi < 4) throw new Error(`KPI-4 не хватает (${kpi})`);
@@ -863,18 +892,23 @@ async function main() {
           body: JSON.stringify({ orderId: oid, customsDeclaration: { date: "2026-08-12", number: num, authorityCode: "702" } }),
         }).then((r) => r.json());
       }, result.orderId);
-      if (imp.status !== "SUCCESS")
+      if (imp.status !== "SUBMITTED")
         throw new Error(`import failed: ${JSON.stringify(imp)}`);
-      // INTRODUCED в истории
-      const hist = await page.evaluate(async (oid) => {
-        const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
-        const h = { Authorization: `Bearer ${sess?.token}`, "Content-Type": "application/json" };
-        const d = await fetch(`/api/codes/${oid}/codes`, { headers: h }).then((r) => r.json());
-        const code = d.items?.[0];
-        const lk = await fetch("/api/codes/lookup", { method: "POST", headers: h, body: JSON.stringify({ code: code.id }) }).then((r) => r.json());
-        return (lk.history ?? []).some((e) => e.event === "INTRODUCED");
-      }, result.orderId);
-      if (!hist) throw new Error("INTRODUCED не найден в истории кода");
+      // async state machine (MPT-02): ждём внешний SUCCESS → INTRODUCED
+      let introduced = false;
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const hist = await page.evaluate(async (oid) => {
+          const sess = JSON.parse(localStorage.getItem("markflow.session") || "null");
+          const h = { Authorization: `Bearer ${sess?.token}`, "Content-Type": "application/json" };
+          const d = await fetch(`/api/codes/${oid}/codes`, { headers: h }).then((r) => r.json());
+          const code = d.items?.[0];
+          const lk = await fetch("/api/codes/lookup", { method: "POST", headers: h, body: JSON.stringify({ code: code.id }) }).then((r) => r.json());
+          return (lk.history ?? []).some((e) => e.event === "INTRODUCED");
+        }, result.orderId);
+        if (hist) { introduced = true; break; }
+      }
+      if (!introduced) throw new Error("INTRODUCED не найден в истории кода");
       pass(`docs: ввоз → INTRODUCED (заказ ${result.orderId.slice(0, 8)}…)`);
     } catch (error) {
       fail("docs import → INTRODUCED", error);
@@ -906,7 +940,7 @@ async function main() {
 
     // скриншот docs
     try {
-      await page.goto(`${baseUrl}/documents`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/documents`, { waitUntil: "load" }).catch(() => {});
       await page.waitForTimeout(900);
       const shot = await page.screenshot({ path: "shot-docs.png", fullPage: true });
       if (!shot || shot.length < 1000) throw new Error("screenshot too small");
@@ -941,7 +975,7 @@ async function main() {
 
     // скриншот billing
     try {
-      await page.goto(`${baseUrl}/billing`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/billing`, { waitUntil: "load" }).catch(() => {});
       await page.waitForTimeout(900);
       const shot = await page.screenshot({ path: "shot-billing.png", fullPage: true });
       if (!shot || shot.length < 1000) throw new Error("screenshot too small");
@@ -952,7 +986,7 @@ async function main() {
 
     // ---- UI-i18n: русские статусы — на /products и /vault нет англ. кодов в badge-текстах ----
     try {
-      await page.goto(`${baseUrl}/products`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/products`, { waitUntil: "load" }).catch(() => {});
       await page.waitForTimeout(800);
       const prodBadges = await page.evaluate(() =>
         Array.from(document.querySelectorAll(".badge")).map((b) => b.textContent ?? "")
@@ -960,7 +994,7 @@ async function main() {
       const engInProd = prodBadges.filter((t) =>
         ["SUBMITTED", "REGISTERED", "DRAFT", "ACTIVE", "PRINTED", "APPLIED"].includes(t.trim())
       );
-      await page.goto(`${baseUrl}/vault`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/vault`, { waitUntil: "load" }).catch(() => {});
       await page.waitForTimeout(800);
       const vaultBadges = await page.evaluate(() =>
         Array.from(document.querySelectorAll(".badge")).map((b) => b.textContent ?? "")
@@ -1002,11 +1036,11 @@ async function main() {
 
     // скриншоты operator + audit
     try {
-      await page.goto(`${baseUrl}/operator`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/operator`, { waitUntil: "load" }).catch(() => {});
       await page.waitForTimeout(900);
       const o = await page.screenshot({ path: "shot-operator.png", fullPage: true });
       if (!o || o.length < 1000) throw new Error("operator screenshot small");
-      await page.goto(`${baseUrl}/audit`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/audit`, { waitUntil: "load" }).catch(() => {});
       await page.waitForTimeout(900);
       const a = await page.screenshot({ path: "shot-audit.png", fullPage: true });
       if (!a || a.length < 1000) throw new Error("audit screenshot small");
@@ -1017,7 +1051,7 @@ async function main() {
 
     // ---- W5-02: страница «Интеграции» рендерит статусы адаптеров ----
     try {
-      await page.goto(`${baseUrl}/integrations`, { waitUntil: "networkidle" }).catch(() => {});
+      await page.goto(`${baseUrl}/integrations`, { waitUntil: "load" }).catch(() => {});
       await page.getByRole("heading", { name: "Интеграции" }).waitFor({ state: "visible" });
       await page.getByText("ИС МПТ").waitFor({ state: "visible" });
       await page.getByText("НКТ").waitFor({ state: "visible" });

@@ -10,10 +10,10 @@ const WEB_URL = process.env.WEB_URL ?? "http://localhost:5173";
 
 async function pixelDiff(browser, a, b) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(a, { waitUntil: "networkidle" }).catch(() => {});
+  await page.goto(a, { waitUntil: "load" }).catch(() => {});
   await page.waitForTimeout(900);
   const imgA = await page.screenshot({ fullPage: true });
-  await page.goto(b, { waitUntil: "networkidle" }).catch(() => {});
+  await page.goto(b, { waitUntil: "load" }).catch(() => {});
   await page.waitForTimeout(900);
   const imgB = await page.screenshot({ fullPage: true });
   const pngA = PNG.sync.read(imgA);
@@ -39,7 +39,7 @@ async function pixelDiff(browser, a, b) {
 
 async function protoShot(browser, pageId) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(protoUrl, { waitUntil: "networkidle" }).catch(() => {});
+  await page.goto(protoUrl, { waitUntil: "load" }).catch(() => {});
   await page.evaluate((id) => {
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("shell").style.display = "grid";
@@ -59,7 +59,7 @@ async function protoShot(browser, pageId) {
 
 async function webShot(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await page.goto(url, { waitUntil: "networkidle" }).catch(() => {});
+  await page.goto(url, { waitUntil: "load" }).catch(() => {});
   await page.waitForTimeout(900);
   const buf = await page.screenshot({ fullPage: true });
   await page.close();
@@ -99,10 +99,10 @@ async function main() {
   await auth.getByPlaceholder("Пароль").fill("demo-password");
   await auth.getByRole("button", { name: "Войти" }).first().click();
   await auth.waitForURL("**/dashboard");
-  await auth.goto(`${WEB_URL}/orders`, { waitUntil: "networkidle" }).catch(() => {});
+  await auth.goto(`${WEB_URL}/orders`, { waitUntil: "load" }).catch(() => {});
   await auth.waitForTimeout(900);
   const webOrders = await auth.screenshot({ fullPage: true });
-  await auth.goto(`${WEB_URL}/vault`, { waitUntil: "networkidle" }).catch(() => {});
+  await auth.goto(`${WEB_URL}/vault`, { waitUntil: "load" }).catch(() => {});
   await auth.waitForTimeout(900);
   const webVault = await auth.screenshot({ fullPage: true });
   await auth.close();

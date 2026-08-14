@@ -53,6 +53,19 @@ export function VaultPage() {
     { label: "Выбыло", value: 0 },
   ];
 
+  async function reconcile() {
+    try {
+      await api.post<{ ok: boolean }>("/codes/reconcile", {});
+      toast.push("Сверка выполнена: статусы синхронизированы с ИС МПТ");
+      await load();
+    } catch (e) {
+      if (e instanceof ApiErrorResponse)
+        toast.push(`${e.error.code}: ${e.error.message}`, "error");
+      else if (e instanceof ApiUnavailable)
+        toast.push("Сервис недоступен. Попробуйте позже.", "error");
+    }
+  }
+
   async function download(kind: "csv" | "xlsx", orderId: string) {
     try {
       const sess = sessionStore.get();
@@ -128,10 +141,7 @@ export function VaultPage() {
           <div className="sub">Защищённое хранение, выдача и аудит кодов</div>
         </div>
         <div className="page-actions">
-          <button
-            className="btn btn-light"
-            onClick={() => toast.push("Сверка запущена в фоне")}
-          >
+          <button className="btn btn-light" onClick={reconcile}>
             Запустить сверку
           </button>
           <button

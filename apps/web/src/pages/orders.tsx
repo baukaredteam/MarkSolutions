@@ -11,6 +11,7 @@ interface OrderRow {
   id: string;
   number?: number;
   gtin: string | null;
+  cardName?: string;
   quantity: number;
   totalPrice: string;
   status: string;
@@ -186,23 +187,60 @@ export function OrdersPage() {
   const canDownload = (status: string) =>
     status === "COMPLETED" || status === "PARTIALLY_COMPLETED";
 
+  // UI-04: прогресс заказа по статусу машины ORD-026 (UI-SPEC §4.6 колонка «Прогресс»)
+  const PROGRESS: Record<string, number> = {
+    DRAFT: 0,
+    VALIDATING: 10,
+    FUNDS_RESERVED: 20,
+    QUEUED: 30,
+    SENT: 40,
+    ACCEPTED: 50,
+    PROCESSING: 60,
+    PARTIALLY_COMPLETED: 80,
+    COMPLETED: 100,
+    FAILED: 100,
+    REJECTED: 100,
+    CANCELLED: 100,
+  };
+  const progressOf = (r: OrderRow) => PROGRESS[r.status] ?? 0;
+
   const columns: Column<OrderRow>[] = [
     {
       key: "number",
-      label: "Номер",
+      label: "Заказ",
       render: (r) => <b>{fmtOrderNumber(r.number)}</b>,
     },
-    { key: "gtin", label: "GTIN" },
+    {
+      key: "cardName",
+      label: "Товар",
+      render: (r) => r.cardName || (r.gtin ?? ""),
+    },
     { key: "quantity", label: "Кол-во" },
     {
       key: "totalPrice",
-      label: "Сумма",
+      label: "Стоимость",
       render: (r) => formatTenge(BigInt(r.totalPrice)),
     },
     {
       key: "status",
       label: "Статус",
       render: (r) => <StatusBadge code={r.status} />,
+    },
+    {
+      key: "progress",
+      label: "Прогресс",
+      render: (r) => {
+        const p = progressOf(r);
+        return (
+          <span className="progress">
+            <span
+              className="progress-bar"
+              style={{ width: `${p}%` }}
+              data-progress={p}
+            />
+          </span>
+        );
+      },
     },
     { key: "createdAt", label: "Создан" },
     {
@@ -241,14 +279,15 @@ export function OrdersPage() {
     ["QUEUED", "SENT", "PROCESSING", "PARTIALLY_COMPLETED"].includes(o.status)
   ).length;
   const todayReceived = orders.filter((o) => o.status === "COMPLETED").length;
+  const codesThisMonth = orders.reduce((s, o) => s + o.quantity, 0);
   const kpis = [
     { label: "В обработке", value: inWork },
-    { label: "Получено", value: todayReceived },
+    { label: "Получено сегодня", value: todayReceived },
     {
       label: "Требует внимания",
       value: orders.filter((o) => o.status === "FAILED").length,
     },
-    { label: "Заказов всего", value: orders.length },
+    { label: "Кодов за месяц", value: codesThisMonth },
   ];
 
   return (

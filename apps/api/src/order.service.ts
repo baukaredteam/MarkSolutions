@@ -274,11 +274,30 @@ export class OrderService {
       include: { lines: true },
       orderBy: { createdAt: "desc" },
     });
+    // UI-04: название товара для колонки «Товар» (карточка → attributes.name)
+    const cardIds = [
+      ...new Set(
+        orders.map((o) => o.cardId).filter((c): c is string => Boolean(c))
+      ),
+    ];
+    const cards = cardIds.length
+      ? await this.prisma.productCard.findMany({
+          where: { id: { in: cardIds } },
+          select: { id: true, attributes: true },
+        })
+      : [];
+    const nameById = new Map<string, string>(
+      cards.map((c) => [
+        c.id,
+        String((c.attributes as Record<string, unknown>)?.name ?? ""),
+      ])
+    );
     return orders.map((o) => ({
       id: o.id,
       number: o.number,
       status: o.status,
       gtin: o.gtin,
+      cardName: o.cardId ? (nameById.get(o.cardId) ?? "") : "",
       quantity: o.lines.reduce((s, l) => s + l.quantity, 0),
       totalPrice: o.lines
         .reduce((s, l) => s + l.totalPrice, BigInt(0))
