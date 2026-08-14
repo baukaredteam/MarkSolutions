@@ -17,15 +17,20 @@ process.env.OUTBOX_POLL_MS = "50";
 process.env.MPT_POLL_MS = "50";
 process.env.MPT_ORDER_TIMEOUT_MS = "5000";
 process.env.DOC_SLA_MS = "300"; // mock: документ SUCCESS после 300мс
+process.env.DOC_TIMEOUT_MS = "500"; // таймаут внешнего документа
 process.env.ADAPTERS_MPT = "mock";
 
-describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
+// Async state machine документов (тикет MPT-02, C-03):
+// submit → SUBMITTED + внешний documentId; локальные события/статусы Vault —
+// поллером ТОЛЬКО после внешнего SUCCESS. Каждый тест на СВОЁМ заказе
+// (submitImport валидирует все APPLIED-коды заказа).
+describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let dir: string;
   let tenantId: string;
   let token: string;
-  const ORDER_ID = "o-doc-1";
+  let orderSeq = 0;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "doc-"));
@@ -54,15 +59,6 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
       data: { bin: "777000111222", name: "ДокТен", status: "ACTIVE" },
     });
     tenantId = tenant.id;
-    await prisma.order.create({
-      data: {
-        id: ORDER_ID,
-        number: 201,
-        tenantId,
-        status: "COMPLETED",
-        idempotencyKey: `doc-order-${tenantId}`,
-      },
-    });
     const jwt = app.get(JwtService);
     token = jwt.sign({
       sub: "u1",
@@ -78,7 +74,23 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   });
 
-  async function makeCode(status = "APPLIED"): Promise<string> {
+  async function newOrder(): Promise<string> {
+    orderSeq += 1;
+    const order = await prisma.order.create({
+      data: {
+        number: 500 + orderSeq,
+        tenantId,
+        status: "COMPLETED",
+        idempotencyKey: `doc-order-${tenantId}-${orderSeq}-${Date.now()}`,
+      },
+    });
+    return order.id;
+  }
+
+  async function makeCode(
+    orderId: string,
+    status = "APPLIED"
+  ): Promise<string> {
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
       Buffer.from(JSON.stringify({ serial: "0001001", ai91: null, ai92: null }))
@@ -86,7 +98,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
-        orderId: ORDER_ID,
+        orderId,
         gtin: "04014835723399",
         mask: "04014835723399:00…01",
         status,
@@ -96,14 +108,54 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     return code.id;
   }
 
+  async function waitImport(
+    number: string,
+    wantNot: string = "SUBMITTED"
+  ): Promise<{ status: string; rejectReason?: string | null }> {
+    let st = "";
+    let rejectReason: string | null = null;
+    for (let i = 0; i < 40; i++) {
+      const d = await prisma.importDocument.findFirst({
+        where: { customsNumber: number },
+        orderBy: { createdAt: "desc" },
+      });
+      st = d?.status ?? "";
+      rejectReason = d?.rejectReason ?? null;
+      if (st !== wantNot) break;
+      await sleep(100);
+    }
+    return { status: st, rejectReason };
+  }
+
+  async function waitWithdrawal(
+    marker: string,
+    wantNot: string = "SUBMITTED"
+  ): Promise<{ status: string; rejectReason?: string | null }> {
+    let st = "";
+    let rejectReason: string | null = null;
+    for (let i = 0; i < 40; i++) {
+      const d = await prisma.withdrawalDocument.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      });
+      st = d?.status ?? "";
+      rejectReason = d?.rejectReason ?? null;
+      if (st !== wantNot) break;
+      await sleep(100);
+    }
+    void marker;
+    return { status: st, rejectReason };
+  }
+
   it("import: POST /import → SUBMITTED (async); поллер SUCCESS → INTRODUCED по APPLIED кодам", async () => {
-    const c1 = await makeCode();
-    const c2 = await makeCode();
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId);
+    const c2 = await makeCode(orderId);
     const res = await request(app.getHttpServer())
       .post("/import")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        orderId: "o-doc-1",
+        orderId,
         customsDeclaration: {
           date: "2026-08-01",
           number: "10002000/010826/0001234",
@@ -113,7 +165,9 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
       .expect(201);
     // async state machine: документ SUBMITTED, коды НЕ тронуты (C-03)
     expect(res.body.status).toBe("SUBMITTED");
-    const doc = await prisma.importDocument.findFirst({ where: { tenantId } });
+    const doc = await prisma.importDocument.findFirst({
+      where: { customsNumber: "10002000/010826/0001234" },
+    });
     expect(doc!.status).toBe("SUBMITTED");
     expect(doc!.externalDocumentId).toBeTruthy();
     expect(doc!.customsNumber).toBe("10002000/010826/0001234");
@@ -121,14 +175,8 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     expect(c1v!.status).toBe("APPLIED"); // не INTRODUCED до внешнего SUCCESS
 
     // поллер (OUTBOX_POLL_MS=50, DOC_SLA_MS=300) доводит до SUCCESS
-    let st = "";
-    for (let i = 0; i < 40; i++) {
-      await sleep(100);
-      const d = await prisma.importDocument.findFirst({ where: { tenantId } });
-      st = d!.status;
-      if (st === "SUCCESS" || st === "ERROR") break;
-    }
-    expect(st).toBe("SUCCESS");
+    const done = await waitImport("10002000/010826/0001234");
+    expect(done.status).toBe("SUCCESS");
     const events = await prisma.codeEvent.findMany({
       where: { codeId: { in: [c1, c2] } },
     });
@@ -140,12 +188,13 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   });
 
   it("import: дубль номера ДТ → 409; без date+number → 400", async () => {
-    const c1 = await makeCode();
+    const orderId = await newOrder();
+    await makeCode(orderId);
     await request(app.getHttpServer())
       .post("/import")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        orderId: "o-doc-1",
+        orderId,
         customsDeclaration: { date: "2026-08-01", number: "DUP-1" },
       })
       .expect(201);
@@ -154,26 +203,26 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
       .post("/import")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        orderId: "o-doc-1",
+        orderId,
         customsDeclaration: { date: "2026-08-02", number: "DUP-1" },
       })
       .expect(409);
-    void c1;
     // без number → 400
     await request(app.getHttpServer())
       .post("/import")
       .set("Authorization", `Bearer ${token}`)
-      .send({ orderId: "o-doc-1", customsDeclaration: { date: "2026-08-03" } })
+      .send({ orderId, customsDeclaration: { date: "2026-08-03" } })
       .expect(400);
   });
 
   it("import: код не APPLIED → ERROR + задача оператору (outbox FAILED), статус кода не меняется", async () => {
-    const c1 = await makeCode("PRINTED");
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId, "PRINTED");
     const res = await request(app.getHttpServer())
       .post("/import")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        orderId: "o-doc-1",
+        orderId,
         customsDeclaration: { date: "2026-08-01", number: "ERR-1" },
       })
       .expect(201);
@@ -188,8 +237,72 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     expect(task).toBeTruthy();
   });
 
-  it("withdrawal: WRITE_OFF → поллер SUCCESS → WRITTEN_OFF (брак); OTHER без comment → 400; partialQuantity → 400", async () => {
-    const c1 = await makeCode();
+  it("import: внешний ERROR (getDocument) → документ ERROR + задача, коды не тронуты", async () => {
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId);
+    await request(app.getHttpServer())
+      .post("/import")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        orderId,
+        customsDeclaration: { date: "2026-08-01", number: "EXT-ERR-1" },
+      })
+      .expect(201);
+    const doc = await prisma.importDocument.findFirst({
+      where: { customsNumber: "EXT-ERR-1" },
+    });
+    expect(doc!.status).toBe("SUBMITTED");
+    // внешний документ ИС МПТ → ERROR (отклонено таможней)
+    await prisma.mptDocument.update({
+      where: { documentId: doc!.externalDocumentId! },
+      data: { status: "ERROR", rejectReason: "customs rejected" },
+    });
+    const done = await waitImport("EXT-ERR-1");
+    expect(done.status).toBe("ERROR");
+    expect(done.rejectReason).toContain("customs rejected");
+    const task = await prisma.outbox.findFirst({
+      where: { aggregate: "mpt-order-timeout", status: "FAILED" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(task).toBeTruthy();
+    const code = await prisma.codeVault.findUnique({ where: { id: c1 } });
+    expect(code!.status).toBe("APPLIED"); // не тронут до внешнего SUCCESS
+  });
+
+  it("import: внешний IN_PROCESS дольше DOC_TIMEOUT_MS → документ ERROR + задача (без вечного зависания)", async () => {
+    const orderId = await newOrder();
+    await makeCode(orderId);
+    await request(app.getHttpServer())
+      .post("/import")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        orderId,
+        customsDeclaration: { date: "2026-08-01", number: "TO-1" },
+      })
+      .expect(201);
+    const doc = await prisma.importDocument.findFirst({
+      where: { customsNumber: "TO-1" },
+    });
+    // «зависший» внешний документ: возраст больше DOC_TIMEOUT_MS
+    await prisma.importDocument.update({
+      where: { id: doc!.id },
+      data: { createdAt: new Date(Date.now() - 10000) },
+    });
+    const done = await waitImport("TO-1");
+    expect(done.status).toBe("ERROR");
+    const task = await prisma.outbox.findFirst({
+      where: { aggregate: "mpt-order-timeout", status: "FAILED" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(task).toBeTruthy();
+    expect(String((task!.payload as { reason?: string }).reason ?? "")).toMatch(
+      /timeout/i
+    );
+  });
+
+  it("withdrawal: WRITE_OFF → поллер SUCCESS → WRITTEN_OFF; OTHER без comment → 400; partialQuantity → 400", async () => {
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId);
     const res = await request(app.getHttpServer())
       .post("/withdrawal")
       .set("Authorization", `Bearer ${token}`)
@@ -200,17 +313,8 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
       })
       .expect(201);
     expect(res.body.status).toBe("SUBMITTED"); // async
-    let st = "";
-    for (let i = 0; i < 40; i++) {
-      await sleep(100);
-      const d = await prisma.withdrawalDocument.findFirst({
-        where: { tenantId },
-        orderBy: { createdAt: "desc" },
-      });
-      st = d?.status ?? "";
-      if (st === "SUCCESS" || st === "ERROR") break;
-    }
-    expect(st).toBe("SUCCESS");
+    const done = await waitWithdrawal("wr-1");
+    expect(done.status).toBe("SUCCESS");
     const code = await prisma.codeVault.findUnique({ where: { id: c1 } });
     expect(code!.status).toBe("WRITTEN_OFF");
 
@@ -237,7 +341,8 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   });
 
   it("withdrawal: WITHDRAWAL → поллер SUCCESS → WITHDRAWN; повторный вывод (уже WITHDRAWN) → 409", async () => {
-    const c1 = await makeCode();
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId);
     await request(app.getHttpServer())
       .post("/withdrawal")
       .set("Authorization", `Bearer ${token}`)
@@ -247,17 +352,8 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
         withdrawalReason: "RETURN_SUPPLIER",
       })
       .expect(201);
-    let st = "";
-    for (let i = 0; i < 40; i++) {
-      await sleep(100);
-      const d = await prisma.withdrawalDocument.findFirst({
-        where: { tenantId },
-        orderBy: { createdAt: "desc" },
-      });
-      st = d?.status ?? "";
-      if (st === "SUCCESS" || st === "ERROR") break;
-    }
-    expect(st).toBe("SUCCESS");
+    const done = await waitWithdrawal("wr-2");
+    expect(done.status).toBe("SUCCESS");
     const code = await prisma.codeVault.findUnique({ where: { id: c1 } });
     expect(code!.status).toBe("WITHDRAWN");
     await request(app.getHttpServer())
@@ -272,8 +368,9 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   });
 
   it("withdrawal: повторная отправка тех же кодов, пока документ SUBMITTED → 409 (защита от дубля)", async () => {
-    const c1 = await makeCode();
-    const c2 = await makeCode();
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId);
+    const c2 = await makeCode(orderId);
     const res = await request(app.getHttpServer())
       .post("/withdrawal")
       .set("Authorization", `Bearer ${token}`)
@@ -302,9 +399,9 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   });
 
   it("withdrawal: childrenWriteOff=true — палета → рекурсивный вывод членов + DISAGGREGATED", async () => {
-    // код-член + палета
-    const member1 = await makeCode();
-    const member2 = await makeCode();
+    const orderId = await newOrder();
+    const member1 = await makeCode(orderId);
+    const member2 = await makeCode(orderId);
     const unit = await prisma.aggregationUnit.create({
       data: {
         tenantId,
@@ -330,17 +427,8 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
       })
       .expect(201);
     expect(res.body.status).toBe("SUBMITTED"); // async
-    let st = "";
-    for (let i = 0; i < 40; i++) {
-      await sleep(100);
-      const d = await prisma.withdrawalDocument.findFirst({
-        where: { tenantId },
-        orderBy: { createdAt: "desc" },
-      });
-      st = d?.status ?? "";
-      if (st === "SUCCESS" || st === "ERROR") break;
-    }
-    expect(st).toBe("SUCCESS");
+    const done = await waitWithdrawal("wr-3");
+    expect(done.status).toBe("SUCCESS");
     // палета и члены → WRITTEN_OFF; агрегат DISAGGREGATED
     const m1 = await prisma.codeVault.findUnique({ where: { id: member1 } });
     const m2 = await prisma.codeVault.findUnique({ where: { id: member2 } });
@@ -356,7 +444,8 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   });
 
   it("withdrawal: член активного агрегата в одиночку → 409; палета без childrenWriteOff → 409", async () => {
-    const member = await makeCode();
+    const orderId = await newOrder();
+    const member = await makeCode(orderId);
     const unit = await prisma.aggregationUnit.create({
       data: {
         tenantId,
@@ -392,12 +481,13 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   });
 
   it("GET /documents: EntityList по всем типам (import/withdrawal/utilisation)", async () => {
-    const c1 = await makeCode();
+    const orderId = await newOrder();
+    const c1 = await makeCode(orderId);
     await request(app.getHttpServer())
       .post("/import")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        orderId: "o-doc-1",
+        orderId,
         customsDeclaration: { date: "2026-08-01", number: "GET-1" },
       })
       .expect(201);

@@ -7,10 +7,11 @@
 } from "@nestjs/common";
 import { PrismaService } from "./prisma.service";
 import { IMptAdapter, MPT_ADAPTER } from "./integrations";
-import { CodeEventService } from "./code-event.service";
 
 // Документы оборота (W4-04, Q5/Q9): импорт (ДТ → INTRODUCED) и вывод
-// (WITHDRAWAL→WITHDRAWN, WRITE_OFF→WRITTEN_OFF). Паттерн — utilisation.
+// (WITHDRAWAL→WITHDRAWN, WRITE_OFF→WRITTEN_OFF). Async state machine (MPT-02):
+// submit → SUBMITTED + внешний documentId; локальные события/статусы — поллером
+// (OutboxPoller.pollDocuments) ТОЛЬКО после внешнего SUCCESS.
 const WITHDRAWAL_REASONS = [
   "DEFECT",
   "LOST",
@@ -33,7 +34,6 @@ type WithdrawalCode =
 export class DocumentService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly events: CodeEventService,
     @Inject(MPT_ADAPTER) private readonly mpt: IMptAdapter
   ) {}
 

@@ -1,4 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "./prisma.service";
 import {
@@ -475,7 +476,9 @@ export class OutboxPoller implements OnModuleDestroy {
 
   // ---- Документы ИС МПТ (C-03, тикет MPT-02): async state machine ----
   // SUBMITTED → mpt.getDocument(externalDocumentId) → SUCCESS (локальные CodeEvent
-  // + статусы Vault в ОДНОЙ транзакции) / ERROR (rejectReason + задача оператору).
+  // + статусы Vault в ОДНОЙ транзакции с claim) / ERROR / таймаут → задача оператору.
+  // Без вечного зависания: permanent-ошибка адаптера, внешний ERROR и превышение
+  // DOC_TIMEOUT_MS переводят документ в ERROR + mpt-order-timeout (ID-017).
   private async pollDocuments(): Promise<void> {
     const imports = await this.prisma.importDocument.findMany({
       where: { status: "SUBMITTED" },
@@ -493,55 +496,111 @@ export class OutboxPoller implements OnModuleDestroy {
     }
   }
 
+  private get docTimeoutMs(): number {
+    return Number(process.env.DOC_TIMEOUT_MS ?? 600000);
+  }
+
+  private async failImport(
+    doc: { id: string; orderId: string; tenantId: string },
+    reason: string
+  ): Promise<void> {
+    await this.prisma.importDocument.update({
+      where: { id: doc.id },
+      data: { status: "ERROR", rejectReason: reason },
+    });
+    await this.prisma.outbox.create({
+      data: {
+        aggregate: "mpt-order-timeout",
+        status: "FAILED",
+        payload: { orderId: doc.orderId, tenantId: doc.tenantId, reason },
+      },
+    });
+  }
+
+  private async failWithdrawal(
+    doc: { id: string; tenantId: string },
+    reason: string
+  ): Promise<void> {
+    await this.prisma.withdrawalDocument.update({
+      where: { id: doc.id },
+      data: { status: "ERROR", rejectReason: reason },
+    });
+    await this.prisma.outbox.create({
+      data: {
+        aggregate: "mpt-order-timeout",
+        status: "FAILED",
+        payload: { tenantId: doc.tenantId, reason, documentId: doc.id },
+      },
+    });
+  }
+
   private async reconcileImport(docId: string): Promise<void> {
     const doc = await this.prisma.importDocument.findUnique({
       where: { id: docId },
     });
     if (!doc || doc.status !== "SUBMITTED" || !doc.externalDocumentId) return;
-    const st = await this.mpt.getDocument(doc.externalDocumentId);
+    let st: Awaited<ReturnType<IMptAdapter["getDocument"]>>;
+    try {
+      st = await this.mpt.getDocument(doc.externalDocumentId);
+    } catch (e) {
+      // 404/4xx реального адаптера — permanent: документ ERROR + задача, не зависаем
+      if ((e as { permanent?: boolean }).permanent) {
+        await this.failImport(
+          doc,
+          `import failed: ${String((e as Error).message)}`
+        );
+      }
+      // временная ошибка — следующий тик
+      return;
+    }
     if (st.status === "SUCCESS") {
-      // атомарно: INTRODUCED по каждому коду заказа + документ SUCCESS
-      await this.prisma.$transaction(async (tx) => {
-        const codes = await tx.codeVault.findMany({
-          where: { orderId: doc.orderId, tenantId: doc.tenantId },
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          // claim: ровно один poller завершает документ (гонка двух процессов)
+          const claimed = await tx.importDocument.updateMany({
+            where: { id: docId, status: "SUBMITTED" },
+            data: { status: "SUCCESS" },
+          });
+          if (claimed.count === 0) return;
+          const codes = await tx.codeVault.findMany({
+            where: { orderId: doc.orderId, tenantId: doc.tenantId },
+          });
+          for (const c of codes) {
+            await this.events.recordEventOn(
+              tx,
+              doc.tenantId,
+              c.id,
+              "system",
+              "INTRODUCED"
+            );
+          }
         });
-        for (const c of codes) {
-          await this.events.recordEventOn(
-            tx,
-            doc.tenantId,
-            c.id,
-            "system",
-            "INTRODUCED"
+      } catch (e) {
+        // poison pill: код изменил статус (недопустимый переход) — терминально
+        if (
+          e instanceof BadRequestException ||
+          e instanceof NotFoundException
+        ) {
+          await this.failImport(
+            doc,
+            `import finalize: ${String((e as Error).message)}`
           );
         }
-        await tx.importDocument.update({
-          where: { id: docId },
-          data: { status: "SUCCESS" },
-        });
-      });
+        // иначе — retry следующий тик
+      }
       return;
     }
     if (st.status === "ERROR") {
-      await this.prisma.importDocument.update({
-        where: { id: docId },
-        data: {
-          status: "ERROR",
-          rejectReason: st.rejectReason ?? "import rejected",
-        },
-      });
-      await this.prisma.outbox.create({
-        data: {
-          aggregate: "mpt-order-timeout",
-          status: "FAILED",
-          payload: {
-            orderId: doc.orderId,
-            tenantId: doc.tenantId,
-            reason: `import failed: ${st.rejectReason ?? "unknown"}`,
-          },
-        },
-      });
+      await this.failImport(doc, st.rejectReason ?? "import rejected");
+      return;
     }
-    // IN_PROCESS — ждём следующий тик
+    // IN_PROCESS: внешний документ не завершился в срок → ERROR + задача
+    if (Date.now() - doc.createdAt.getTime() > this.docTimeoutMs) {
+      await this.failImport(
+        doc,
+        "import timeout (внешний документ не завершился)"
+      );
+    }
   }
 
   private async reconcileWithdrawal(docId: string): Promise<void> {
@@ -549,73 +608,85 @@ export class OutboxPoller implements OnModuleDestroy {
       where: { id: docId },
     });
     if (!doc || doc.status !== "SUBMITTED" || !doc.externalDocumentId) return;
-    const st = await this.mpt.getDocument(doc.externalDocumentId);
+    let st: Awaited<ReturnType<IMptAdapter["getDocument"]>>;
+    try {
+      st = await this.mpt.getDocument(doc.externalDocumentId);
+    } catch (e) {
+      if ((e as { permanent?: boolean }).permanent) {
+        await this.failWithdrawal(
+          doc,
+          `withdrawal failed: ${String((e as Error).message)}`
+        );
+      }
+      return;
+    }
     if (st.status === "SUCCESS") {
-      // атомарно: DISAGGREGATED (снимок агрегатов) + WITHDRAWN/WRITTEN_OFF + документ SUCCESS
-      await this.prisma.$transaction(async (tx) => {
-        const codes = (doc.codes as string[]) ?? [];
-        const units = (doc.aggregateUnits as string[] | null) ?? [];
-        for (const unitId of units) {
-          await tx.aggregationUnit.update({
-            where: { id: unitId },
-            data: { status: "DISAGGREGATED" },
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const claimed = await tx.withdrawalDocument.updateMany({
+            where: { id: docId, status: "SUBMITTED" },
+            data: { status: "SUCCESS" },
           });
-        }
-        for (const codeKey of codes) {
-          if (units.length > 0) {
-            const memberUnit = await tx.aggregationMember.findFirst({
-              where: { codeKey },
-              include: { unit: true },
+          if (claimed.count === 0) return;
+          const codes = (doc.codes as string[]) ?? [];
+          const units = (doc.aggregateUnits as string[] | null) ?? [];
+          for (const unitId of units) {
+            await tx.aggregationUnit.update({
+              where: { id: unitId },
+              data: { status: "DISAGGREGATED" },
             });
-            if (memberUnit && units.includes(memberUnit.unitId)) {
-              await this.events.recordEventOn(
-                tx,
-                doc.tenantId,
-                codeKey,
-                "system",
-                "DISAGGREGATED"
-              );
-            }
           }
-          await this.events.recordEventOn(
-            tx,
-            doc.tenantId,
-            codeKey,
-            "system",
-            doc.withdrawalType === "WRITE_OFF" ? "WRITTEN_OFF" : "WITHDRAWN",
-            {
-              reasonCode: doc.withdrawalReason,
-              comment: doc.comment ?? null,
+          for (const codeKey of codes) {
+            if (units.length > 0) {
+              const memberUnit = await tx.aggregationMember.findFirst({
+                where: { codeKey },
+                include: { unit: true },
+              });
+              if (memberUnit && units.includes(memberUnit.unitId)) {
+                await this.events.recordEventOn(
+                  tx,
+                  doc.tenantId,
+                  codeKey,
+                  "system",
+                  "DISAGGREGATED"
+                );
+              }
             }
+            await this.events.recordEventOn(
+              tx,
+              doc.tenantId,
+              codeKey,
+              "system",
+              doc.withdrawalType === "WRITE_OFF" ? "WRITTEN_OFF" : "WITHDRAWN",
+              {
+                reasonCode: doc.withdrawalReason,
+                comment: doc.comment ?? null,
+              }
+            );
+          }
+        });
+      } catch (e) {
+        if (
+          e instanceof BadRequestException ||
+          e instanceof NotFoundException
+        ) {
+          await this.failWithdrawal(
+            doc,
+            `withdrawal finalize: ${String((e as Error).message)}`
           );
         }
-        await tx.withdrawalDocument.update({
-          where: { id: docId },
-          data: { status: "SUCCESS" },
-        });
-      });
+      }
       return;
     }
     if (st.status === "ERROR") {
-      await this.prisma.withdrawalDocument.update({
-        where: { id: docId },
-        data: {
-          status: "ERROR",
-          rejectReason: st.rejectReason ?? "withdrawal rejected",
-        },
-      });
-      await this.prisma.outbox.create({
-        data: {
-          aggregate: "mpt-order-timeout",
-          status: "FAILED",
-          payload: {
-            tenantId: doc.tenantId,
-            reason: `withdrawal failed: ${st.rejectReason ?? "unknown"}`,
-            documentId: doc.id,
-          },
-        },
-      });
+      await this.failWithdrawal(doc, st.rejectReason ?? "withdrawal rejected");
+      return;
     }
-    // IN_PROCESS — ждём следующий тик
+    if (Date.now() - doc.createdAt.getTime() > this.docTimeoutMs) {
+      await this.failWithdrawal(
+        doc,
+        "withdrawal timeout (внешний документ не завершился)"
+      );
+    }
   }
 }
