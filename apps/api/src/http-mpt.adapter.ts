@@ -29,6 +29,15 @@ import type {
 //   в браузер не уходят. Эволюция: Redis/БД при горизонтальном масштабе.
 //
 // Пути doc/* уточняются контрактным тестом на STAGE (текущие — из CONTRACT-IS-MPT).
+//
+// Известные ограничения (не блокируют mock-режим):
+// - doc/* и utilisation получают коды в том виде, в котором их отдаёт порт
+//   (document.service шлёт внутренние codeKeys Vault; utilisation — serial).
+//   Для реального контура это должно стать полными КМ из vault.reveal —
+//   в скоупе тикетов 02/03 (http-режим для документов включать после них).
+// - getOrder/getCodes фильтруют по orderId query-параметром; точный контракт
+//   списков подтверждается контрактным тестом на STAGE.
+// - requestId генерируется локально (трассировка в outbox), на провод не уходит.
 
 export function toInt32(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -36,17 +45,45 @@ export function toInt32(v: unknown): number {
     throw new BadRequestException("businessPlaceId must be an int32 number");
   }
   const i = Math.trunc(n);
-  if (i < -2147483648 || i > 2147483647) {
-    throw new BadRequestException("businessPlaceId out of int32 range");
+  if (i < 0 || i > 2147483647) {
+    // businessPlaceId ИС МПТ — int32, отрицательные/вне диапазона недопустимы (ЛОВУШКА 5)
+    throw new BadRequestException("businessPlaceId out of valid int32 range");
   }
   return i;
 }
 
-// JSON с ключами, отсортированными A–Z (ЛОВУШКА 4, перед base64).
+// Постоянная ошибка внешнего API (4xx/конфиг) — ретраить БЕСПОЛЕЗНО.
+// Поллер различает её по флагу `permanent` и переводит outbox в FAILED + задача
+// оператору, вместо вечного повторения PENDING (reconciliation — только временные).
+export class MptPermanentError extends Error {
+  readonly permanent = true;
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly path: string
+  ) {
+    super(message);
+    this.name = "MptPermanentError";
+  }
+}
+
+// JSON с ключами, отсортированными A–Z РЕКУРСИВНО (ЛОВУШКА 4, перед base64);
+// массивы остаются as-is (только элементы-объекты тоже сортируются рекурсивно).
+function sortKeysRecursive(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysRecursive);
+  if (value !== null && typeof value === "object") {
+    const sorted: Record<string, unknown> = {};
+    const src = value as Record<string, unknown>;
+    for (const key of Object.keys(src).sort()) {
+      sorted[key] = sortKeysRecursive(src[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
 export function canonicalJson(obj: Record<string, unknown>): string {
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(obj).sort()) sorted[key] = obj[key];
-  return JSON.stringify(sorted);
+  return JSON.stringify(sortKeysRecursive(obj));
 }
 
 function base64Utf8(s: string): string {
@@ -119,14 +156,24 @@ export class HttpMptAdapter implements IMptAdapter {
   private async ensureToken(): Promise<string> {
     if (this.accessToken) return this.accessToken;
     if (!this.login || !this.password) {
-      throw new Error("MPT_LOGIN/MPT_PASSWORD not configured");
+      throw new MptPermanentError(
+        "MPT_LOGIN/MPT_PASSWORD not configured",
+        0,
+        "/api/users/authenticate"
+      );
     }
     const res = await this.rawFetch("/api/users/authenticate", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "*/*" },
       body: JSON.stringify({ login: this.login, password: this.password }),
     });
-    if (!res.ok) throw new Error(`MPT authenticate failed: ${res.status}`);
+    if (!res.ok) {
+      throw new MptPermanentError(
+        `MPT authenticate failed: ${res.status}`,
+        res.status,
+        "/api/users/authenticate"
+      );
+    }
     const data = (await res.json()) as {
       accessToken: string;
       refreshToken: string;
@@ -137,7 +184,13 @@ export class HttpMptAdapter implements IMptAdapter {
   }
 
   private async refresh(): Promise<void> {
-    if (!this.refreshToken) throw new Error("MPT refresh token missing");
+    if (!this.refreshToken) {
+      throw new MptPermanentError(
+        "MPT refresh token missing",
+        0,
+        "/api/users/tokens/refresh"
+      );
+    }
     const res = await this.rawFetch("/api/users/tokens/refresh", {
       method: "POST",
       headers: {
@@ -146,7 +199,13 @@ export class HttpMptAdapter implements IMptAdapter {
       },
       body: new URLSearchParams({ refreshToken: this.refreshToken }).toString(),
     });
-    if (!res.ok) throw new Error(`MPT refresh failed: ${res.status}`);
+    if (!res.ok) {
+      throw new MptPermanentError(
+        `MPT refresh failed: ${res.status}`,
+        res.status,
+        "/api/users/tokens/refresh"
+      );
+    }
     const data = (await res.json()) as {
       accessToken: string;
       refreshToken?: string;
@@ -183,6 +242,8 @@ export class HttpMptAdapter implements IMptAdapter {
           body,
         });
       } catch (e) {
+        // постоянная ошибка (конфиг/auth) — ретрай бесполезен
+        if (e instanceof MptPermanentError) throw e;
         // network/timeout — retryable: backoff+jitter, затем исчерпали → бросок
         if (retry < this.maxRetries) {
           await new Promise((r) => setTimeout(r, backoffMs(retry)));
@@ -197,17 +258,6 @@ export class HttpMptAdapter implements IMptAdapter {
         refreshed = true;
         continue; // повтор исходного запроса с тем же operation ID
       }
-      if (res.status === 401) {
-        throw new Error(
-          `MPT auth failed on ${path} (operation ${opts.operationId})`
-        );
-      }
-      if (res.status >= 500 || res.status === 504) {
-        if (retry < this.maxRetries) {
-          await new Promise((r) => setTimeout(r, backoffMs(retry)));
-          continue;
-        }
-      }
       const text = await res.text();
       let data: unknown = null;
       const ct = res.headers.get("content-type") ?? "";
@@ -218,16 +268,37 @@ export class HttpMptAdapter implements IMptAdapter {
           data = null;
         }
       }
-      return { status: res.status, data: data ?? text };
+      if (res.status === 401) {
+        throw new MptPermanentError(
+          `MPT auth failed on ${path} (operation ${opts.operationId})`,
+          res.status,
+          path
+        );
+      }
+      if (res.status >= 500 || res.status === 504) {
+        // временная ошибка — backoff+jitter, затем исчерпали → бросок
+        if (retry < this.maxRetries) {
+          await new Promise((r) => setTimeout(r, backoffMs(retry)));
+          continue;
+        }
+        throw new Error(`MPT temporary failure on ${path}: ${res.status}`);
+      }
+      if (res.status >= 400) {
+        // 4xx — постоянная ошибка; тело (детали валидации ИС МПТ) в сообщении
+        const excerpt =
+          typeof data === "string"
+            ? data.slice(0, 200)
+            : JSON.stringify(data).slice(0, 200);
+        throw new MptPermanentError(
+          `MPT ${opts.operationId} failed: ${res.status} on ${path}${
+            excerpt && excerpt !== "null" ? ` — ${excerpt}` : ""
+          }`,
+          res.status,
+          path
+        );
+      }
+      return { status: res.status, data };
     }
-  }
-
-  private async error(
-    status: number,
-    path: string,
-    op: string
-  ): Promise<never> {
-    throw new Error(`MPT ${op} failed: ${status} on ${path}`);
   }
 
   // ---- Заказ (MARKING-CODE-ORDER.CREATE) ----
@@ -251,12 +322,11 @@ export class HttpMptAdapter implements IMptAdapter {
     };
     if (businessPlaceId !== undefined)
       body.businessPlaceId = toInt32(businessPlaceId);
-    const { status, data } = await this.request("/api/orders", "POST", {
+    const { data } = await this.request("/api/orders", "POST", {
       json: body,
       operationId: input.orderId,
       headers: { "Idempotency-Key": input.orderId },
     });
-    if (status >= 400) return this.error(status, "/api/orders", "createOrder");
     const d = data as { status?: string; orderId?: string };
     return { status: (d.status as MptOrderStatus) ?? "CREATED", requestId };
   }
@@ -266,12 +336,11 @@ export class HttpMptAdapter implements IMptAdapter {
     status: MptOrderStatus;
     quantity: number;
   }> {
-    const { status, data } = await this.request(
+    const { data } = await this.request(
       `/api/orders?orderId=${encodeURIComponent(orderId)}`,
       "GET",
       { operationId: orderId }
     );
-    if (status >= 400) return this.error(status, "/api/orders", "getOrder");
     const d = data as { status?: string; quantity?: number };
     return {
       status: (d.status as MptOrderStatus) ?? "CREATED",
@@ -281,12 +350,11 @@ export class HttpMptAdapter implements IMptAdapter {
 
   // GET /api/codes (только READY/CLOSED) → codes[].
   async getCodes(orderId: string): Promise<{ codes: MptCodeView[] }> {
-    const { status, data } = await this.request(
+    const { data } = await this.request(
       `/api/codes?orderId=${encodeURIComponent(orderId)}`,
       "GET",
       { operationId: orderId }
     );
-    if (status >= 400) return this.error(status, "/api/codes", "getCodes");
     const d = data as { codes?: Array<Record<string, unknown>> };
     const codes = (d.codes ?? []).map((c) => ({
       gtin: String(c.gtin ?? ""),
@@ -320,12 +388,10 @@ export class HttpMptAdapter implements IMptAdapter {
       productionDate: input.productionDate,
       manufacturerCountry: input.manufacturerCountry,
     };
-    const { status, data } = await this.request("/api/utilisation", "POST", {
+    const { data } = await this.request("/api/utilisation", "POST", {
       json: body,
       operationId: `util-${Date.now()}`,
     });
-    if (status >= 400)
-      return this.error(status, "/api/utilisation", "submitUtilisation");
     const d = data as {
       reportId?: string;
       status?: string;
@@ -345,13 +411,11 @@ export class HttpMptAdapter implements IMptAdapter {
     status: "IN_PROCESS" | "SUCCESS" | "ERROR";
     rejectReason?: string;
   }> {
-    const { status, data } = await this.request(
+    const { data } = await this.request(
       `/api/utilisation/${encodeURIComponent(reportId)}`,
       "GET",
       { operationId: reportId }
     );
-    if (status >= 400)
-      return this.error(status, "/api/utilisation", "getUtilisation");
     const d = data as { status?: string; rejectReason?: string };
     const st = (d.status ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
     return { status: st, rejectReason: d.rejectReason ?? undefined };
@@ -379,13 +443,10 @@ export class HttpMptAdapter implements IMptAdapter {
         },
       })
     );
-    const { status, data } = await this.request(
-      "/public/api/v1/doc/import",
-      "POST",
-      { json: { documentBody }, operationId: input.customsNumber }
-    );
-    if (status >= 400)
-      return this.error(status, "/public/api/v1/doc/import", "submitImport");
+    const { data } = await this.request("/public/api/v1/doc/import", "POST", {
+      json: { documentBody },
+      operationId: input.customsNumber,
+    });
     const d = data as {
       documentId?: string;
       status?: string;
@@ -420,17 +481,11 @@ export class HttpMptAdapter implements IMptAdapter {
         childrenWriteOff: input.childrenWriteOff,
       })
     );
-    const { status, data } = await this.request(
+    const { data } = await this.request(
       "/public/api/v1/doc/withdrawal",
       "POST",
       { json: { documentBody }, operationId: `wdr-${Date.now()}` }
     );
-    if (status >= 400)
-      return this.error(
-        status,
-        "/public/api/v1/doc/withdrawal",
-        "submitWithdrawal"
-      );
     const d = data as {
       documentId?: string;
       status?: string;
@@ -451,17 +506,11 @@ export class HttpMptAdapter implements IMptAdapter {
     status: "IN_PROCESS" | "SUCCESS" | "ERROR";
     rejectReason?: string;
   }> {
-    const { status, data } = await this.request(
+    const { data } = await this.request(
       `/public/api/v1/doc/storage/docs/${encodeURIComponent(documentId)}`,
       "GET",
       { operationId: documentId }
     );
-    if (status >= 400)
-      return this.error(
-        status,
-        "/public/api/v1/doc/storage/docs",
-        "getDocument"
-      );
     const d = data as { status?: string; rejectReason?: string };
     const st = (d.status ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
     return { status: st, rejectReason: d.rejectReason ?? undefined };

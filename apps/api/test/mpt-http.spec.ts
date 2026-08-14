@@ -244,15 +244,16 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
       2
     );
 
-    // 400 → без ретрая
+    // 400 → без ретрая и permanent-ошибка с телом в message
     const ff3 = fakeFetch((call) => {
       if (call.url.endsWith("/api/users/authenticate"))
         return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
       return jsonResponse({ message: "bad request" }, 400);
     });
     const adapter3 = makeAdapter(ff3);
-    await expect(
-      adapter3.createOrder({
+    let err3: unknown;
+    try {
+      await adapter3.createOrder({
         orderId: "o1",
         tenantId: "t1",
         gtin: "4601005000001",
@@ -260,21 +261,30 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
         serialNumberType: "OPERATOR",
         cisType: "UNIT",
         isPaid: true,
-      })
-    ).rejects.toThrow();
+      });
+    } catch (e) {
+      err3 = e;
+    }
+    expect(err3).toBeTruthy();
+    expect((err3 as { permanent?: boolean }).permanent).toBe(true);
+    expect(String((err3 as Error).message)).toContain("bad request");
     expect(ff3.calls.filter((c) => c.url.endsWith("/api/orders"))).toHaveLength(
       1
     );
   });
 
-  it("canonicalJson: ключи отсортированы A–Z; массив кодов as-is", () => {
+  it("canonicalJson: ключи отсортированы A–Z рекурсивно; массив кодов as-is", () => {
     const json = canonicalJson({
       withdrawalReason: "DEFECT",
       codes: ["c2", "c1"],
       withdrawalType: "WRITE_OFF",
+      customsDeclaration: {
+        number: "123",
+        date: "2026-01-01",
+      },
     });
     expect(json).toBe(
-      '{"codes":["c2","c1"],"withdrawalReason":"DEFECT","withdrawalType":"WRITE_OFF"}'
+      '{"codes":["c2","c1"],"customsDeclaration":{"date":"2026-01-01","number":"123"},"withdrawalReason":"DEFECT","withdrawalType":"WRITE_OFF"}'
     );
   });
 
@@ -310,11 +320,11 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     expect(res.documentId).toBe("doc-1");
   });
 
-  it("toInt32: нормализует string/float, бросает на не-числе и вне диапазона", () => {
+  it("toInt32: нормализует string/float, бросает на не-числе, отрицательных и вне диапазона", () => {
     expect(toInt32("1")).toBe(1);
     expect(toInt32(1.9)).toBe(1);
-    expect(toInt32(-5)).toBe(-5);
     expect(() => toInt32("abc")).toThrow();
+    expect(() => toInt32(-5)).toThrow();
     expect(() => toInt32(2 ** 40)).toThrow();
   });
 
@@ -343,10 +353,39 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     expect(res.reportId).toBe("rep-1");
   });
 
-  it("контракт-скелет против test.markirovka.kz — skipped без MPT_BASE_URL", () => {
-    const env = process.env.MPT_BASE_URL;
-    expect(env).toBeUndefined(); // по умолчанию в CI/тестах доступа нет
-  });
+  // Контракт-скелет против test.markirovka.kz: запускается ТОЛЬКО при наличии
+  // доступа (MPT_BASE_URL + MPT_LOGIN + MPT_PASSWORD), иначе — skipped.
+  const itStage =
+    process.env.MPT_BASE_URL &&
+    process.env.MPT_LOGIN &&
+    process.env.MPT_PASSWORD
+      ? it
+      : it.skip;
+  itStage(
+    "контракт: authenticate → createOrder → getOrder против реального STAGE",
+    async () => {
+      const adapter = new HttpMptAdapter(
+        new ConfigService({
+          MPT_BASE_URL: process.env.MPT_BASE_URL,
+          MPT_LOGIN: process.env.MPT_LOGIN,
+          MPT_PASSWORD: process.env.MPT_PASSWORD,
+          MPT_MAX_RETRIES: "1",
+        }),
+        undefined as never
+      );
+      const res = await adapter.createOrder({
+        orderId: `contract-${Date.now()}`,
+        tenantId: "contract-test",
+        gtin: process.env.MPT_TEST_GTIN ?? "4601005000001",
+        quantity: 1,
+        serialNumberType: "OPERATOR",
+        cisType: "UNIT",
+        isPaid: true,
+      });
+      expect(["CREATED", "PENDING", "READY", "REJECTED"]).toContain(res.status);
+    },
+    30000
+  );
 });
 
 // ---- e2e: корреляция в outbox (correlationId / attempt / requestId) ----
@@ -365,6 +404,7 @@ describe("outbox correlation via OutboxPoller (e2e)", () => {
     process.env.MFA_ENABLED = "false";
     process.env.DEMO_ENABLED = "true";
     process.env.OUTBOX_POLL_MS = "50";
+    process.env.ADAPTERS_MPT = "mock"; // пин: dev .env с =http не переворачивает e2e
     execSync(
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {

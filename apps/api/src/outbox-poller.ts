@@ -298,15 +298,41 @@ export class OutboxPoller implements OnModuleDestroy {
       });
       return;
     }
-    const res = await this.mpt.createOrder({
-      orderId: order.id,
-      tenantId: order.tenantId,
-      gtin: order.gtin ?? "",
-      quantity: payload.quantity ?? 0,
-      serialNumberType: "OPERATOR",
-      cisType: "UNIT",
-      isPaid: order.isPaid,
-    });
+    let res;
+    try {
+      res = await this.mpt.createOrder({
+        orderId: order.id,
+        tenantId: order.tenantId,
+        gtin: order.gtin ?? "",
+        quantity: payload.quantity ?? 0,
+        serialNumberType: "OPERATOR",
+        cisType: "UNIT",
+        isPaid: order.isPaid,
+      });
+    } catch (e) {
+      // постоянная ошибка внешнего API (4xx/конфиг): ретрай бесполезен →
+      // outbox FAILED + задача оператору (ID-017). Временные (5xx/network)
+      // бросаем дальше: поллер оставит PENDING для reconciliation.
+      if ((e as { permanent?: boolean }).permanent) {
+        await this.prisma.outbox.update({
+          where: { id: outboxId },
+          data: { status: "FAILED" },
+        });
+        await this.prisma.outbox.create({
+          data: {
+            aggregate: "mpt-order-timeout",
+            status: "FAILED",
+            payload: {
+              orderId: payload.orderId,
+              tenantId: order.tenantId,
+              reason: `mpt permanent error: ${String((e as Error).message)}`,
+            },
+          },
+        });
+        return;
+      }
+      throw e;
+    }
     await this.prisma.outbox.update({
       where: { id: outboxId },
       data: {
