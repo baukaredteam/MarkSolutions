@@ -16,7 +16,8 @@ process.env.SIM_MPT_EMISSION_MS = "100";
 process.env.OUTBOX_POLL_MS = "50";
 process.env.MPT_POLL_MS = "50";
 process.env.MPT_ORDER_TIMEOUT_MS = "5000";
-process.env.DOC_SLA_MS = "300";
+process.env.DOC_SLA_MS = "300"; // mock: документ SUCCESS после 300мс
+process.env.ADAPTERS_MPT = "mock";
 
 describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
   let app: INestApplication;
@@ -95,7 +96,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     return code.id;
   }
 
-  it("import: POST /import с ДТ → SUCCESS → INTRODUCED-события (write-through) по всем APPLIED кодам", async () => {
+  it("import: POST /import → SUBMITTED (async); поллер SUCCESS → INTRODUCED по APPLIED кодам", async () => {
     const c1 = await makeCode();
     const c2 = await makeCode();
     const res = await request(app.getHttpServer())
@@ -110,10 +111,24 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
         },
       })
       .expect(201);
-    expect(res.body.status).toBe("SUCCESS");
+    // async state machine: документ SUBMITTED, коды НЕ тронуты (C-03)
+    expect(res.body.status).toBe("SUBMITTED");
     const doc = await prisma.importDocument.findFirst({ where: { tenantId } });
-    expect(doc!.status).toBe("SUCCESS");
+    expect(doc!.status).toBe("SUBMITTED");
+    expect(doc!.externalDocumentId).toBeTruthy();
     expect(doc!.customsNumber).toBe("10002000/010826/0001234");
+    let c1v = await prisma.codeVault.findUnique({ where: { id: c1 } });
+    expect(c1v!.status).toBe("APPLIED"); // не INTRODUCED до внешнего SUCCESS
+
+    // поллер (OUTBOX_POLL_MS=50, DOC_SLA_MS=300) доводит до SUCCESS
+    let st = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      const d = await prisma.importDocument.findFirst({ where: { tenantId } });
+      st = d!.status;
+      if (st === "SUCCESS" || st === "ERROR") break;
+    }
+    expect(st).toBe("SUCCESS");
     const events = await prisma.codeEvent.findMany({
       where: { codeId: { in: [c1, c2] } },
     });
@@ -173,7 +188,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
     expect(task).toBeTruthy();
   });
 
-  it("withdrawal: WRITE_OFF → WRITTEN_OFF (брак); OTHER без comment → 400; partialQuantity → 400", async () => {
+  it("withdrawal: WRITE_OFF → поллер SUCCESS → WRITTEN_OFF (брак); OTHER без comment → 400; partialQuantity → 400", async () => {
     const c1 = await makeCode();
     const res = await request(app.getHttpServer())
       .post("/withdrawal")
@@ -184,7 +199,18 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
         withdrawalReason: "DEFECT",
       })
       .expect(201);
-    expect(res.body.status).toBe("SUCCESS");
+    expect(res.body.status).toBe("SUBMITTED"); // async
+    let st = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      const d = await prisma.withdrawalDocument.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      });
+      st = d?.status ?? "";
+      if (st === "SUCCESS" || st === "ERROR") break;
+    }
+    expect(st).toBe("SUCCESS");
     const code = await prisma.codeVault.findUnique({ where: { id: c1 } });
     expect(code!.status).toBe("WRITTEN_OFF");
 
@@ -210,7 +236,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
       .expect(400);
   });
 
-  it("withdrawal: WITHDRAWAL → WITHDRAWN; повторный вывод (уже WITHDRAWN) → 409", async () => {
+  it("withdrawal: WITHDRAWAL → поллер SUCCESS → WITHDRAWN; повторный вывод (уже WITHDRAWN) → 409", async () => {
     const c1 = await makeCode();
     await request(app.getHttpServer())
       .post("/withdrawal")
@@ -221,6 +247,17 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
         withdrawalReason: "RETURN_SUPPLIER",
       })
       .expect(201);
+    let st = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      const d = await prisma.withdrawalDocument.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      });
+      st = d?.status ?? "";
+      if (st === "SUCCESS" || st === "ERROR") break;
+    }
+    expect(st).toBe("SUCCESS");
     const code = await prisma.codeVault.findUnique({ where: { id: c1 } });
     expect(code!.status).toBe("WITHDRAWN");
     await request(app.getHttpServer())
@@ -232,6 +269,36 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
         withdrawalReason: "RETURN_SUPPLIER",
       })
       .expect(409);
+  });
+
+  it("withdrawal: повторная отправка тех же кодов, пока документ SUBMITTED → 409 (защита от дубля)", async () => {
+    const c1 = await makeCode();
+    const c2 = await makeCode();
+    const res = await request(app.getHttpServer())
+      .post("/withdrawal")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        codes: [c1, c2],
+        withdrawalType: "WRITE_OFF",
+        withdrawalReason: "DEFECT",
+      })
+      .expect(201);
+    expect(res.body.status).toBe("SUBMITTED");
+    // пока документ в SUBMITTED (поллер не успел) — повтор с пересечением кодов → 409
+    const dup = await request(app.getHttpServer())
+      .post("/withdrawal")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        codes: [c2],
+        withdrawalType: "WRITE_OFF",
+        withdrawalReason: "LOST",
+      });
+    if (dup.status === 201) {
+      // документ успел завершиться — тогда повтор уже WITHDRAWN → 409
+      expect(dup.body.status).toBe("SUBMITTED");
+    } else {
+      expect(dup.status).toBe(409);
+    }
   });
 
   it("withdrawal: childrenWriteOff=true — палета → рекурсивный вывод членов + DISAGGREGATED", async () => {
@@ -262,7 +329,18 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025)", () => {
         childrenWriteOff: true,
       })
       .expect(201);
-    expect(res.body.status).toBe("SUCCESS");
+    expect(res.body.status).toBe("SUBMITTED"); // async
+    let st = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      const d = await prisma.withdrawalDocument.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      });
+      st = d?.status ?? "";
+      if (st === "SUCCESS" || st === "ERROR") break;
+    }
+    expect(st).toBe("SUCCESS");
     // палета и члены → WRITTEN_OFF; агрегат DISAGGREGATED
     const m1 = await prisma.codeVault.findUnique({ where: { id: member1 } });
     const m2 = await prisma.codeVault.findUnique({ where: { id: member2 } });

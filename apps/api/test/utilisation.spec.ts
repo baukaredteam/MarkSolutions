@@ -10,6 +10,7 @@ import { execSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma.service";
+import { BillingService } from "../src/billing.service";
 
 process.env.SIM_MPT_EMISSION_MS = "100";
 process.env.OUTBOX_POLL_MS = "50";
@@ -403,5 +404,49 @@ describe("utilisation (W3, п.26)", () => {
       .set("Authorization", `Bearer ${opToken}`)
       .expect(200);
     expect(exc.body.items.length).toBeGreaterThan(0);
+  });
+
+  // ---- C-05: идемпотентность и атомарность финального SETTLE ----
+  it("C-05: SETTLE идемпотентен по (orderId, kind) — повторный settle возвращает ту же проводку", async () => {
+    const billing = app.get(BillingService);
+    const orderId = await completedOrder("k-u-idem", 1, 1); // 1 КМ × 100 = 100
+    const before = (await prisma.account.findFirst({ where: { tenantId } }))!
+      .balance;
+    const r1 = await billing.settle(tenantId, orderId, BigInt(100), "settle-1");
+    const r2 = await billing.settle(tenantId, orderId, BigInt(100), "settle-2");
+    expect(r1.id).toBe(r2.id); // та же проводка, не вторая
+    const after = (await prisma.account.findFirst({ where: { tenantId } }))!
+      .balance;
+    expect(after).toBe(before - BigInt(100)); // списано ровно один раз
+    const count = await prisma.ledgerEntry.count({
+      where: { tenantId, kind: "SETTLE", refOrderId: orderId },
+    });
+    expect(count).toBe(1);
+  });
+
+  it("C-05: падение в транзакции откатывает SETTLE (нет половинчатого состояния)", async () => {
+    const billing = app.get(BillingService);
+    const orderId = await completedOrder("k-u-atomic", 1, 1);
+    const before = (await prisma.account.findFirst({ where: { tenantId } }))!
+      .balance;
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await billing.settleOn(
+          tx,
+          tenantId,
+          orderId,
+          BigInt(100),
+          "atomic-test"
+        );
+        throw new Error("boom: code vault update failed");
+      })
+    ).rejects.toThrow(/boom/);
+    const after = (await prisma.account.findFirst({ where: { tenantId } }))!
+      .balance;
+    expect(after).toBe(before); // списание откатилось
+    const settle = await prisma.ledgerEntry.findFirst({
+      where: { tenantId, kind: "SETTLE", refOrderId: orderId },
+    });
+    expect(settle).toBeNull();
   });
 });

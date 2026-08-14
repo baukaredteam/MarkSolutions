@@ -4,8 +4,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 import { gs1Mod10CheckDigit, verifyGs1Mod10 } from "@markflow/shared";
+
+// db — PrismaClient или TransactionClient (для событий в составе одной транзакции)
+type Db = PrismaService | Prisma.TransactionClient;
 
 // Машина статусов КМ (ADR-025): MVP-набор. CodeVault.status — write-through
 // при записи CodeEvent; REPRINTED/DISAGGREGATED — события БЕЗ смены статуса.
@@ -61,10 +65,30 @@ export class CodeEventService {
     event: CodeEventType,
     opts: RecordEventOptions = {}
   ) {
+    return this.recordEventOn(
+      this.prisma,
+      tenantId,
+      codeId,
+      actor,
+      event,
+      opts
+    );
+  }
+
+  // tx-вариант: события и статусы в составе одной интерактивной транзакции
+  // (C-03/C-05: документы/нанесение коммитятся атомарно с локальными CodeEvent).
+  async recordEventOn(
+    db: Db,
+    tenantId: string,
+    codeId: string,
+    actor: string,
+    event: CodeEventType,
+    opts: RecordEventOptions = {}
+  ) {
     if (!EVENT_TYPES.includes(event)) {
       throw new BadRequestException(`unknown event: ${event}`);
     }
-    const code = await this.prisma.codeVault.findFirst({
+    const code = await db.codeVault.findFirst({
       where: { id: codeId, tenantId },
     });
     if (!code) throw new NotFoundException("code not found");
@@ -76,7 +100,7 @@ export class CodeEventService {
       );
     }
 
-    const evt = await this.prisma.codeEvent.create({
+    const evt = await db.codeEvent.create({
       data: {
         tenantId,
         codeId,
@@ -89,7 +113,7 @@ export class CodeEventService {
       },
     });
     if (target) {
-      await this.prisma.codeVault.update({
+      await db.codeVault.update({
         where: { id: codeId },
         data: { status: target },
       });

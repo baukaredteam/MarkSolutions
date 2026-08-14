@@ -135,6 +135,9 @@ export class DocumentService {
       });
       return { status: "ERROR", rejectReason: sub.rejectReason };
     }
+    // C-03: async state machine — документ SUBMITTED, внешний documentId сохранён,
+    // локальные INTRODUCED-события НЕ пишутся до подтверждённого внешнего SUCCESS
+    // (поллер OutboxPoller.pollDocuments → mpt.getDocument → транзакция).
     const doc = await this.prisma.importDocument.create({
       data: {
         tenantId,
@@ -147,27 +150,7 @@ export class DocumentService {
         submittedAt: new Date(),
       },
     });
-    // SUCCESS сразу (демо-режим: SLA=0) → INTRODUCED по всем кодам
-    await this.completeImport(doc.id);
-    return { status: "SUCCESS" };
-  }
-
-  // завершение импорта: INTRODUCED-события по каждому коду (write-through)
-  private async completeImport(docId: string): Promise<void> {
-    const doc = await this.prisma.importDocument.findUnique({
-      where: { id: docId },
-    });
-    if (!doc) return;
-    const codes = await this.prisma.codeVault.findMany({
-      where: { orderId: doc.orderId, tenantId: doc.tenantId },
-    });
-    for (const c of codes) {
-      await this.events.recordEvent(doc.tenantId, c.id, "system", "INTRODUCED");
-    }
-    await this.prisma.importDocument.update({
-      where: { id: docId },
-      data: { status: "SUCCESS" },
-    });
+    return { status: "SUBMITTED", documentId: doc.id };
   }
 
   // Q9: вывод из оборота — WITHDRAWAL→WITHDRAWN, WRITE_OFF→WRITTEN_OFF
@@ -266,6 +249,22 @@ export class DocumentService {
         );
     }
 
+    // C-03: защита от дубля — активный (SUBMITTED) документ с пересечением кодов → 409,
+    // иначе те же коды уйдут в ИС МПТ второй раз (повторная отправка).
+    const openDocs = await this.prisma.withdrawalDocument.findMany({
+      where: { tenantId, status: "SUBMITTED" },
+      take: 50,
+    });
+    const openCodes = new Set<string>();
+    for (const d of openDocs) {
+      for (const c of (d.codes as string[]) ?? []) openCodes.add(c);
+    }
+    if (toProcess.some((c) => openCodes.has(c))) {
+      throw new ConflictException(
+        "вывод уже отправлен (документ в обработке ИС МПТ) — повторная отправка запрещена"
+      );
+    }
+
     const sub = await this.mpt.submitWithdrawal({
       tenantId,
       codes: toProcess,
@@ -291,56 +290,26 @@ export class DocumentService {
       void doc;
       return { status: "ERROR", rejectReason: sub.rejectReason };
     }
+    // C-03: async state machine — документ SUBMITTED + внешний documentId;
+    // локальные WITHDRAWN/WRITTEN_OFF/DISAGGREGATED-события НЕ пишутся до внешнего
+    // SUCCESS (поллер OutboxPoller.pollDocuments → mpt.getDocument → транзакция).
     const doc = await this.prisma.withdrawalDocument.create({
       data: {
         tenantId,
-        codes: codeKeys,
+        codes: toProcess, // полный набор для событий (включая членов агрегатов)
         withdrawalType,
         withdrawalReason: body.withdrawalReason,
         comment: body.comment ?? null,
         childrenWriteOff,
         primaryDocument: (body.primaryDocument ?? null) as never,
+        aggregateUnits:
+          unitsToDisaggregate.size > 0 ? [...unitsToDisaggregate] : undefined,
+        externalDocumentId: sub.documentId,
         status: "SUBMITTED",
         submittedAt: new Date(),
       },
     });
-
-    // SUCCESS (демо SLA=0): DISAGGREGATED для агрегатов + вывод членов
-    for (const unitId of unitsToDisaggregate) {
-      await this.prisma.aggregationUnit.update({
-        where: { id: unitId },
-        data: { status: "DISAGGREGATED" },
-      });
-    }
-    for (const codeKey of toProcess) {
-      const memberUnit = await this.prisma.aggregationMember.findFirst({
-        where: { codeKey },
-        include: { unit: true },
-      });
-      if (memberUnit && unitsToDisaggregate.has(memberUnit.unitId)) {
-        await this.events.recordEvent(
-          tenantId,
-          codeKey,
-          "system",
-          "DISAGGREGATED"
-        );
-      }
-      await this.events.recordEvent(
-        tenantId,
-        codeKey,
-        "system",
-        withdrawalType === "WRITE_OFF" ? "WRITTEN_OFF" : "WITHDRAWN",
-        {
-          reasonCode: body.withdrawalReason,
-          comment: body.comment ?? null,
-        }
-      );
-    }
-    await this.prisma.withdrawalDocument.update({
-      where: { id: doc.id },
-      data: { status: "SUCCESS" },
-    });
-    return { status: "SUCCESS" };
+    return { status: "SUBMITTED", documentId: doc.id };
   }
 
   // GET /documents — EntityList (ADR-008) по всем типам (без SERVICE_ACT_EXPORT: тикет 05)

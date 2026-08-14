@@ -63,6 +63,9 @@ model LedgerEntry {
   reason    String?
   createdAt DateTime @default(now())
   @@unique([ref1c])
+  // C-05: ровно одна проводка вида на заказ (RESERVE/RELEASE/SETTLE идемпотентны
+  // по (refOrderId, kind)); NULL refOrderId не конфликтует (SQLite/PG).
+  @@unique([refOrderId, kind])
 }
 
 // Тариф на КМ (W3): данные в БД, не хардкод (дух ADR-012). Выбор = активный на дату.
@@ -415,6 +418,8 @@ model ImportDocument {
 }
 
 // Вывод из оборота (W4-04, Q9): WITHDRAWAL→WITHDRAWN, WRITE_OFF→WRITTEN_OFF.
+// Async state machine (тикет MPT-02): SUBMITTED → (поллер getDocument) → SUCCESS/ERROR.
+// Локальные CodeEvent/статусы Vault пишутся ТОЛЬКО после внешнего SUCCESS.
 model WithdrawalDocument {
   id        String   @id @default(cuid())
   version   Int      @default(0)
@@ -426,6 +431,9 @@ model WithdrawalDocument {
   comment   String?
   childrenWriteOff Boolean @default(false)
   primaryDocument Json?  // {type,date,number}
+  // снимок развёрнутых агрегатов на момент submit (для DISAGGREGATED после SUCCESS)
+  aggregateUnits Json?  // string[] unitId
+  externalDocumentId String? // внешний documentId ИС МПТ (async reconciliation)
   status    String   @default("SUBMITTED") // SUBMITTED|SUCCESS|ERROR
   rejectReason String?
   createdAt DateTime @default(now())

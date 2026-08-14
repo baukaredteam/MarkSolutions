@@ -10,6 +10,7 @@ import {
 import { BillingService } from "./billing.service";
 import { VaultService } from "./vault.service";
 import { UtilisationService } from "./utilisation.service";
+import { CodeEventService } from "./code-event.service";
 
 // OutboxPoller: асинхронные интеграции.
 // 1) nkt-register (T3): Approved → Registering → Registered (НКТ).
@@ -26,6 +27,7 @@ export class OutboxPoller implements OnModuleDestroy {
     private readonly billing: BillingService,
     private readonly vault: VaultService,
     private readonly utilisation: UtilisationService,
+    private readonly events: CodeEventService,
     @Inject(NKT_ADAPTER) private readonly nkt: INktAdapter,
     @Inject(MPT_ADAPTER) private readonly mpt: IMptAdapter
   ) {}
@@ -77,9 +79,11 @@ export class OutboxPoller implements OnModuleDestroy {
       }
       // 2) заказы КМ (W3): отправить новые, догнать статусы, таймауты
       await this.pollMptOrders();
-      // 3) отчёты о нанесении (W3, п.26): доводим до SUCCESS/ERROR
+      // 3) документы ИС МПТ (C-03, тикет MPT-02): import/withdrawal async state machine
+      await this.pollDocuments();
+      // 4) отчёты о нанесении (W3, п.26): доводим до SUCCESS/ERROR
       await this.utilisation.pollReports();
-      // 4) таймер 30 дней (п.25, ADR-012): алерты 7/3/1 + аннулирование EXPIRED
+      // 5) таймер 30 дней (п.25, ADR-012): алерты 7/3/1 + аннулирование EXPIRED
       await this.pollUtilisationDeadlines();
     } catch (e) {
       // поллер фоновый: падение не должно становиться unhandled-rejection
@@ -467,5 +471,151 @@ export class OutboxPoller implements OnModuleDestroy {
       return;
     }
     // PENDING — ждём следующий тик
+  }
+
+  // ---- Документы ИС МПТ (C-03, тикет MPT-02): async state machine ----
+  // SUBMITTED → mpt.getDocument(externalDocumentId) → SUCCESS (локальные CodeEvent
+  // + статусы Vault в ОДНОЙ транзакции) / ERROR (rejectReason + задача оператору).
+  private async pollDocuments(): Promise<void> {
+    const imports = await this.prisma.importDocument.findMany({
+      where: { status: "SUBMITTED" },
+      take: 20,
+    });
+    for (const doc of imports) {
+      await this.reconcileImport(doc.id).catch(() => {});
+    }
+    const withdrawals = await this.prisma.withdrawalDocument.findMany({
+      where: { status: "SUBMITTED" },
+      take: 20,
+    });
+    for (const doc of withdrawals) {
+      await this.reconcileWithdrawal(doc.id).catch(() => {});
+    }
+  }
+
+  private async reconcileImport(docId: string): Promise<void> {
+    const doc = await this.prisma.importDocument.findUnique({
+      where: { id: docId },
+    });
+    if (!doc || doc.status !== "SUBMITTED" || !doc.externalDocumentId) return;
+    const st = await this.mpt.getDocument(doc.externalDocumentId);
+    if (st.status === "SUCCESS") {
+      // атомарно: INTRODUCED по каждому коду заказа + документ SUCCESS
+      await this.prisma.$transaction(async (tx) => {
+        const codes = await tx.codeVault.findMany({
+          where: { orderId: doc.orderId, tenantId: doc.tenantId },
+        });
+        for (const c of codes) {
+          await this.events.recordEventOn(
+            tx,
+            doc.tenantId,
+            c.id,
+            "system",
+            "INTRODUCED"
+          );
+        }
+        await tx.importDocument.update({
+          where: { id: docId },
+          data: { status: "SUCCESS" },
+        });
+      });
+      return;
+    }
+    if (st.status === "ERROR") {
+      await this.prisma.importDocument.update({
+        where: { id: docId },
+        data: {
+          status: "ERROR",
+          rejectReason: st.rejectReason ?? "import rejected",
+        },
+      });
+      await this.prisma.outbox.create({
+        data: {
+          aggregate: "mpt-order-timeout",
+          status: "FAILED",
+          payload: {
+            orderId: doc.orderId,
+            tenantId: doc.tenantId,
+            reason: `import failed: ${st.rejectReason ?? "unknown"}`,
+          },
+        },
+      });
+    }
+    // IN_PROCESS — ждём следующий тик
+  }
+
+  private async reconcileWithdrawal(docId: string): Promise<void> {
+    const doc = await this.prisma.withdrawalDocument.findUnique({
+      where: { id: docId },
+    });
+    if (!doc || doc.status !== "SUBMITTED" || !doc.externalDocumentId) return;
+    const st = await this.mpt.getDocument(doc.externalDocumentId);
+    if (st.status === "SUCCESS") {
+      // атомарно: DISAGGREGATED (снимок агрегатов) + WITHDRAWN/WRITTEN_OFF + документ SUCCESS
+      await this.prisma.$transaction(async (tx) => {
+        const codes = (doc.codes as string[]) ?? [];
+        const units = (doc.aggregateUnits as string[] | null) ?? [];
+        for (const unitId of units) {
+          await tx.aggregationUnit.update({
+            where: { id: unitId },
+            data: { status: "DISAGGREGATED" },
+          });
+        }
+        for (const codeKey of codes) {
+          if (units.length > 0) {
+            const memberUnit = await tx.aggregationMember.findFirst({
+              where: { codeKey },
+              include: { unit: true },
+            });
+            if (memberUnit && units.includes(memberUnit.unitId)) {
+              await this.events.recordEventOn(
+                tx,
+                doc.tenantId,
+                codeKey,
+                "system",
+                "DISAGGREGATED"
+              );
+            }
+          }
+          await this.events.recordEventOn(
+            tx,
+            doc.tenantId,
+            codeKey,
+            "system",
+            doc.withdrawalType === "WRITE_OFF" ? "WRITTEN_OFF" : "WITHDRAWN",
+            {
+              reasonCode: doc.withdrawalReason,
+              comment: doc.comment ?? null,
+            }
+          );
+        }
+        await tx.withdrawalDocument.update({
+          where: { id: docId },
+          data: { status: "SUCCESS" },
+        });
+      });
+      return;
+    }
+    if (st.status === "ERROR") {
+      await this.prisma.withdrawalDocument.update({
+        where: { id: docId },
+        data: {
+          status: "ERROR",
+          rejectReason: st.rejectReason ?? "withdrawal rejected",
+        },
+      });
+      await this.prisma.outbox.create({
+        data: {
+          aggregate: "mpt-order-timeout",
+          status: "FAILED",
+          payload: {
+            tenantId: doc.tenantId,
+            reason: `withdrawal failed: ${st.rejectReason ?? "unknown"}`,
+            documentId: doc.id,
+          },
+        },
+      });
+    }
+    // IN_PROCESS — ждём следующий тик
   }
 }

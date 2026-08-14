@@ -143,6 +143,24 @@ export class BillingService {
             balance: await this.balanceOf(db, tenantId),
           };
         }
+        // C-05: идемпотентность проводок с refOrderId — ровно одна (RESERVE/RELEASE/SETTLE)
+        // на заказ. Повторный вызов возвращает существующую проводку, НЕ списывает дважды.
+        const existingByIdentity =
+          opts.refOrderId !== undefined
+            ? await db.ledgerEntry.findFirst({
+                where: { tenantId, kind, refOrderId: opts.refOrderId },
+              })
+            : null;
+        if (existingByIdentity) {
+          return {
+            entry: {
+              id: existingByIdentity.id,
+              kind: existingByIdentity.kind,
+              amount: BigInt(existingByIdentity.amount),
+            },
+            balance: await this.balanceOf(db, tenantId),
+          };
+        }
         if (opts.checkAvailable) {
           const reserved = await this.activeReserve(db, tenantId);
           const balance = current.balance;
@@ -209,6 +227,25 @@ export class BillingService {
         if (opts.ref1c && (e as { code?: string }).code === "P2002") {
           const existing = await db.ledgerEntry.findUnique({
             where: { ref1c: opts.ref1c },
+          });
+          if (existing) {
+            return {
+              entry: {
+                id: existing.id,
+                kind: existing.kind,
+                amount: BigInt(existing.amount),
+              },
+              balance: await this.balanceOf(db, tenantId),
+            };
+          }
+        }
+        // C-05: гонка двух процессов на (refOrderId, kind) → unique → вернуть existing
+        if (
+          opts.refOrderId !== undefined &&
+          (e as { code?: string }).code === "P2002"
+        ) {
+          const existing = await db.ledgerEntry.findFirst({
+            where: { tenantId, kind, refOrderId: opts.refOrderId },
           });
           if (existing) {
             return {
@@ -289,7 +326,8 @@ export class BillingService {
     return this.reserveOn(this.prisma, tenantId, orderId, amount, reason);
   }
 
-  // резерв внутри интерактивной транзакции (заказ + RESERVE + outbox одной транзакцией)
+  // резерв внутри интерактивной транзакции (заказ + RESERVE + outbox одной транзакцией).
+  // Идемпотентен: повтор (refOrderId, kind) → существующая проводка (в applyOn).
   async reserveOn(
     db: Db,
     tenantId: string,
@@ -299,17 +337,6 @@ export class BillingService {
   ) {
     if (amount <= BigInt(0))
       throw new BadRequestException("amount must be positive");
-    const existing = await db.ledgerEntry.findFirst({
-      where: { tenantId, kind: "RESERVE", refOrderId: orderId },
-    });
-    if (existing) {
-      return {
-        id: existing.id,
-        kind: "RESERVE",
-        amount: BigInt(existing.amount),
-      };
-    }
-    // RESERVE не меняет balance (delta=0), но CAS-версию двигает для сериализации
     const result = await this.applyOn(db, tenantId, "RESERVE", amount, {
       refOrderId: orderId,
       reason,
@@ -323,21 +350,17 @@ export class BillingService {
   // Идемпотентен: повторный RELEASE того же orderId возвращает существующую
   // проводку и НЕ создаёт вторую (иначе available инфлейтится).
   async release(tenantId: string, orderId: string, reason?: string) {
-    const reserve = await this.prisma.ledgerEntry.findFirst({
+    return this.releaseOn(this.prisma, tenantId, orderId, reason);
+  }
+
+  // RELEASE внутри транзакции (C-05: атомарный финальный сеттлмент).
+  async releaseOn(db: Db, tenantId: string, orderId: string, reason?: string) {
+    const reserve = await db.ledgerEntry.findFirst({
       where: { tenantId, kind: "RESERVE", refOrderId: orderId },
     });
     if (!reserve) throw new NotFoundException("no active reserve for order");
-    const released = await this.prisma.ledgerEntry.findFirst({
-      where: { tenantId, kind: "RELEASE", refOrderId: orderId },
-    });
-    if (released) {
-      return {
-        id: released.id,
-        kind: "RELEASE",
-        amount: BigInt(released.amount),
-      };
-    }
-    const result = await this.apply(
+    const result = await this.applyOn(
+      db,
       tenantId,
       "RELEASE",
       BigInt(reserve.amount),
@@ -352,7 +375,19 @@ export class BillingService {
 
   // SETTLE: списание = регистрация нанесения (п.26) — balance −= amount.
   // Ограничено available (balance − активные резервы) — нельзя увести в минус.
+  // C-05: идемпотентен по (orderId, kind) — повтор возвращает ту же проводку.
   async settle(
+    tenantId: string,
+    orderId: string,
+    amount: bigint,
+    reason?: string
+  ) {
+    return this.settleOn(this.prisma, tenantId, orderId, amount, reason);
+  }
+
+  // SETTLE внутри интерактивной транзакции (C-05: атомарный финальный сеттлмент).
+  async settleOn(
+    db: Db,
     tenantId: string,
     orderId: string,
     amount: bigint,
@@ -360,7 +395,7 @@ export class BillingService {
   ) {
     if (amount <= BigInt(0))
       throw new BadRequestException("amount must be positive");
-    const result = await this.apply(tenantId, "SETTLE", amount, {
+    const result = await this.applyOn(db, tenantId, "SETTLE", amount, {
       refOrderId: orderId,
       reason: reason ?? "settle",
       delta: -amount,

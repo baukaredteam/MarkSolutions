@@ -138,37 +138,55 @@ export class UtilisationService {
     if (!report || report.status !== "IN_PROCESS") return;
     const st = await this.mpt.getUtilisation(report.reportId);
     if (st.status === "SUCCESS") {
-      // SETTLE (п.26): totalPrice из снимка заказа, резерв гасится (RELEASE остатка)
-      const order = await this.prisma.order.findUnique({
-        where: { id: report.orderId },
-        include: { lines: true },
-      });
-      if (!order) return;
-      const totalPrice = order.lines.reduce(
-        (s, l) => s + l.totalPrice,
-        BigInt(0)
-      );
-      if (!report.settled) {
-        await this.billing.settle(
+      // C-05: финальный сеттлмент АТОМАРЕН — SETTLE + отчёт SUCCESS/settled +
+      // коды UTILISED + RELEASE остатка резерва в ОДНОЙ транзакции. Падение на
+      // середине откатывает всё (нет «полу-списанного» состояния). Идемпотентность:
+      // applyOn возвращает существующие проводки по (refOrderId, kind); повторный
+      // reconcile (report уже SUCCESS) не дойдёт до этой ветки (pollReports берёт
+      // только IN_PROCESS), а при гонке — unique + existing-возврат.
+      await this.prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({
+          where: { id: report.orderId },
+          include: { lines: true },
+        });
+        if (!order) return;
+        const totalPrice = order.lines.reduce(
+          (s, l) => s + l.totalPrice,
+          BigInt(0)
+        );
+        await this.billing.settleOn(
+          tx,
           order.tenantId,
           order.id,
           totalPrice,
           `utilisation ${report.reportId}`
         );
-        await this.prisma.utilisationReport.update({
+        await tx.utilisationReport.update({
           where: { id: report.id },
           data: { status: "SUCCESS", settled: true },
         });
-      }
-      // коды → UTILISED
-      await this.prisma.codeVault.updateMany({
-        where: { orderId: order.id },
-        data: { status: "UTILISED" },
+        await tx.codeVault.updateMany({
+          where: { orderId: order.id },
+          data: { status: "UTILISED" },
+        });
+        // резерв заказа гасится (если есть активный RESERVE; повторный reconcile
+        // вернёт существующий RELEASE — releaseOn идемпотентен)
+        const reserve = await tx.ledgerEntry.findFirst({
+          where: {
+            tenantId: order.tenantId,
+            kind: "RESERVE",
+            refOrderId: order.id,
+          },
+        });
+        if (reserve) {
+          await this.billing.releaseOn(
+            tx,
+            order.tenantId,
+            order.id,
+            "settle on utilisation"
+          );
+        }
       });
-      // резерв заказа гасится (если остался активный)
-      await this.billing
-        .release(order.tenantId, order.id, "settle on utilisation")
-        .catch(() => {});
       return;
     }
     if (st.status === "ERROR") {
