@@ -336,6 +336,7 @@ export class MockMptAdapter implements IMptAdapter {
         expirationDate: input.expirationDate,
         productionDate: input.productionDate,
         manufacturerCountry: input.manufacturerCountry,
+        businessPlaceId: input.businessPlaceId, // C-04: трассировка площадки
         status: invalid ? "ERROR" : "IN_PROCESS",
         rejectReason: invalid ?? null,
       },

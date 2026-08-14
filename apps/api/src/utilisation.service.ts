@@ -77,10 +77,13 @@ export class UtilisationService {
       "utilisation report"
     );
 
+    // C-04: businessPlaceId из заказа (не хардкод «1»). -1 = «не задано»:
+    // реальный адаптер (int32, ЛОВУШКА 5) ответит 400; mock — трассирует.
+    const businessPlaceId = order.businessPlaceId ?? null;
     const sub = await this.mpt.submitUtilisation({
       tenantId,
       sntins,
-      businessPlaceId: 1,
+      businessPlaceId: businessPlaceId ?? -1,
       releaseType: body.releaseType,
       expirationDate: body.expirationDate,
       productionDate: body.productionDate,
@@ -98,7 +101,7 @@ export class UtilisationService {
         expirationDate: body.expirationDate,
         productionDate: body.productionDate,
         manufacturerCountry: body.manufacturerCountry,
-        businessPlaceId: "1",
+        businessPlaceId: businessPlaceId ? String(businessPlaceId) : "",
         rejectReason: sub.rejectReason ?? null,
       },
     });

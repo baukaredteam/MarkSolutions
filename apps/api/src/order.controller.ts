@@ -41,6 +41,7 @@ export class OrderController {
       quantity?: number;
       cisType?: string;
       serialNumberType?: string;
+      businessPlaceId?: number; // C-04: площадка нанесения (int32)
     }
   ) {
     return this.orders.create(tenantOf(req), idempotencyKey ?? "", body);

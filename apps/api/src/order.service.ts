@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "./prisma.service";
 import { BillingService } from "./billing.service";
+import { productGroupOf } from "@markflow/shared";
 
 // ORD-026: машина заказа до Queued в этом тикете.
 // Draft → Validating → Funds Reserved → Queued (Sent/Processing/Completed — тикет 03).
@@ -19,6 +20,7 @@ interface CreateOrderInput {
   quantity?: number;
   cisType?: string;
   serialNumberType?: string;
+  businessPlaceId?: number; // C-04: площадка нанесения (int32), источник для utilisation
 }
 
 @Injectable()
@@ -61,6 +63,13 @@ export class OrderService {
       throw new BadRequestException("places must be >= 1");
     if (!body.unitsPerPlace || body.unitsPerPlace < 1)
       throw new BadRequestException("unitsPerPlace must be >= 1");
+    // C-04: businessPlaceId — int32 > 0 (площадка нанесения); -1/0/NaN → 400
+    if (
+      body.businessPlaceId !== undefined &&
+      (!Number.isInteger(body.businessPlaceId) || body.businessPlaceId <= 0)
+    ) {
+      throw new BadRequestException("businessPlaceId must be a positive int32");
+    }
 
     // карточка tenant (каталог не трогаем, ADR-023)
     const card = await this.prisma.productCard.findFirst({
@@ -76,8 +85,12 @@ export class OrderService {
       );
     }
 
-    // активный тариф (данные, не хардкод)
-    const tariff = await this.billing.activeTariff();
+    // C-06: тариф по товарной группе карточки (activeTariff(productGroup)),
+    // fallback — общий. Группа из схемы (attributes.schemaVersion → productGroup).
+    const productGroup = productGroupOf(
+      card.attributes as Record<string, unknown>
+    );
+    const tariff = await this.billing.activeTariff(productGroup);
     const pricePerCodeKZT = tariff.pricePerCodeKZT;
     const totalPrice = BigInt(quantity) * BigInt(pricePerCodeKZT);
 
@@ -116,6 +129,7 @@ export class OrderService {
               cardId: card.id,
               gtin: body.gtin,
               isPaid: true,
+              businessPlaceId: body.businessPlaceId ?? null, // C-04
               status: "DRAFT",
             },
           });

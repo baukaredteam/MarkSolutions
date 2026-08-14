@@ -449,4 +449,63 @@ describe("utilisation (W3, п.26)", () => {
     });
     expect(settle).toBeNull();
   });
+
+  // ---- C-04: businessPlaceId из заказа, не хардкод «1» ----
+  it("C-04: businessPlaceId берётся из заказа (не хардкод 1)", async () => {
+    const { id: cardId, gtin } = await createCard();
+    const ord = await request(app.getHttpServer())
+      .post("/orders")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "k-u-bp")
+      .send({ cardId, gtin, places: 1, unitsPerPlace: 1, businessPlaceId: 42 })
+      .expect(201);
+    const orderId = ord.body.id;
+    let done = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(100);
+      const o = await prisma.order.findUnique({ where: { id: orderId } });
+      done = o!.status;
+      if (done === "COMPLETED") break;
+    }
+    expect(done).toBe("COMPLETED");
+    const r = await postUtilisation(orderId, {}, "k-u-bp-rpt").expect(201);
+    // ждём SUCCESS
+    let st = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(150);
+      const u = await prisma.utilisationReport.findUnique({
+        where: { reportId: r.body.reportId },
+      });
+      st = u?.status ?? "";
+      if (st !== "IN_PROCESS") break;
+    }
+    expect(st).toBe("SUCCESS");
+    const fresh = await prisma.utilisationReport.findUnique({
+      where: { reportId: r.body.reportId },
+    });
+    expect(fresh!.businessPlaceId).toBe("42"); // значение из заказа
+    const mpt = await prisma.mptUtilisation.findUnique({
+      where: { reportId: r.body.reportId },
+    });
+    expect(mpt!.businessPlaceId).toBe(42); // на провод в симулятор ушло 42
+  });
+
+  it("C-04: заказ без businessPlaceId → отчёт не содержит хардкод «1»", async () => {
+    const orderId = await completedOrder("k-u-nobp", 1, 1);
+    const r = await postUtilisation(orderId, {}, "k-u-nobp-rpt").expect(201);
+    let st = "";
+    for (let i = 0; i < 40; i++) {
+      await sleep(150);
+      const u = await prisma.utilisationReport.findUnique({
+        where: { reportId: r.body.reportId },
+      });
+      st = u?.status ?? "";
+      if (st !== "IN_PROCESS") break;
+    }
+    expect(st).toBe("SUCCESS");
+    const fresh = await prisma.utilisationReport.findUnique({
+      where: { reportId: r.body.reportId },
+    });
+    expect(fresh!.businessPlaceId).not.toBe("1"); // нет магического «1»
+  });
 });

@@ -225,6 +225,8 @@ model Order {
   cardId       String?
   gtin         String?
   isPaid       Boolean  @default(true)
+  // C-04: бизнес-площадка нанесения (int32) — из заказа, не хардкод «1»
+  businessPlaceId Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   lines        OrderLine[]
@@ -290,6 +292,7 @@ model MptUtilisation {
   expirationDate String
   productionDate String
   manufacturerCountry String
+  businessPlaceId Int?  // C-04: площадка нанесения из заказа (трассировка)
   status    String   @default("IN_PROCESS") // IN_PROCESS|SUCCESS|ERROR
   rejectReason String?
   createdAt DateTime @default(now())

@@ -107,8 +107,10 @@ async function main() {
 
   // W5-07: тарифы по товарным группам (тиыны за КМ, цена включает НДС).
   // Категории маркировки РК (данные, не хардкод).
+  // C-07 (аудит 13.08): цена MarkFlow за КМ = 8 ₸ = 800 тиын (не 47 000 = 470 ₸).
+  // Себестоимость оператора 4,7 ₸ = 470 тиын — не клиентский тариф (отдельно).
   const TARIFFS: { productGroup: string; pricePerCodeKZT: bigint }[] = [
-    { productGroup: "motor-oils", pricePerCodeKZT: BigInt(47000) }, // 470 ₸
+    { productGroup: "motor-oils", pricePerCodeKZT: BigInt(800) }, // 8 ₸
     { productGroup: "medicines", pricePerCodeKZT: BigInt(24000) }, // 240 ₸
     { productGroup: "footwear", pricePerCodeKZT: BigInt(26800) }, // 268 ₸
     { productGroup: "tobacco", pricePerCodeKZT: BigInt(26800) },
@@ -123,7 +125,7 @@ async function main() {
     create: {
       id: "tariff-default",
       productGroup: null,
-      pricePerCodeKZT: BigInt(47000), // 470 ₸
+      pricePerCodeKZT: BigInt(800), // 8 ₸ (C-07)
       validFrom: new Date(now - 86400000),
       validTo: new Date(now + 2 * 86400000),
       vatIncluded: true,

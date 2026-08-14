@@ -393,6 +393,20 @@ export const motorOilSchemaV1: CatalogSchema = {
   attributes: [...A_MANUAL, ...A_AUTO, ...B],
 };
 
+// Реестр схем по schemaVersion (MVP: одна схема, ADR-023 каталог заморожен).
+const SCHEMAS_BY_VERSION: Record<number, CatalogSchema> = {
+  1: motorOilSchemaV1,
+};
+
+// C-06: productGroup карточки из attributes.schemaVersion → схема → productGroup.
+// Вернёт undefined для неизвестной версии (тогда — общий тариф fallback).
+export function productGroupOf(
+  attributes: Record<string, unknown>
+): string | undefined {
+  const v = Number(attributes.schemaVersion);
+  return SCHEMAS_BY_VERSION[v]?.productGroup;
+}
+
 export const TIER_A_MANUAL = A_MANUAL.map((a) => a.key);
 export const TIER_A_AUTO = A_AUTO.map((a) => a.key);
 export const TIER_B = B.map((a) => a.key);

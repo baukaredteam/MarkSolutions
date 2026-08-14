@@ -512,4 +512,31 @@ describe("order create (W3, ORD-024..028)", () => {
     });
     expect(rows).toHaveLength(2);
   });
+
+  it("C-06: тариф товарной группы выигрывает у общего (activeTariff(productGroup) из карточки)", async () => {
+    // групповой тариф motor-oils (карточки по схеме v1 = motor-oils) — дороже общего
+    await prisma.tariff.create({
+      data: {
+        validFrom: new Date(Date.now() - 86400000),
+        validTo: new Date(Date.now() + 86400000),
+        pricePerCodeKZT: BigInt(1000),
+        productGroup: "motor-oils",
+      },
+    });
+    const { id: cardId, gtin } = await createCard();
+    const res = await createOrder(
+      { cardId, gtin, places: 1, unitsPerPlace: 1 },
+      "k-group-tariff"
+    ).expect(201);
+    const line = await prisma.orderLine.findFirst({
+      where: { orderId: res.body.id },
+    });
+    expect(line!.pricePerCodeKZT).toBe(BigInt(1000)); // групповой, не общий 100
+    expect(line!.totalPrice).toBe(BigInt(1000));
+    // снимок тарифа — групповой
+    const tariff = await prisma.tariff.findUnique({
+      where: { id: line!.tariffId },
+    });
+    expect(tariff!.productGroup).toBe("motor-oils");
+  });
 });
