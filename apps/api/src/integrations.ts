@@ -106,6 +106,8 @@ export interface MptOrderInput {
   serialNumberType: "OPERATOR";
   cisType: "UNIT";
   isPaid: boolean;
+  productGroup?: string; // C-06: группа товара для тарифа (HttpMptAdapter)
+  businessPlaceId?: number | string; // C-04: int32 на проводе (HttpMptAdapter)
 }
 
 export interface MptCodeView {
@@ -117,7 +119,10 @@ export interface MptCodeView {
 }
 
 export interface IMptAdapter {
-  createOrder(input: MptOrderInput): Promise<{ status: MptOrderStatus }>;
+  createOrder(input: MptOrderInput): Promise<{
+    status: MptOrderStatus;
+    requestId?: string; // корреляционный ID запроса (HttpMptAdapter; mock не возвращает)
+  }>;
   getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;

@@ -1,5 +1,6 @@
 import { Controller, Get, Module } from "@nestjs/common";
 import { APP_GUARD, APP_FILTER } from "@nestjs/core";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
 import { PrismaService } from "./prisma.service";
@@ -27,11 +28,11 @@ import { SeedService } from "./seed.service";
 import {
   MockGs1Adapter,
   MockNktAdapter,
-  MockMptAdapter,
   IGS1_ADAPTER,
   NKT_ADAPTER,
   MPT_ADAPTER,
 } from "./integrations";
+import { createMptAdapter } from "./http-mpt.adapter";
 import {
   FilesController,
   FilesService,
@@ -101,6 +102,8 @@ export class AdminController {
 
 @Module({
   imports: [
+    // ConfigService (C-01): выбор реализаций адаптеров через env (ADAPTERS_MPT и др.)
+    ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({
       secret: process.env.JWT_SECRET ?? "dev-secret",
       signOptions: { expiresIn: "1h" },
@@ -167,7 +170,13 @@ export class AdminController {
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },
     { provide: NKT_ADAPTER, useClass: MockNktAdapter },
-    { provide: MPT_ADAPTER, useClass: MockMptAdapter },
+    // C-01: ADAPTERS_MPT=http → HttpMptAdapter, иначе Mock (схема DI из аудита)
+    {
+      provide: MPT_ADAPTER,
+      useFactory: (config: ConfigService, prisma: PrismaService) =>
+        createMptAdapter(config, prisma),
+      inject: [ConfigService, PrismaService],
+    },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

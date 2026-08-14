@@ -1,4 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { PrismaService } from "./prisma.service";
 import {
   INktAdapter,
@@ -263,7 +264,9 @@ export class OutboxPoller implements OnModuleDestroy {
     }
   }
 
-  // Queued → Sent: idempotent по orderId (симулятор сам идемпотентен)
+  // Queued → Sent: idempotent по orderId (симулятор сам идемпотентен).
+  // Корреляция (аудит C-01): correlationId + attempt пишутся в payload ДО вызова
+  // внешнего API, requestId (из адаптера) — после. Полные трассы — в audit/outbox.
   private async sendToMpt(outboxId: string): Promise<void> {
     const row = await this.prisma.outbox.findUnique({
       where: { id: outboxId },
@@ -274,7 +277,16 @@ export class OutboxPoller implements OnModuleDestroy {
       tenantId?: string;
       gtin?: string;
       quantity?: number;
+      correlationId?: string;
+      attempt?: number;
+      requestId?: string | null;
     };
+    const correlationId = payload.correlationId ?? randomUUID();
+    const attempt = (payload.attempt ?? 0) + 1;
+    await this.prisma.outbox.update({
+      where: { id: outboxId },
+      data: { payload: { ...payload, correlationId, attempt } },
+    });
     const order = await this.prisma.order.findUnique({
       where: { id: payload.orderId },
     });
@@ -286,7 +298,7 @@ export class OutboxPoller implements OnModuleDestroy {
       });
       return;
     }
-    await this.mpt.createOrder({
+    const res = await this.mpt.createOrder({
       orderId: order.id,
       tenantId: order.tenantId,
       gtin: order.gtin ?? "",
@@ -294,6 +306,17 @@ export class OutboxPoller implements OnModuleDestroy {
       serialNumberType: "OPERATOR",
       cisType: "UNIT",
       isPaid: order.isPaid,
+    });
+    await this.prisma.outbox.update({
+      where: { id: outboxId },
+      data: {
+        payload: {
+          ...payload,
+          correlationId,
+          attempt,
+          requestId: res.requestId ?? null,
+        },
+      },
     });
     // повторная проверка: отмена могла выиграть гонку (at-least-once) — не отправляем SENT
     const fresh = await this.prisma.order.findUnique({
