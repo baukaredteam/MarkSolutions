@@ -39,11 +39,9 @@ describe("TEST_DATABASE_URL safety (behavioral)", () => {
     expect(() => requireTestDatabaseUrl()).not.toThrow();
   });
 
-  it("allows a non-marker URL only when ALLOW_TEST_DB_RESET=true", () => {
-    process.env.TEST_DATABASE_URL = "postgresql://u:p@localhost:5432/prod_db";
-    process.env.ALLOW_TEST_DB_RESET = "true";
-    expect(() => requireTestDatabaseUrl()).not.toThrow();
-    delete process.env.ALLOW_TEST_DB_RESET;
+  it("requires the markflow_test marker in the database name", () => {
+    process.env.TEST_DATABASE_URL = "postgresql://u:p@localhost:5432/markflow";
+    expect(() => requireTestDatabaseUrl()).toThrow(/markflow_test/);
   });
 });
 

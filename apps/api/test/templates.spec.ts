@@ -6,10 +6,15 @@ import { JwtService } from "@nestjs/jwt";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { execSync } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
 import { AppModule } from "../src/app.module";
 import { sheetModel, motorOilSchemaV1 } from "@markflow/shared";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./harness";
 
 describe("GET /templates/:productGroup (JWT-protected, F3)", () => {
   let app: INestApplication;

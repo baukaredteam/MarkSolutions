@@ -21,3 +21,6 @@ storage/
 *.pdf
 
 kms-keys/
+.pgdata/
+pgdata/
+*.pid

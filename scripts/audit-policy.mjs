@@ -4,12 +4,16 @@
 //
 // Usage: node scripts/audit-policy.mjs
 
-const { execSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const exceptions = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "audit-exceptions.json"), "utf8")
+  readFileSync(join(__dirname, "audit-exceptions.json"), "utf8")
 );
 const exemptNames = new Set(exceptions.map((e) => e.package));
 

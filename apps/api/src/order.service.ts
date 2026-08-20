@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -113,9 +114,12 @@ export class OrderService {
     }
 
     // ОДНА транзакция: заказ + RESERVE (CAS) + outbox; machine Draft→…→Queued.
-    // UI-06a: гонка max+1 при параллельных create → P2002 на unique(number) → 1 повтор.
+    // UI-06a: гонка max+1 при параллельных create → P2002 на unique(number) → повтор.
+    // PG READ COMMITTED: незакоммиченная транзакция-конкурент не видна, поэтому
+    // max+1 может совпасть у нескольких транзакций. Повтор до 5 раз с backoff
+    // даёт время конкуренту закоммитить и освободить номер.
     let order;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
         order = await this.prisma.$transaction(async (tx) => {
           // UI-05: номер заказа (KM-2026-NNNNNN) — инкремент в коде, tenant-агностичный
@@ -185,31 +189,41 @@ export class OrderService {
         });
         break;
       } catch (e) {
+        // W0-02R: business exceptions (402 insufficient funds, 409 conflict) must
+        // propagate as-is to Nest's exception filter — never swallow or convert.
+        if (e instanceof HttpException) throw e;
         const code = (e as { code?: string }).code;
-        const target = (e as { meta?: { target?: string[] } }).meta?.target;
-        // конкурентный повтор того же Idempotency-Key: unique(idempotencyKey) → P2002.
-        // Возвращаем существующий заказ (AT-07), не 500.
-        if (code === "P2002" && target?.includes("idempotencyKey")) {
-          const existing = await this.prisma.order.findUnique({
-            where: { idempotencyKey },
-            include: { lines: true },
-          });
-          if (existing) {
-            return {
-              id: existing.id,
-              number: existing.number,
-              status: existing.status,
-              isPaid: existing.isPaid,
-              lines: existing.lines.map((l) => ({
-                quantity: l.quantity,
-                totalPrice: l.totalPrice.toString(),
-              })),
-            };
+        const target: string[] | null | undefined = (
+          e as { meta?: { target?: string[] | null } }
+        ).meta?.target;
+        // P2002 = unique constraint violation (idempotencyKey or number).
+        // On PG, target may be null; treat all P2002 as retryable.
+        if (code === "P2002") {
+          // конкурентный повтор того же Idempotency-Key → вернуть существующий заказ (AT-07)
+          if (Array.isArray(target) && target.includes("idempotencyKey")) {
+            const existing = await this.prisma.order.findUnique({
+              where: { idempotencyKey },
+              include: { lines: true },
+            });
+            if (existing) {
+              return {
+                id: existing.id,
+                number: existing.number,
+                status: existing.status,
+                isPaid: existing.isPaid,
+                lines: existing.lines.map((l) => ({
+                  quantity: l.quantity,
+                  totalPrice: l.totalPrice.toString(),
+                })),
+              };
+            }
+          }
+          // гонка на unique(number) или неизвестный P2002: повтор с backoff (UI-06a)
+          if (attempt < 4) {
+            await new Promise((r) => setTimeout(r, 10 * (attempt + 1)));
+            continue;
           }
         }
-        // гонка на unique(number): пересчитываем max и пробуем ещё раз (UI-06a)
-        if (code === "P2002" && target?.includes("number") && attempt === 0)
-          continue;
         throw e;
       }
     }

@@ -358,14 +358,10 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     expect(res.reportId).toBe("rep-1");
   });
 
-  // Контракт-скелет против test.markirovka.kz: запускается ТОЛЬКО при наличии
-  // доступа (MPT_BASE_URL + MPT_LOGIN + MPT_PASSWORD), иначе — skipped.
-  const itStage =
-    process.env.MPT_BASE_URL &&
-    process.env.MPT_LOGIN &&
-    process.env.MPT_PASSWORD
-      ? it
-      : it.skip;
+  // Контракт-скелет против test.markirovka.kz: запускается ТОЛЬКО при
+  // явном opt-in (RUN_MPT_STAGE_CONTRACT=true). Никогда не зависит от
+  // внешней доступности в npm test.
+  const itStage = process.env.RUN_MPT_STAGE_CONTRACT === "true" ? it : it.skip;
   itStage(
     "контракт: authenticate → createOrder → getOrder против реального STAGE",
     async () => {

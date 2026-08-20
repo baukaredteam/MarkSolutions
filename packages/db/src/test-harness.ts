@@ -34,11 +34,10 @@ export function requireTestDatabaseUrl(): string {
       "TEST_DATABASE_URL must be a PostgreSQL (postgresql://) connection string"
     );
   }
-  const allowReset = process.env.ALLOW_TEST_DB_RESET === "true";
-  if (!allowReset && !url.includes("markflow_test")) {
+  if (!url.includes("markflow_test")) {
     throw new Error(
       "TEST_DATABASE_URL must contain the test marker 'markflow_test' " +
-        "(e.g. .../markflow_test) unless ALLOW_TEST_DB_RESET=true"
+        "(e.g. .../markflow_test)"
     );
   }
   return url;

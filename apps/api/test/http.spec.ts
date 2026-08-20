@@ -6,6 +6,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AppModule } from "../src/app.module";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./harness";
 
 describe("HTTP seams (health + tenant-guard)", () => {
   let app: INestApplication;
