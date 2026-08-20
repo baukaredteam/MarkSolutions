@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: markflow
+          POSTGRES_PASSWORD: markflow
+          POSTGRES_DB: markflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://markflow:markflow@localhost:5432/markflow
+      TEST_DATABASE_URL: postgresql://markflow:markflow@localhost:5432/markflow_test_w02
+      NODE_ENV: test
+      JWT_SECRET: test-secret-for-ci-pipeline-only-20-chars
+      ADAPTERS_MPT: mock
+      ADAPTERS_GS1: mock
+      ADAPTERS_NKT: mock
+      ADAPTERS_1ECOM: mock
+      KMS_PROFILE: file
+      STORAGE_DIR: /tmp/markflow-storage
+      MPT_BASE_URL: https://httpbin.org
+      MPT_LOGIN: test
+      MPT_PASSWORD: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate SQLite client (dev)
+        run: npx prisma generate --schema packages/db/prisma/schema.prisma
+
+      - name: Build shared
+        run: npm run build:cjs --workspace @markflow/shared
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Secret scan
+        run: npm run secret-scan
+
+      - name: Validate PG migration chain
+        run: |
+          npx prisma generate --schema packages/db/prisma/pg/schema.prisma
+          npx prisma migrate deploy --schema packages/db/prisma/pg/schema.prisma
+
+      - name: Run tests
+        run: npm test
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high || true

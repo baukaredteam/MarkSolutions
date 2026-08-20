@@ -1,0 +1,451 @@
+// MarkFlow Prisma schema — PostgreSQL production target (W0-02).
+// Identical model definitions to schema.prisma (SQLite dev).
+// provider = "postgresql"; uses standard PrismaClient (no adapter).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id      String  @id @default(cuid())
+  version Int     @default(0)
+  name    String
+  bin     String  @unique
+  status  String  @default("PENDING")
+  accounts Account[]
+  ledgerEntries LedgerEntry[]
+  orders Order[]
+  mptOrders MptOrder[]
+  codeVaults CodeVault[]
+  vaultExports VaultExport[]
+  codeEvents CodeEvent[]
+  ssscCounters SsscCounter[]
+  utilisationReports UtilisationReport[]
+  utilisationAlerts UtilisationAlert[]
+  importDocuments ImportDocument[]
+  withdrawalDocuments WithdrawalDocument[]
+  invoices Invoice[]
+  aggregationUnits AggregationUnit[]
+  products  Product[]
+  users     User[]
+  productCards ProductCard[]
+  draftProposals DraftProposal[]
+  createdAt DateTime @default(now())
+}
+
+model Account {
+  id      String  @id @default(cuid())
+  version Int     @default(0)
+  tenantId String
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  balance BigInt  @default(0)
+  ledgerEntries LedgerEntry[]
+  createdAt DateTime @default(now())
+}
+
+model LedgerEntry {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  kind      String
+  amount    BigInt
+  refOrderId String?
+  ref1c     String?
+  reason    String?
+  createdAt DateTime @default(now())
+  @@unique([ref1c])
+  @@unique([refOrderId, kind])
+}
+
+model Tariff {
+  id              String   @id @default(cuid())
+  version         Int      @default(0)
+  validFrom       DateTime
+  validTo         DateTime
+  pricePerCodeKZT BigInt
+  unit            String   @default("KM")
+  currency        String   @default("KZT")
+  productGroup    String?
+  vatIncluded     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+}
+
+model Invoice {
+  id           String   @id @default(cuid())
+  version      Int      @default(0)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  number       Int      @unique
+  date         DateTime @default(now())
+  productGroup String
+  quantity     Int
+  unitPrice    BigInt
+  sumWithoutVat BigInt
+  vat          BigInt
+  sumWithVat   BigInt
+  status       String   @default("ISSUED")
+  paymentRef   String?
+  paidAt       DateTime?
+  vatRatePct   Int      @default(16)
+  createdAt    DateTime @default(now())
+}
+
+model Product {
+  id      String  @id @default(cuid())
+  version Int     @default(0)
+  tenantId String
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  name    String
+  tnved   String
+  gtin    String?
+  attributes Json?
+  demo    Boolean @default(false)
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id         String  @id @default(cuid())
+  version    Int     @default(0)
+  tenantId   String?
+  tenant     Tenant? @relation(fields: [tenantId], references: [id])
+  login      String  @unique
+  passwordHash String
+  roles      String  @default("[]")
+  mfaEnabled Boolean @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Application {
+  id             String   @id @default(cuid())
+  version        Int      @default(0)
+  bin            String   @unique
+  name           String
+  email          String
+  phone          String
+  city           String
+  address        String
+  contact        String
+  consentDocument String
+  consentAcceptedAt DateTime
+  consentSubject   String
+  ecomStatus     String   @default("PENDING")
+  ecomRetries    Int      @default(0)
+  status         String   @default("PENDING")
+  operatorId     String?
+  tenantId       String?
+  createdAt      DateTime @default(now())
+  approvedAt     DateTime?
+}
+
+model Outbox {
+  id        String  @id @default(cuid())
+  version   Int     @default(0)
+  aggregate String
+  payload   Json
+  status    String  @default("PENDING")
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+}
+
+model ProductCard {
+  id            String   @id @default(cuid())
+  version       Int      @default(0)
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  status        String   @default("DRAFT")
+  gtin          String?
+  ntin          String?
+  attributes    Json
+  audit         Json     @default("[]")
+  fieldReasons  Json     @default("{}")
+  rejectedAttributes Json?
+  ordersBlocked Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  drafts        DraftProposal[]
+  @@index([tenantId, gtin])
+}
+
+model GtinCache {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  gtin      String   @unique
+  gcp       String?
+  status    String   @default("PENDING_REAL")
+  brand     String?
+  source    String   @default("ig")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DraftProposal {
+  id         String   @id @default(cuid())
+  version    Int      @default(0)
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  cardId     String?
+  card       ProductCard? @relation(fields: [cardId], references: [id])
+  source     String
+  proposed   Json
+  missing    Json
+  status     String   @default("DRAFT")
+  demo       Boolean  @default(false)
+  audit      Json     @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Order {
+  id           String   @id @default(cuid())
+  version      Int      @default(0)
+  number       Int      @unique @default(0)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  status       String   @default("DRAFT")
+  idempotencyKey String  @unique
+  cardId       String?
+  gtin         String?
+  isPaid       Boolean  @default(true)
+  businessPlaceId Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lines        OrderLine[]
+}
+
+model OrderLine {
+  id            String   @id @default(cuid())
+  version       Int      @default(0)
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  cardId        String
+  gtin          String
+  places        Int
+  unitsPerPlace Int
+  quantity      Int
+  totalPrice    BigInt
+  cisType       String   @default("UNIT")
+  serialNumberType String @default("OPERATOR")
+  tariffId      String
+  pricePerCodeKZT BigInt
+}
+
+model MptOrder {
+  id          String   @id @default(cuid())
+  version     Int      @default(0)
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  externalId  String   @unique
+  gtin        String
+  quantity    Int
+  status      String   @default("CREATED")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  codes       MptCode[]
+}
+
+model MptCode {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  mptOrderId String
+  mptOrder  MptOrder @relation(fields: [mptOrderId], references: [id])
+  gtin      String
+  serial    String
+  ai91      String?
+  ai92      String?
+  form      String   @default("base")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  @@unique([gtin, serial])
+}
+
+model MptUtilisation {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  reportId  String   @unique
+  tenantId  String
+  sntins    Json
+  releaseType String
+  expirationDate String
+  productionDate String
+  manufacturerCountry String
+  businessPlaceId Int?
+  status    String   @default("IN_PROCESS")
+  rejectReason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CodeVault {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  orderId   String
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  cardId    String?
+  gtin      String
+  mask      String
+  status    String   @default("ACTIVE")
+  ciphertext String
+  labelKey  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    CodeEvent[]
+  @@index([tenantId, gtin])
+}
+
+model CodeEvent {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  codeId    String
+  code      CodeVault @relation(fields: [codeId], references: [id])
+  event     String
+  at        DateTime @default(now())
+  actor     String
+  reasonCode String?
+  comment   String?
+  relatedId String?
+  createdAt DateTime @default(now())
+  @@index([tenantId, codeId])
+  @@index([tenantId, event])
+}
+
+model SsscCounter {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  nextSeq   Int      @default(1)
+  createdAt DateTime @default(now())
+  @@unique([tenantId])
+}
+
+model VaultExport {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orderId   String
+  actor     String
+  kind      String
+  reason    String?
+  count     Int
+  createdAt DateTime @default(now())
+}
+
+model UtilisationReport {
+  id           String   @id @default(cuid())
+  version      Int      @default(0)
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  orderId      String
+  idempotencyKey String  @unique
+  reportId     String   @unique
+  status       String   @default("IN_PROCESS")
+  sntins       Json
+  releaseType  String
+  expirationDate String
+  productionDate String
+  manufacturerCountry String
+  businessPlaceId String
+  rejectReason String?
+  settled      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model UtilisationAlert {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orderId   String
+  daysLeft  Int
+  kind      String
+  status    String   @default("OPEN")
+  firedAt   DateTime?
+  createdAt DateTime @default(now())
+}
+
+model ImportDocument {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orderId   String
+  customsDate   String
+  customsNumber String
+  authorityCode String?
+  status    String   @default("EXPECTED")
+  rejectReason String?
+  externalDocumentId String?
+  createdAt DateTime @default(now())
+  submittedAt DateTime?
+  @@unique([tenantId, customsNumber])
+}
+
+model WithdrawalDocument {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  codes     Json
+  withdrawalType String
+  withdrawalReason String
+  comment   String?
+  childrenWriteOff Boolean @default(false)
+  primaryDocument Json?
+  aggregateUnits Json?
+  externalDocumentId String?
+  status    String   @default("SUBMITTED")
+  rejectReason String?
+  createdAt DateTime @default(now())
+  submittedAt DateTime?
+}
+
+model MptDocument {
+  id           String   @id @default(cuid())
+  documentId   String   @unique
+  tenantId     String
+  kind         String
+  codes        Json
+  payload      Json?
+  status       String   @default("IN_PROCESS")
+  rejectReason String?
+  createdAt    DateTime @default(now())
+}
+
+model AggregationUnit {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  sscc      String   @unique
+  type      String
+  parentId  String?
+  status    String   @default("OPEN")
+  sealedAt  DateTime?
+  createdAt DateTime @default(now())
+  members   AggregationMember[]
+}
+
+model AggregationMember {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  unitId    String
+  unit      AggregationUnit @relation(fields: [unitId], references: [id])
+  tenantId  String
+  codeKey   String
+  addedAt   DateTime @default(now())
+  addedBy   String
+  @@unique([unitId, codeKey])
+}

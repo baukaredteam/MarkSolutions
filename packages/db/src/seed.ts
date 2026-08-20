@@ -2,16 +2,33 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
 import { createHash } from "node:crypto";
 
+// W0-02: Seed requires explicit DATABASE_URL (no implicit file: fallback).
+// For production: seed is gated by SEED_ENABLED=true.
+
+function isPostgres(url: string): boolean {
+  return url.startsWith("postgresql://") || url.startsWith("postgres://");
+}
+
 // Демо-хэш (не для prod): sha256 (должен совпадать с AuthService.hashPassword)
 function hashPassword(p: string): string {
   return createHash("sha256").update(p).digest("hex");
 }
 
 async function main() {
-  const url =
-    process.env.DATABASE_URL ?? `file:${import.meta.dirname}/../prisma/dev.db`;
-  const adapter = new PrismaLibSQL({ url });
-  const prisma = new PrismaClient({ adapter });
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error(
+      "SEED FAILED: DATABASE_URL is required. Run `npm run db:migrate` first."
+    );
+    process.exit(1);
+  }
+  if (isPostgres(url) && process.env.NODE_ENV === "production") {
+    console.error("SEED BLOCKED: production mode requires SEED_ENABLED=true");
+    process.exit(1);
+  }
+  const prisma = isPostgres(url)
+    ? new PrismaClient()
+    : new PrismaClient({ adapter: new PrismaLibSQL({ url }) });
 
   const tenant = await prisma.tenant.upsert({
     where: { bin: "111111111111" },

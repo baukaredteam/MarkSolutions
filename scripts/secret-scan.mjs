@@ -32,6 +32,12 @@ const ALLOWLIST = [
   "apps/api/src/config-validation.ts",
   "apps/api/src/config-validation.spec.ts",
   "apps/api/src/config-validation.b.spec.ts",
+  ".github/workflows/ci.yml", // CI test fixtures (not real secrets)
+  "apps/api/src/db-bootstrap.spec.ts", // test validation logic
+  "apps/api/src/prisma.service.ts", // validates DB URL format
+  "packages/db/src/seed.ts", // seed guards reference production URL pattern
+  "docs/production/W0-02_IMPLEMENTATION_PLAN.md", // documentation references
+  "docs/production/W0-02_PRECHECK.md", // documentation references
 ];
 for (const file of files) {
   if (ALLOWLIST.includes(file)) continue;
