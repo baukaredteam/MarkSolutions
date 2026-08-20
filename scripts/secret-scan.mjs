@@ -46,6 +46,8 @@ const ALLOWLIST = [
   "docs/production/W0-02_PRECHECK.md", // documentation references
   "docs/production/W0-02R_GATES_EVIDENCE.md", // documentation references
   "docs/production/W0-02R_GATES_PLAN.md", // documentation references
+  "docs/production/W0-02R_FINAL_EVIDENCE.md", // documentation references
+  "docs/production/W0-02R_FINAL_PLAN.md", // documentation references
 ];
 for (const file of files) {
   if (ALLOWLIST.includes(file)) continue;
