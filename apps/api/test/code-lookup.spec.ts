@@ -10,6 +10,11 @@ import { execSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma.service";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./harness";
 import { KMS_ADAPTER } from "../src/kms.adapter";
 
 process.env.SIM_MPT_EMISSION_MS = "100";
@@ -22,6 +27,7 @@ describe("code lookup (UI-03)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let dir: string;
+  let testDb: TestDb;
   let tenantId: string;
   let otherTenantId: string;
   let tokenOf: (tenantId: string) => string;
@@ -29,8 +35,8 @@ describe("code lookup (UI-03)", () => {
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "lkp-"));
-    const dbPath = join(dir, "test.db");
-    process.env.DATABASE_URL = `file:${dbPath}`;
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
     process.env.JWT_SECRET = "test-secret";
     process.env.MFA_ENABLED = "false";
     process.env.KMS_PROFILE = "file";
@@ -40,7 +46,7 @@ describe("code lookup (UI-03)", () => {
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+        env: { ...process.env, DATABASE_URL: testDb.databaseUrl },
         stdio: "pipe",
       }
     );
@@ -115,11 +121,12 @@ describe("code lookup (UI-03)", () => {
       where: { id: code.id },
       data: { cardId: card.id },
     });
-  }, 30000);
+  }, 120000);
 
   afterAll(async () => {
     await app.close();
     await sleep(300);
+    await teardownTestDatabase(testDb);
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   });
 

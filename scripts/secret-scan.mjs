@@ -35,7 +35,13 @@ const ALLOWLIST = [
   ".github/workflows/ci.yml", // CI test fixtures (not real secrets)
   "apps/api/src/db-bootstrap.spec.ts", // test validation logic
   "apps/api/src/prisma.service.ts", // validates DB URL format
+  "apps/api/test/harness.ts", // test harness: DB URL validation fixtures
   "packages/db/src/seed.ts", // seed guards reference production URL pattern
+  "packages/db/src/test-harness.ts", // test harness: DB URL validation fixtures
+  "scripts/db-validate.mjs", // DB URL validation fixtures
+  "scripts/demo-reset.mjs", // dev script references DB URL format
+  "scripts/test-pg-start.mjs", // dev helper: test DB URL fixture
+  "docs/production/MIGRATION_OPERATIONS.md", // documentation references
   "docs/production/W0-02_IMPLEMENTATION_PLAN.md", // documentation references
   "docs/production/W0-02_PRECHECK.md", // documentation references
 ];

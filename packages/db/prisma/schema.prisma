@@ -1,13 +1,14 @@
-// MarkFlow Prisma schema — портабельная (ADR-016): SQLite dev / PostgreSQL prod.
+// MarkFlow Prisma schema — канонический источник (W0-02R): PostgreSQL 16.
 // Без enum (статусы String), без массивов (Json), деньги BigInt целыми тенге (дробных единиц нет),
 // version для optimistic lock.
+// SQLite как runtime-опция удалён (ADR-015 superseded); dev/test/stage/prod — PostgreSQL.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

@@ -1,33 +1,27 @@
 #!/usr/bin/env node
-// demo-reset.mjs — свежая dev.db + seed (демо из известного состояния).
-// Удаляет packages/db/prisma/dev.db, применяет миграции, запускает seed.
+// W0-02R: fresh dev database + seed against PostgreSQL.
+// Replaces the old SQLite dev.db reset. Point DATABASE_URL at a PostgreSQL
+// database you control (local or containerised PG 16).
 import { execSync } from "node:child_process";
-import { rmSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const root = join(fileURLToPath(import.meta.url), "..", "..");
-const dbPath = join(root, "packages", "db", "prisma", "dev.db");
-
-if (existsSync(dbPath)) {
-  rmSync(dbPath, { force: true });
-  console.log(`removed ${dbPath}`);
-}
-// также убираем WAL/SHM
-for (const suffix of ["-wal", "-shm", "-journal"]) {
-  const p = dbPath + suffix;
-  if (existsSync(p)) rmSync(p, { force: true });
+const url = process.env.DATABASE_URL;
+if (!url || !url.startsWith("postgresql://") && !url.startsWith("postgres://")) {
+  console.error(
+    "demo:reset FAILED: set DATABASE_URL to a PostgreSQL connection string, e.g.\n" +
+      "  DATABASE_URL=postgresql://markflow:markflow@localhost:5432/markflow_dev npm run demo:reset"
+  );
+  process.exit(1);
 }
 
-const url = `file:${dbPath}`; // Windows: backslashes, как в тестах (onboarding.spec.ts)
+console.log(`demo:reset: applying migrations to ${url.replace(/\/\/.*@/, "//***@")}`);
 execSync("npx prisma migrate deploy --schema packages/db/prisma/schema.prisma", {
-  cwd: root,
+  cwd: process.cwd(),
   env: { ...process.env, DATABASE_URL: url },
   stdio: "inherit",
 });
 execSync("npx tsx packages/db/src/seed.ts", {
-  cwd: root,
+  cwd: process.cwd(),
   env: { ...process.env, DATABASE_URL: url },
   stdio: "inherit",
 });
-console.log("demo:reset OK — свежая dev.db с seeded-данными");
+console.log("demo:reset OK — fresh PostgreSQL database with seeded demo data");

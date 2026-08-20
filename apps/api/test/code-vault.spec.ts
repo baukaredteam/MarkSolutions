@@ -10,6 +10,11 @@ import { execSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma.service";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./harness";
 
 // быстрые интервалы для тестов
 process.env.SIM_MPT_EMISSION_MS = "100";
@@ -21,15 +26,16 @@ describe("code vault (W3, CV-030..033)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let dir: string;
+  let testDb: TestDb;
   let keyDir: string;
   let tenantId: string;
   let token: string;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "vault-"));
-    const dbPath = join(dir, "test.db");
     keyDir = join(dir, "keys");
-    process.env.DATABASE_URL = `file:${dbPath}`;
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
     process.env.JWT_SECRET = "test-secret";
     process.env.MFA_ENABLED = "false";
     process.env.DEMO_ENABLED = "true";
@@ -40,7 +46,7 @@ describe("code vault (W3, CV-030..033)", () => {
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+        env: { ...process.env, DATABASE_URL: testDb.databaseUrl },
         stdio: "pipe",
       }
     );
@@ -85,11 +91,12 @@ describe("code vault (W3, CV-030..033)", () => {
       roles: ["admin"],
       mfaCompleted: true,
     });
-  }, 30000);
+  }, 120000);
 
   afterAll(async () => {
     await app.close();
     await sleep(300);
+    await teardownTestDatabase(testDb);
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   });
 

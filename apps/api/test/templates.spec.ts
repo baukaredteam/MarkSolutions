@@ -14,19 +14,20 @@ import { sheetModel, motorOilSchemaV1 } from "@markflow/shared";
 describe("GET /templates/:productGroup (JWT-protected, F3)", () => {
   let app: INestApplication;
   let dir: string;
+  let testDb: TestDb;
   let token: string;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "tpl-"));
-    const dbPath = join(dir, "test.db");
-    process.env.DATABASE_URL = `file:${dbPath}`;
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
     process.env.JWT_SECRET = "test-secret";
     process.env.MFA_ENABLED = "false";
     execSync(
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+        env: { ...process.env, DATABASE_URL: testDb.databaseUrl },
         stdio: "pipe",
       }
     );
@@ -43,11 +44,12 @@ describe("GET /templates/:productGroup (JWT-protected, F3)", () => {
       roles: ["admin"],
       mfaCompleted: true,
     });
-  }, 30000);
+  }, 120000);
 
   afterAll(async () => {
     await app.close();
     await sleep(300);
+    await teardownTestDatabase(testDb);
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   });
 

@@ -1,35 +1,26 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { execSync } from "node:child_process";
-import { setTimeout as sleep } from "node:timers/promises";
 import { PrismaClient } from "@prisma/client";
-import { PrismaLibSQL } from "@prisma/adapter-libsql";
+import { setTimeout as sleep } from "node:timers/promises";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./test-harness";
 
 describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
-  let dir: string;
   let prisma: PrismaClient;
+  let testDb: TestDb;
 
   beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), "t3catalog-"));
-    const dbPath = join(dir, "test.db");
-    const url = `file:${dbPath}`;
-    execSync(
-      "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
-      {
-        cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: url },
-        stdio: "pipe",
-      }
-    );
-    prisma = new PrismaClient({ adapter: new PrismaLibSQL({ url }) });
-  }, 30000);
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
+    prisma = new PrismaClient();
+  }, 120000);
 
   afterAll(async () => {
     await prisma.$disconnect();
     await sleep(300);
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    await teardownTestDatabase(testDb);
   });
 
   it("creates ProductCard with tenant_id, version, status, attributes Json", async () => {

@@ -1,38 +1,28 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { PrismaClient } from "@prisma/client";
-import { PrismaLibSQL } from "@prisma/adapter-libsql";
+import { setTimeout as sleep } from "node:timers/promises";
 import { OutboxPoller } from "./outbox.poller";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./test-harness";
 
 describe("OutboxPoller", () => {
-  let dir: string;
   let prisma: PrismaClient;
+  let testDb: TestDb;
 
   beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), "outbox-test-"));
-    const dbPath = join(dir, "outbox.db");
-    const adapter = new PrismaLibSQL({ url: `file:${dbPath}` });
-    prisma = new PrismaClient({ adapter });
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE "Outbox" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "version" INTEGER NOT NULL DEFAULT 0,
-        "aggregate" TEXT NOT NULL,
-        "payload" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'PENDING',
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "processedAt" DATETIME
-      )
-    `);
-  });
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
+    prisma = new PrismaClient();
+    // baseline migration already created the Outbox table via harness
+  }, 120000);
 
   afterAll(async () => {
     await prisma.$disconnect();
     await sleep(300);
-    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    await teardownTestDatabase(testDb);
   });
 
   it("processes pending outbox records in-process", async () => {

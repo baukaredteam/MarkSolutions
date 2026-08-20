@@ -1,57 +1,86 @@
-# Migration Operations
+# Migration Operations (W0-02R)
 
-## Commands reference
+## Canonical schema
 
-### Development (SQLite)
+`packages/db/prisma/schema.prisma` is the **single canonical schema** (`provider = "postgresql"`).
+SQLite is no longer a runtime option (ADR-015 superseded). There is exactly ONE generated
+Prisma client (`node_modules/.prisma/client`) targeting PostgreSQL. The historical SQLite
+migrations are archived read-only under `packages/db/prisma/migrations_sqlite_archived/` and
+are not used by any command.
 
-| Command               | Purpose                                    | Lock file                                 |
-| --------------------- | ------------------------------------------ | ----------------------------------------- |
-| `npm run db:generate` | Generate Prisma client for SQLite          | `migrations/migration_lock.toml` (sqlite) |
-| `npm run db:migrate`  | Create + apply new migration (interactive) | `migrations/migration_lock.toml` (sqlite) |
-| `npm run db:seed`     | Seed demo data into SQLite dev.db          | —                                         |
+## Command reference
 
-### Production/Stage (PostgreSQL)
+### Generate (one canonical client)
 
-| Command                        | Purpose                                       | Lock file                                        |
-| ------------------------------ | --------------------------------------------- | ------------------------------------------------ |
-| `npm run db:generate:pg`       | Generate Prisma client for PostgreSQL         | `pg/migrations/migration_lock.toml` (postgresql) |
-| `npm run db:migrate:pg`        | Create new PG migration (interactive)         | `pg/migrations/migration_lock.toml` (postgresql) |
-| `npm run db:migrate:deploy:pg` | Apply pending PG migrations (non-interactive) | `pg/migrations/migration_lock.toml` (postgresql) |
-| `npm run db:migrate:status:pg` | Check PG migration status                     | `pg/migrations/migration_lock.toml` (postgresql) |
+| Command               | Purpose                               |
+| --------------------- | ------------------------------------- |
+| `npm run db:generate` | Generate the PostgreSQL Prisma client |
 
-### Bootstrap & validation
+### Development (dev-only, guarded)
 
-| Command                  | Purpose                                                                      |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `npm run db:bootstrap`   | Full dev bootstrap: install → generate → migrate → seed → build shared       |
-| `npm run db:validate:pg` | Validate PG schema compiles and migrations are up to date                    |
-| `npm run verify`         | Full quality gate: generate → build → typecheck → lint → secret-scan → tests |
+| Command                    | Purpose                                                                    | Guard                                            |
+| -------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------ |
+| `npm run db:migrate:dev`   | Create + apply a new migration (`migrate dev`)                             | blocked in stage/prod by `scripts/db-guard.mjs`  |
+| `npm run db:seed`          | Seed demo data into the configured PostgreSQL DB                           | blocked in production unless `SEED_ENABLED=true` |
+| `npm run db:bootstrap:dev` | Full dev bootstrap: install → generate → migrate:dev → seed → build shared | inherits above guards                            |
 
-### Dangerous commands (NEVER in production)
+### Production / Stage (deploy path only)
 
-| Command                    | Purpose                                                    |
-| -------------------------- | ---------------------------------------------------------- |
-| `npm run db:migrate`       | Interactive migration — dev only, generates new migrations |
-| `npx prisma migrate reset` | Drops and recreates entire database — dev only             |
-| `npx prisma db push`       | Push schema without migration — dev only                   |
+| Command                     | Purpose                                      |
+| --------------------------- | -------------------------------------------- |
+| `npm run db:migrate:deploy` | Apply committed migrations non-interactively |
+| `npm run db:migrate:status` | Check migration status                       |
 
-## Rollback policy
+### Validation & quality gate
 
-1. **Never edit committed migrations.** If a migration causes issues, create a new corrective migration.
-2. **Forward-fix only.** If a column was added incorrectly, add a new migration that drops/recreates it.
-3. **Data backfill rollback:** If a backfill migration corrupted data, restore from backup before the migration. The migration itself cannot be "undone" — a new reverse migration is needed.
-4. **Emergency:** If the production database is corrupted, restore from the last known-good backup and replay migrations from that point.
+| Command               | Purpose                                                                                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run db:validate` | Self-contained PG check: requires `TEST_DATABASE_URL`, creates an isolated schema, runs `migrate deploy` + `migrate status` + a capability assertion, then drops **only** that schema. |
+| `npm run verify`      | Full gate: generate → build shared → typecheck → lint → secret-scan → tests                                                                                                            |
 
-## Expand/contract policy
+## Test database safety policy
 
-1. **Expand:** Add new columns/tables as nullable or with defaults. Existing code continues to work.
-2. **Deploy:** Release the code that reads/writes the new columns.
-3. **Contract:** In a subsequent migration, add constraints (NOT NULL, UNIQUE) after confirming no legacy data exists.
+- All integration/API tests run against a **disposable PostgreSQL 16** database via the shared
+  harness (`apps/api/test/harness.ts`, `packages/db/src/test-harness.ts`).
+- The harness reads **`TEST_DATABASE_URL` only** (never ambient `DATABASE_URL`). It rejects
+  `file:`, non-PostgreSQL URLs, and URLs without the `markflow_test` marker (unless
+  `ALLOW_TEST_DB_RESET=true`).
+- Each spec gets an **isolated schema** (`s_<random>`); cleanup drops only that schema.
+- No spec may mutate `DATABASE_URL` outside the harness `beforeAll`.
 
-## Backup/restore prerequisite
+## Dangerous commands (NEVER in stage/production)
 
-Before applying any migration to production:
+| Command                    | Why blocked                                                          |
+| -------------------------- | -------------------------------------------------------------------- |
+| `npm run db:migrate:dev`   | Generates new migrations; guarded to dev/test only.                  |
+| `npm run db:seed`          | Writes demo data; guarded (production requires `SEED_ENABLED=true`). |
+| `npx prisma migrate reset` | Drops and recreates the entire database.                             |
+| `npx prisma db push`       | Schema push without migration history.                               |
 
-1. Verify backup exists and is restorable
-2. Test restore on a disposable database
-3. Document the migration's expected effect on query performance
+`db-guard.mjs` enforces the stage/production rejection for `migrate-dev` and `seed`.
+
+## Rollback / forward-fix policy
+
+1. **Never edit committed migrations.** If a migration is wrong, add a new corrective migration.
+2. **Forward-fix only.** A wrong column → new migration that corrects it.
+3. **No rollback script.** A new reverse migration is required; committed history is immutable.
+4. **Emergency:** restore from the last known-good backup and replay migrations from that point.
+   (Backup/restore drill is a separate W0 work package — not in W0-02R scope.)
+
+## Expand / contract
+
+1. **Expand:** add nullable columns / new tables with defaults; existing code keeps working.
+2. **Deploy:** release code reading/writing the new columns.
+3. **Contract:** in a later migration, add constraints (NOT NULL, UNIQUE) after confirming no
+   legacy data violates them.
+
+## Adding a new migration (PostgreSQL)
+
+```bash
+# on a disposable/local PostgreSQL 16:
+TEST_DATABASE_URL=postgresql://markflow:markflow@localhost:5432/markflow_test \
+  npm run db:migrate:dev
+# → commits a new SQL file under packages/db/prisma/migrations/
+```
+
+Do **not** edit `migration_lock.toml` or prior migration SQL.

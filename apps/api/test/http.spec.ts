@@ -10,10 +10,12 @@ import { AppModule } from "../src/app.module";
 describe("HTTP seams (health + tenant-guard)", () => {
   let app: INestApplication;
   let dir: string;
+  let testDb: TestDb;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "api-test-"));
-    process.env.DATABASE_URL = `file:${join(dir, "test.db")}`;
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
     process.env.STORAGE_DIR = join(dir, "storage");
 
     const module: TestingModule = await Test.createTestingModule({
@@ -25,6 +27,7 @@ describe("HTTP seams (health + tenant-guard)", () => {
 
   afterAll(async () => {
     await app.close();
+    await teardownTestDatabase(testDb);
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   });
 

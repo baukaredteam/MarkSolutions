@@ -1,0 +1,18 @@
+[
+  {
+    "package": "deepmerge-ts",
+    "advisory": "GHSA-ggr8-5vv4-36mx",
+    "severity": "high",
+    "reason": "Transitive DEV-ONLY dependency of @prisma/config (prisma CLI). Not present in the production runtime bundle. No production code path merges untrusted recursive object graphs.",
+    "owner": "security@markflow / DBRE",
+    "expires": "2026-11-30"
+  },
+  {
+    "package": "nanoid",
+    "advisory": "GHSA-2v37-7h3g-55p8",
+    "severity": "high",
+    "reason": "Transitive DEV/TEST dependency (vite/vitest tooling). Not in production runtime. Custom zero-size generators are never used.",
+    "owner": "security@markflow / DBRE",
+    "expires": "2026-11-30"
+  }
+]

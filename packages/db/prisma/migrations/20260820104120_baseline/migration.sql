@@ -484,6 +484,10 @@ CREATE UNIQUE INDEX "Application_bin_key" ON "Application"("bin");
 -- CreateIndex
 CREATE INDEX "ProductCard_tenantId_gtin_idx" ON "ProductCard"("tenantId", "gtin");
 
+-- CreateIndex (F1, ADR-016): partial unique — same tenant+gtin allowed only when ARCHIVED.
+-- Ported from SQLite history t3_fix_partial_unique (not expressible via Prisma @@unique).
+CREATE UNIQUE INDEX "uniq_card_tenant_gtin_active" ON "ProductCard" ("tenantId", "gtin") WHERE "status" != 'ARCHIVED';
+
 -- CreateIndex
 CREATE UNIQUE INDEX "GtinCache_gtin_key" ON "GtinCache"("gtin");
 

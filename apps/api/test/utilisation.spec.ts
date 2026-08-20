@@ -10,6 +10,11 @@ import { execSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma.service";
+import {
+  createTestDatabase,
+  teardownTestDatabase,
+  type TestDb,
+} from "./harness";
 import { BillingService } from "../src/billing.service";
 
 process.env.SIM_MPT_EMISSION_MS = "100";
@@ -24,14 +29,15 @@ describe("utilisation (W3, п.26)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let dir: string;
+  let testDb: TestDb;
   let tenantId: string;
   let token: string;
   let opToken: string;
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "util-"));
-    const dbPath = join(dir, "test.db");
-    process.env.DATABASE_URL = `file:${dbPath}`;
+    testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
     process.env.JWT_SECRET = "test-secret";
     process.env.MFA_ENABLED = "false";
     process.env.DEMO_ENABLED = "true";
@@ -39,7 +45,7 @@ describe("utilisation (W3, п.26)", () => {
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {
         cwd: process.cwd(),
-        env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
+        env: { ...process.env, DATABASE_URL: testDb.databaseUrl },
         stdio: "pipe",
       }
     );
@@ -90,11 +96,12 @@ describe("utilisation (W3, п.26)", () => {
       roles: ["operator"],
       mfaCompleted: true,
     });
-  }, 30000);
+  }, 120000);
 
   afterAll(async () => {
     await app.close();
     await sleep(300);
+    await teardownTestDatabase(testDb);
     await rm(dir, { recursive: true, force: true }).catch(() => {});
     await rm(join(process.cwd(), "tmp-kms-test"), {
       recursive: true,

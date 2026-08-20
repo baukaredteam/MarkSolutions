@@ -26,8 +26,8 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://markflow:markflow@localhost:5432/markflow
-      TEST_DATABASE_URL: postgresql://markflow:markflow@localhost:5432/markflow_test_w02
+      TEST_DATABASE_URL: postgresql://markflow:markflow@localhost:5432/markflow_test
+      DATABASE_URL: postgresql://markflow:markflow@localhost:5432/markflow_test
       NODE_ENV: test
       JWT_SECRET: test-secret-for-ci-pipeline-only-20-chars
       ADAPTERS_MPT: mock
@@ -50,8 +50,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Generate SQLite client (dev)
-        run: npx prisma generate --schema packages/db/prisma/schema.prisma
+      # W0-02R: ONE canonical Prisma client (PostgreSQL). No second provider
+      # client is generated, so the generate/test overwrite blocker is gone.
+      - name: Generate Prisma client (PostgreSQL)
+        run: npm run db:generate
 
       - name: Build shared
         run: npm run build:cjs --workspace @markflow/shared
@@ -65,13 +67,18 @@ jobs:
       - name: Secret scan
         run: npm run secret-scan
 
+      # Self-contained migration validation on a disposable PG resource:
+      # deploy + status + capability assertion + cleanup.
       - name: Validate PG migration chain
-        run: |
-          npx prisma generate --schema packages/db/prisma/pg/schema.prisma
-          npx prisma migrate deploy --schema packages/db/prisma/pg/schema.prisma
+        run: npm run db:validate
 
+      # All integration/API tests run against disposable PG (isolated schemas
+      # created by the shared test harness from TEST_DATABASE_URL).
       - name: Run tests
         run: npm test
 
+      # Strict dependency audit — fail closed on high/critical that are NOT in
+      # the documented exception register (scripts/audit-exceptions.json).
+      # Never use `|| true`.
       - name: Dependency audit
-        run: npm audit --audit-level=high || true
+        run: node scripts/audit-policy.mjs
