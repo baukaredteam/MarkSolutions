@@ -2,64 +2,24 @@ import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
-// W0-02R: shared test database harness for packages/db specs.
+// W0-02R-final2: shared test database harness for packages/db specs.
 // Mirrors apps/api/test/harness.ts. All specs run against a disposable
 // PostgreSQL 16 database (isolated schema under TEST_DATABASE_URL).
-// Uses the same validation logic as scripts/db-url-validator.mjs.
+// Uses the shared URL validator (scripts/db-url-validator.mjs) via dynamic import.
 
 const MIGRATION_SCHEMA = "packages/db/prisma/schema.prisma";
-
-const APPROVED_DATABASES = ["markflow_test"];
-const BLOCKED_MODES = ["production", "stage"];
-
-export function requireTestDatabaseUrl(): string {
-  const url = process.env.TEST_DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      "TEST_DATABASE_URL is required. Set it to a PostgreSQL URL with an approved test database name."
-    );
-  }
-  const mode = (
-    process.env.NODE_ENV ??
-    process.env.APP_ENV ??
-    ""
-  ).toLowerCase();
-  if (BLOCKED_MODES.includes(mode)) {
-    throw new Error(`TEST_DATABASE_URL must not be used in ${mode} mode.`);
-  }
-  if (url.startsWith("file:")) {
-    throw new Error(
-      "TEST_DATABASE_URL must be a PostgreSQL connection string, not file:"
-    );
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("TEST_DATABASE_URL is not a valid URL");
-  }
-  if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") {
-    throw new Error(
-      `TEST_DATABASE_URL must use postgresql:// or postgres:// protocol, got ${parsed.protocol}`
-    );
-  }
-  const dbName = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  if (!APPROVED_DATABASES.includes(dbName)) {
-    throw new Error(
-      `TEST_DATABASE_URL database name must be exactly one of: ${APPROVED_DATABASES.join(", ")}. Got: "${dbName}"`
-    );
-  }
-  if (parsed.searchParams.has("schema")) {
-    throw new Error("TEST_DATABASE_URL must not contain a ?schema= parameter.");
-  }
-  return url;
-}
 
 export interface TestDb {
   schema: string;
   databaseUrl: string;
   baseUrl: string;
   cleanup: () => Promise<void>;
+}
+
+export async function requireTestDatabaseUrl(): Promise<string> {
+  const { validateTestDatabaseUrl } =
+    await import("../../../scripts/db-url-validator.mjs");
+  return validateTestDatabaseUrl(process.env.TEST_DATABASE_URL);
 }
 
 function withSchema(baseUrl: string, schema: string): string {
@@ -78,7 +38,7 @@ async function dropSchema(baseUrl: string, schema: string): Promise<void> {
 }
 
 export async function createTestDatabase(): Promise<TestDb> {
-  const baseUrl = requireTestDatabaseUrl();
+  const baseUrl = await requireTestDatabaseUrl();
   const schema = `s_${randomBytes(10).toString("hex")}`;
   let schemaCreated = false;
 

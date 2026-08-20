@@ -18,8 +18,9 @@ export function validateTestDatabaseUrl(url, env = process.env) {
     );
   }
 
-  // Reject stage/production regardless of URL
-  const mode = (env.NODE_ENV ?? env.APP_ENV ?? "").toLowerCase();
+  // Reject stage/production regardless of URL.
+  // Use || (not ??) so empty/whitespace NODE_ENV falls through to APP_ENV.
+  const mode = (env.NODE_ENV?.trim() || env.APP_ENV?.trim() || "").toLowerCase();
   if (BLOCKED_MODES.includes(mode)) {
     throw new Error(
       `TEST_DATABASE_URL must not be used in ${mode} mode. Tests use disposable schemas; stage/production must use migrate deploy only.`
