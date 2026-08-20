@@ -42,3 +42,20 @@ Five canonical roles, each label string equal to its name: `needs-triage`, `need
 ### Domain docs
 
 Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## 4. Production-gates
+
+- Канонический production-план: `docs/production/ROADMAP.md`; WB/поставщик-импорт: `docs/production/WB_DOCUMENT_IMPORT_CONTRACT.md`; task-prompts: `docs/production/OPENCODE_PROMPTS.md`.
+- Маршрут/пункт меню не считается реализацией: нужны domain service, migration, API-контракт, real UI state, audit, background job при необходимости и AT-тесты.
+- В production запрещены StubPage, `return { ok: true }` вместо бизнес-команды, hardcoded tenant, mock-адаптеры, FileKMS, LocalStorage, `dev-secret` и прямые vendor-вызовы из React.
+- Внешние команды создают command + outbox; только Gateway/worker вызывает ИС МПТ, 1ecom, GS1, НКТ/КМТ, банк, ERP/WMS, ОФД, ЭДО и маркетплейсы.
+- Timeout после изменяющего вызова ИС МПТ = `UNKNOWN_RESULT → RECONCILIATION`; повторный POST до сверки запрещен.
+- Массовая операция обязана иметь server-side selection, preview/preflight, async job, partial result, report ошибок, retry только проблемной части, explicit confirmation и audit.
+- В STAGE используется только `test.markirovka.kz`. Сначала read-only smoke; создание заказа, документа, печать, резерв или списание выполняются только по утвержденному кейсу и с явным человеческим подтверждением.
+
+## 5. Completion evidence
+
+- Перед финишем проверить graph affected path: UI/API → service → Prisma → outbox/job → adapter → audit/tests.
+- Обязательно: targeted tests, `npm run lint`, `npm run typecheck`, Prisma generation/validation, migration check, secret scan и независимый code-review.
+- Если gate не зеленый, статус — `ready-for-human` или `needs-info`, а не «готово».
+- В итог задачи записывать: измененные контракты, миграции, разрешенные/неразрешенные риски, exact команды проверок и их вывод.
