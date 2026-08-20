@@ -42,11 +42,21 @@ are not used by any command.
 
 - All integration/API tests run against a **disposable PostgreSQL 16** database via the shared
   harness (`apps/api/test/harness.ts`, `packages/db/src/test-harness.ts`).
-- The harness reads **`TEST_DATABASE_URL` only** (never ambient `DATABASE_URL`). It rejects
-  `file:`, non-PostgreSQL URLs, and URLs without the `markflow_test` marker (unless
-  `ALLOW_TEST_DB_RESET=true`).
-- Each spec gets an **isolated schema** (`s_<random>`); cleanup drops only that schema.
+- The harness uses a **shared URL validator** (`scripts/db-url-validator.mjs`) as single source
+  of truth. It parses the URL, validates protocol, exact-matches the database name against
+  approved test databases (`markflow_test`), rejects stage/production `NODE_ENV`, and rejects
+  `?schema=` overrides.
+- Each spec gets an **isolated schema** (`s_<random hex>`); cleanup drops only that schema.
+  The harness is **finally-safe**: if migration fails after schema creation, the schema is
+  dropped before re-throwing.
 - No spec may mutate `DATABASE_URL` outside the harness `beforeAll`.
+
+## Order number allocation
+
+Order numbers use a **PostgreSQL-owned sequence** (`order_number_seq`), not application-level
+`MAX(number)+1`. This eliminates P2002 unique constraint conflicts under concurrent inserts.
+The sequence is created by migration `20260820120000_order_number_sequence` and initialized
+to `MAX(number)+1` from existing data. Future order creates use `nextval()` atomically.
 
 ## Dangerous commands (NEVER in stage/production)
 
@@ -74,7 +84,30 @@ are not used by any command.
 3. **Contract:** in a later migration, add constraints (NOT NULL, UNIQUE) after confirming no
    legacy data violates them.
 
-## Adding a new migration (PostgreSQL)
+## Test lifecycle (local development)
+
+### Prerequisites
+
+PostgreSQL 16 running locally. Supported options:
+
+- **Docker (recommended):** `docker run -d --name markflow-pg -e POSTGRES_USER=markflow -e POSTGRES_PASSWORD=markflow -e POSTGRES_DB=markflow_test -p 5432:5432 postgres:16`
+- **Native install:** PostgreSQL 16 with `markflow` user and `markflow_test` database.
+
+### Up
+
+```bash
+# validate migration chain against disposable schema
+TEST_DATABASE_URL=postgresql://markflow:markflow@localhost:5432/markflow_test npm run db:validate
+
+# run full test suite (all specs use isolated schemas, auto-cleaned)
+TEST_DATABASE_URL=postgresql://markflow:markflow@localhost:5432/markflow_test npm test
+```
+
+### Down
+
+No manual cleanup needed. The test harness creates isolated schemas (`s_<random>`) and drops them in `afterAll`. The base `markflow_test` database remains intact.
+
+### Adding a new migration (PostgreSQL)
 
 ```bash
 # on a disposable/local PostgreSQL 16:

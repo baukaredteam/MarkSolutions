@@ -3,6 +3,9 @@
 // Creates the `markflow_test` base database that the test harness uses to
 // spawn isolated schemas. Keeps running until killed (Ctrl-C / process exit).
 
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
 import EmbeddedPostgres from "embedded-postgres";
 
 const PORT = Number(process.env.TEST_PG_PORT ?? 5432);
@@ -10,11 +13,14 @@ const USER = process.env.TEST_PG_USER ?? "markflow";
 const PASS = process.env.TEST_PG_PASSWORD ?? "markflow";
 const BASE_DB = process.env.TEST_PG_BASE_DB ?? "markflow_test";
 
+// W0-02R: use a unique OS-temp directory outside the repo; clean on exit.
+const pgDataDir = mkdtempSync(join(tmpdir(), "embedded-pg-"));
+
 const pg = new EmbeddedPostgres({
   user: USER,
   password: PASS,
   port: PORT,
-  databaseDir: ".pgdata",
+  databaseDir: pgDataDir,
   persistent: false,
 });
 
@@ -40,6 +46,9 @@ main().catch((e) => {
 async function shutdown() {
   try {
     await pg.stop();
+  } catch {}
+  try {
+    rmSync(pgDataDir, { recursive: true, force: true });
   } catch {}
   process.exit(0);
 }

@@ -8,6 +8,22 @@
     "expires": "2026-11-30"
   },
   {
+    "package": "@prisma/config",
+    "advisory": "GHSA-ggr8-5vv4-36mx",
+    "severity": "high",
+    "reason": "Depends on vulnerable deepmerge-ts. DEV-ONLY (prisma CLI tooling). Not in production runtime bundle.",
+    "owner": "security@markflow / DBRE",
+    "expires": "2026-11-30"
+  },
+  {
+    "package": "prisma",
+    "advisory": "GHSA-ggr8-5vv4-36mx",
+    "severity": "high",
+    "reason": "Depends on vulnerable @prisma/config → deepmerge-ts. DEV-ONLY (prisma CLI). Not in production runtime bundle.",
+    "owner": "security@markflow / DBRE",
+    "expires": "2026-11-30"
+  },
+  {
     "package": "nanoid",
     "advisory": "GHSA-2v37-7h3g-55p8",
     "severity": "high",
