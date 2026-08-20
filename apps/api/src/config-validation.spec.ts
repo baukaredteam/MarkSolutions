@@ -44,7 +44,7 @@ describe("validateProductionConfig", () => {
         ConfigValidationError
       );
       expect(() => validateProductionConfig(env)).toThrow(
-        /dev-secret.*production/
+        /dev-secret.*unique secret/
       );
     });
 

@@ -1,8 +1,9 @@
-import { Controller, Get, Module } from "@nestjs/common";
+import { Controller, Get, Module, Res, HttpCode } from "@nestjs/common";
 import { APP_GUARD, APP_FILTER } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
+import type { Response as ExpressResponse } from "express";
 import { PrismaService } from "./prisma.service";
 import { AllExceptionsFilter } from "./exception.filter";
 import { TenantGuard, RolesGuard, Roles } from "./guards";
@@ -62,53 +63,65 @@ import { InvoiceService } from "./invoice.service";
 import { CodeLookupService } from "./code-lookup.service";
 import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
+import { sanitizeHealthError } from "./config-validation";
 import { join } from "node:path";
+
+// W0-01b: Liveness = "process is alive" (always 200, never leaks internals).
+// Readiness = "dependencies are reachable" (503 if any critical dep fails).
+// Separated per AGENTS.md §4 and production readiness principles.
 
 @Controller("health")
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Liveness probe — always 200 if process is alive; never expose error details.
   @Public()
   @Get()
   async health() {
     let db = "ok";
-    let detail = "";
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-    } catch (err) {
+    } catch {
       db = "error";
-      detail = String((err as Error).message).slice(0, 120);
     }
-    return { status: "ok", db, detail };
+    // Liveness: return error state but NEVER the raw error message or connection string.
+    return { status: db === "ok" ? "ok" : "degraded", db };
   }
 
-  // W0-05: readiness probe — fails if migration is stale, adapter is demo-only,
-  // or the process was started with an invalid production configuration.
+  // Readiness probe — HTTP 503 if any critical dependency is unavailable.
   @Public()
+  @HttpCode(200)
   @Get("ready")
-  async ready() {
+  async ready(@Res() res: ExpressResponse) {
     const env = process.env as Record<string, string>;
     const mode = env.NODE_ENV ?? "";
-    const checks: { name: string; status: string }[] = [];
+    const checks: { name: string; status: string; message?: string }[] = [];
 
-    // 1. Database connection
+    // 1. Database — must be reachable
     try {
       await this.prisma.$queryRaw`SELECT 1`;
       checks.push({ name: "database", status: "ok" });
-    } catch {
-      checks.push({ name: "database", status: "error" });
+    } catch (e) {
+      checks.push({
+        name: "database",
+        status: "error",
+        message: sanitizeHealthError(String((e as Error).message)),
+      });
     }
 
-    // 2. Migration staleness — attempt to query an index-backed column; if the schema
-    //    is behind (missing table/column), the raw query will fail.
+    // 2. Migration freshness — schema must include current tables
     try {
       await this.prisma.$queryRaw`SELECT 1 FROM "Outbox" LIMIT 1`;
       checks.push({ name: "migration", status: "ok" });
-    } catch {
-      checks.push({ name: "migration", status: "stale" });
+    } catch (e) {
+      checks.push({
+        name: "migration",
+        status: "stale",
+        message: sanitizeHealthError(String((e as Error).message)),
+      });
     }
 
-    // 3. Adapter mode sanity — list active adapter modes for auditability
+    // 3. Adapter modes — read from env (config source)
     const adapterMode = (name: string) =>
       env[`ADAPTERS_${name}`] ?? env[`adapters_${name}`] ?? "mock";
     checks.push({
@@ -117,19 +130,16 @@ export class HealthController {
     });
 
     // 4. KMS mode
-    checks.push({
-      name: "kms",
-      status: env.KMS_PROFILE ?? "file",
-    });
+    checks.push({ name: "kms", status: env.KMS_PROFILE ?? "file" });
 
-    const allOk = checks.every(
-      (c) => c.status === "ok" || c.name !== "database"
+    const failed = checks.some(
+      (c) => c.status === "error" || c.status === "stale"
     );
-    return {
-      status: allOk ? "ok" : "degraded",
+    res.status(failed ? 503 : 200).json({
+      status: failed ? "not ready" : "ready",
       mode: mode || "unset",
       checks,
-    };
+    });
   }
 }
 
