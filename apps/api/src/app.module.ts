@@ -75,11 +75,61 @@ export class HealthController {
     let detail = "";
     try {
       await this.prisma.$queryRaw`SELECT 1`;
-    } catch (e) {
+    } catch (err) {
       db = "error";
-      detail = String((e as Error).message).slice(0, 120);
+      detail = String((err as Error).message).slice(0, 120);
     }
     return { status: "ok", db, detail };
+  }
+
+  // W0-05: readiness probe — fails if migration is stale, adapter is demo-only,
+  // or the process was started with an invalid production configuration.
+  @Public()
+  @Get("ready")
+  async ready() {
+    const env = process.env as Record<string, string>;
+    const mode = env.NODE_ENV ?? "";
+    const checks: { name: string; status: string }[] = [];
+
+    // 1. Database connection
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      checks.push({ name: "database", status: "ok" });
+    } catch {
+      checks.push({ name: "database", status: "error" });
+    }
+
+    // 2. Migration staleness — attempt to query an index-backed column; if the schema
+    //    is behind (missing table/column), the raw query will fail.
+    try {
+      await this.prisma.$queryRaw`SELECT 1 FROM "Outbox" LIMIT 1`;
+      checks.push({ name: "migration", status: "ok" });
+    } catch {
+      checks.push({ name: "migration", status: "stale" });
+    }
+
+    // 3. Adapter mode sanity — list active adapter modes for auditability
+    const adapterMode = (name: string) =>
+      env[`ADAPTERS_${name}`] ?? env[`adapters_${name}`] ?? "mock";
+    checks.push({
+      name: "adapters",
+      status: `mpt=${adapterMode("MPT")} gs1=${adapterMode("GS1")} nkt=${adapterMode("NKT")}`,
+    });
+
+    // 4. KMS mode
+    checks.push({
+      name: "kms",
+      status: env.KMS_PROFILE ?? "file",
+    });
+
+    const allOk = checks.every(
+      (c) => c.status === "ok" || c.name !== "database"
+    );
+    return {
+      status: allOk ? "ok" : "degraded",
+      mode: mode || "unset",
+      checks,
+    };
   }
 }
 

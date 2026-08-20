@@ -22,7 +22,11 @@ try {
 }
 
 const hits = [];
-const ALLOWLIST = [".env.example"]; // example env file is committed by design
+const ALLOWLIST = [
+  ".env.example", // example env file is committed by design
+  "apps/api/src/config-validation.ts", // validates DB URL format (not actual creds)
+  "apps/api/src/config-validation.spec.ts", // test fixtures for validation logic
+];
 for (const file of files) {
   if (ALLOWLIST.includes(file)) continue;
   let content;
