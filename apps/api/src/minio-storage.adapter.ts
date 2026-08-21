@@ -8,8 +8,8 @@ import {
 import { randomUUID } from "node:crypto";
 
 // W0-03a: MinIO S3-compatible storage adapter.
-// Uses AWS SDK S3 client for object storage operations.
-// Config: endpoint, credentials, bucket, path-style, timeout, tenant prefix.
+// Tenant-scoped: write/read require validated tenantId.
+// Object keys: {tenantId}/{server-uuid} — callers cannot choose arbitrary S3 keys.
 
 export interface MinioStorageConfig {
   endpoint: string;
@@ -18,7 +18,7 @@ export interface MinioStorageConfig {
   bucket: string;
   useSsl: boolean;
   timeoutMs: number;
-  tenantPrefix: string; // e.g. "markflow-local"
+  tenantPrefix: string;
 }
 
 @Injectable()
@@ -47,15 +47,14 @@ export class MinioStorageAdapter implements StorageAdapter {
         accessKeyId: this.config.accessKey,
         secretAccessKey: this.config.secretKey,
       },
-      forcePathStyle: true, // MinIO requires path-style
-      requestHandler: {
-        requestTimeout: this.config.timeoutMs,
-      },
+      forcePathStyle: true,
+      requestHandler: { requestTimeout: this.config.timeoutMs },
     });
   }
 
-  async write(data: Buffer): Promise<string> {
-    const key = `${this.config.tenantPrefix}/${randomUUID()}`;
+  async write(tenantId: string, data: Buffer): Promise<string> {
+    this.validateTenantId(tenantId);
+    const key = `${tenantId}/${randomUUID()}`;
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.config.bucket,
@@ -67,33 +66,35 @@ export class MinioStorageAdapter implements StorageAdapter {
     return key;
   }
 
-  async read(key: string): Promise<Buffer> {
-    this.validateKey(key);
+  async read(tenantId: string, key: string): Promise<Buffer> {
+    this.validateTenantId(tenantId);
+    this.validateKey(key, tenantId);
     const response = await this.client.send(
-      new GetObjectCommand({
-        Bucket: this.config.bucket,
-        Key: key,
-      })
+      new GetObjectCommand({ Bucket: this.config.bucket, Key: key })
     );
-    // transformToByteArray is available on the SDK stream type
     const bytes = await (response.Body as any).transformToByteArray();
     return Buffer.from(bytes);
   }
 
-  private validateKey(key: string): void {
+  private validateTenantId(tenantId: string): void {
+    if (!tenantId || typeof tenantId !== "string" || tenantId.trim() === "") {
+      throw new Error("Tenant ID is required and must be non-empty");
+    }
     if (
-      !key ||
-      key.includes("..") ||
-      key.includes("\\") ||
-      key.startsWith(".")
+      tenantId.includes("..") ||
+      tenantId.includes("/") ||
+      tenantId.includes("\\")
     ) {
+      throw new Error(`Invalid tenant ID: ${tenantId}`);
+    }
+  }
+
+  private validateKey(key: string, tenantId: string): void {
+    if (!key || key.includes("..") || key.includes("\\")) {
       throw new Error(`Invalid storage key: ${key}`);
     }
-    // Tenant prefix validation: key must start with the configured prefix
-    if (!key.startsWith(`${this.config.tenantPrefix}/`)) {
-      throw new Error(
-        `Storage key must start with tenant prefix '${this.config.tenantPrefix}/'`
-      );
+    if (!key.startsWith(`${tenantId}/`)) {
+      throw new Error(`Storage key must belong to tenant '${tenantId}'`);
     }
   }
 }

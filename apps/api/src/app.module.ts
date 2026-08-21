@@ -165,11 +165,11 @@ export class AdminController {
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.registerAsync({
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>("JWT_SECRET"),
-        signOptions: { expiresIn: "1h" },
+      useFactory: (cfg: AppConfig) => ({
+        secret: cfg.jwt.secret,
+        signOptions: { expiresIn: cfg.jwt.expiresIn as any },
       }),
-      inject: [ConfigService],
+      inject: [APP_CONFIG],
     }),
   ],
   controllers: [

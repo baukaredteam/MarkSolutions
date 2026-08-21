@@ -3,21 +3,21 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface StorageAdapter {
-  write(data: Buffer): Promise<string>;
-  read(key: string): Promise<Buffer>;
+  write(tenantId: string, data: Buffer): Promise<string>;
+  read(tenantId: string, key: string): Promise<Buffer>;
 }
 
 export class LocalStorageAdapter implements StorageAdapter {
   constructor(private readonly root: string) {}
 
-  async write(data: Buffer): Promise<string> {
+  async write(_tenantId: string, data: Buffer): Promise<string> {
     await mkdir(this.root, { recursive: true });
     const key = randomUUID();
     await writeFile(join(this.root, key), data);
     return key;
   }
 
-  async read(key: string): Promise<Buffer> {
+  async read(_tenantId: string, key: string): Promise<Buffer> {
     const safe = this.sanitize(key);
     return readFile(join(this.root, safe));
   }
