@@ -24,3 +24,5 @@ kms-keys/
 .pgdata/
 pgdata/
 *.pid
+.env.local
+infra/local/openbao-data/
