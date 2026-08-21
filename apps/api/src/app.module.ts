@@ -61,10 +61,11 @@ import { IntegrationsController } from "./integrations.controller";
 import { InvoiceController } from "./invoice.controller";
 import { InvoiceService } from "./invoice.service";
 import { CodeLookupService } from "./code-lookup.service";
-import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
+import { FileKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
+import { OpenBaoTransitKmsAdapter } from "./openbao-kms.adapter";
+import { MinioStorageAdapter } from "./minio-storage.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
 import { sanitizeHealthError } from "./config-validation";
-import { join } from "node:path";
 
 // W0-01b: Liveness = "process is alive" (always 200, never leaks internals).
 // Readiness = "dependencies are reachable" (503 if any critical dep fails).
@@ -215,17 +216,41 @@ export class AdminController {
     CodeLookupService,
     {
       provide: KMS_ADAPTER,
-      useFactory: () =>
-        process.env.KMS_PROFILE === "openbao"
-          ? new VaultKmsAdapter()
-          : new FileKmsAdapter(),
+      useFactory: (config: ConfigService) => {
+        const profile = config.get<string>("KMS_PROFILE") ?? "file";
+        if (profile === "openbao") {
+          return new OpenBaoTransitKmsAdapter({
+            baseUrl:
+              config.get<string>("KMS_OPENBAO_ADDR") ?? "http://127.0.0.1:8200",
+            token: config.get<string>("KMS_OPENBAO_TOKEN") ?? "",
+            mount: config.get<string>("KMS_OPENBAO_MOUNT") ?? "transit",
+            key: config.get<string>("KMS_OPENBAO_KEY") ?? "markflow-local",
+            timeoutMs: Number(config.get("KMS_OPENBAO_TIMEOUT_MS") ?? 15000),
+          });
+        }
+        return new FileKmsAdapter();
+      },
+      inject: [ConfigService],
     },
     {
       provide: STORAGE_ADAPTER,
-      useFactory: () =>
-        new LocalStorageAdapter(
-          process.env.STORAGE_DIR ?? join(process.cwd(), "storage")
-        ),
+      useFactory: (config: ConfigService) => {
+        const storageDir = config.get<string>("STORAGE_DIR");
+        if (storageDir) {
+          return new LocalStorageAdapter(storageDir);
+        }
+        return new MinioStorageAdapter({
+          endpoint: config.get<string>("MINIO_ENDPOINT") ?? "localhost:9000",
+          accessKey: config.get<string>("MINIO_ACCESS_KEY") ?? "",
+          secretKey: config.get<string>("MINIO_SECRET_KEY") ?? "",
+          bucket: config.get<string>("MINIO_BUCKET") ?? "markflow-local",
+          useSsl: config.get<string>("MINIO_USE_SSL") === "true",
+          timeoutMs: Number(config.get("MINIO_TIMEOUT_MS") ?? 30000),
+          tenantPrefix:
+            config.get<string>("MINIO_TENANT_PREFIX") ?? "markflow-local",
+        });
+      },
+      inject: [ConfigService],
     },
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },

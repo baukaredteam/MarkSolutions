@@ -50,6 +50,9 @@ const ALLOWLIST = [
   "docs/production/W0-02R_FINAL_PLAN.md", // documentation references
   "docs/production/W0-02R_FINAL2_EVIDENCE.md", // documentation references
   "docs/production/W0-02R_FINAL2_PLAN.md", // documentation references
+  "apps/api/test/minio-storage.spec.ts", // test reads .env.local credentials
+  "apps/api/test/openbao-kms.spec.ts", // test reads .env.local root token
+  "apps/api/test/w0-03a-integration.spec.ts", // test reads .env.local credentials
 ];
 for (const file of files) {
   if (ALLOWLIST.includes(file)) continue;

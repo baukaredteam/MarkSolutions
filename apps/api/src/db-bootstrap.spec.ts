@@ -166,13 +166,14 @@ describe("Canonical migration artifacts (executable check)", () => {
   });
 });
 
-describe("PG test harness (behavioral; requires TEST_DATABASE_URL)", () => {
-  const hasDb = !!process.env.TEST_DATABASE_URL;
-  let testDb: TestDb | undefined;
+const hasDb = !!process.env.TEST_DATABASE_URL;
 
-  (hasDb ? it : it.skip)(
-    "creates isolated schema, migrates, allows writes, cleans up only its resource",
-    async () => {
+describe.skipIf(!hasDb)(
+  "PG test harness (behavioral; requires TEST_DATABASE_URL)",
+  () => {
+    let testDb: TestDb | undefined;
+
+    it("creates isolated schema, migrates, allows writes, cleans up only its resource", async () => {
       testDb = await createTestDatabase();
       expect(testDb.schema).toMatch(/^s_[0-9a-f]+$/);
 
@@ -188,13 +189,9 @@ describe("PG test harness (behavioral; requires TEST_DATABASE_URL)", () => {
       await prisma.$disconnect();
 
       await teardownTestDatabase(testDb);
-    },
-    60000
-  );
+    }, 60000);
 
-  (hasDb ? it : it.skip)(
-    "failure path cleans schema (migrate deploy on non-existent schema)",
-    async () => {
+    it("failure path cleans schema (migrate deploy on non-existent schema)", async () => {
       // Create a schema, then try to migrate with an invalid DATABASE_URL
       // The finally-safe harness should drop the schema even on failure
       const baseUrl = await requireTestDatabaseUrl();
@@ -229,43 +226,36 @@ describe("PG test harness (behavioral; requires TEST_DATABASE_URL)", () => {
       );
       expect(Number(gone[0].count)).toBe(0);
       await verify.$disconnect();
-    },
-    30000
-  );
+    }, 30000);
 
-  afterAll(async () => {
-    if (testDb) await teardownTestDatabase(testDb).catch(() => {});
-  });
-});
+    afterAll(async () => {
+      if (testDb) await teardownTestDatabase(testDb).catch(() => {});
+    });
+  }
+);
 
-describe("Order number sequence (W0-02R-final2)", () => {
-  const hasDb = !!process.env.TEST_DATABASE_URL;
+describe.skipIf(!hasDb)("Order number sequence (W0-02R-final2)", () => {
+  it("sequence initialization: empty DB → first nextval = 1", async () => {
+    const testDb = await createTestDatabase();
+    process.env.DATABASE_URL = testDb.databaseUrl;
+    const prisma = new PrismaClient();
+    try {
+      // Verify sequence exists
+      const seq = await prisma.$queryRawUnsafe<{ seqname: string }[]>(
+        "SELECT sequencename FROM pg_sequences WHERE sequencename = 'order_number_seq' AND schemaname = current_schema()"
+      );
+      expect(seq).toHaveLength(1);
 
-  (hasDb ? it : it.skip)(
-    "sequence initialization: empty DB → first nextval = 1",
-    async () => {
-      const testDb = await createTestDatabase();
-      process.env.DATABASE_URL = testDb.databaseUrl;
-      const prisma = new PrismaClient();
-      try {
-        // Verify sequence exists
-        const seq = await prisma.$queryRawUnsafe<{ seqname: string }[]>(
-          "SELECT sequencename FROM pg_sequences WHERE sequencename = 'order_number_seq' AND schemaname = current_schema()"
-        );
-        expect(seq).toHaveLength(1);
-
-        // On empty DB, first nextval should be 1 (PG returns BigInt)
-        const val = await prisma.$queryRawUnsafe<{ nextval: bigint }[]>(
-          "SELECT nextval('order_number_seq') as nextval"
-        );
-        expect(Number(val[0].nextval)).toBe(1);
-      } finally {
-        await prisma.$disconnect();
-        await teardownTestDatabase(testDb);
-      }
-    },
-    60000
-  );
+      // On empty DB, first nextval should be 1 (PG returns BigInt)
+      const val = await prisma.$queryRawUnsafe<{ nextval: bigint }[]>(
+        "SELECT nextval('order_number_seq') as nextval"
+      );
+      expect(Number(val[0].nextval)).toBe(1);
+    } finally {
+      await prisma.$disconnect();
+      await teardownTestDatabase(testDb);
+    }
+  }, 60000);
 
   (hasDb ? it : it.skip)(
     "sequence after N inserts: first nextval = N+1",
