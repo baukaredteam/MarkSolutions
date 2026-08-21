@@ -2,11 +2,8 @@
 # Verifies all services are accessible and functional.
 # Cleans up test objects. Redacts all sensitive output. Exits nonzero on failure.
 #
-# W0-03-smoke-fix: Previous run (5fc4335) failed due to:
-#   1. OpenBao HTTPS-vs-HTTP: bao CLI defaults to HTTPS; container uses HTTP.
-#   2. MinIO cleanup: || true masked bucket creation failure; cleanup not verified.
-#   3. Missing diagnostic assertion before Transit operations.
-# This run documents exact redacted command output.
+# Root-token use is smoke-only. Root token must never be used by application
+# adapters (W0-03a) or committed to Git.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -38,23 +35,27 @@ function Check($name, $result) {
 }
 
 # Docker exec helper — uses call operator with splatting
+# Does not throw on non-zero exit codes; caller checks ExitCode.
 function Docker-Exec($container, $cmd) {
     $dargs = @("exec", $container, "sh", "-c", $cmd)
-    $output = & docker @dargs 2>&1
+    try { $output = & docker @dargs 2>&1 }
+    catch { $output = @($_.Exception.Message) }
     return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
 }
 
-# Run bao command via temp script (avoids PowerShell quoting issues)
-# Uses unique temp file per call to avoid race conditions
-function Run-Bao($cmd) {
-    $scriptId = [System.IO.Path]::GetRandomFileName()
-    $scriptFile = Join-Path $env:TEMP "bao-$scriptId.sh"
-    $containerScript = "/tmp/bao-$scriptId.sh"
-    $scriptContent = "export BAO_ADDR='http://127.0.0.1:8200'`n$cmd"
-    [System.IO.File]::WriteAllText($scriptFile, $scriptContent, [System.Text.UTF8Encoding]::new($false))
-    docker cp $scriptFile markflow-local-openbao:$containerScript 2>$null | Out-Null
-    $output = docker exec markflow-local-openbao sh $containerScript 2>&1
-    Remove-Item $scriptFile -Force -ErrorAction SilentlyContinue
+# Invoke-Bao: PowerShell-safe Docker exec for OpenBao commands.
+# Uses explicit argument arrays, never shell string interpolation.
+# Passes BAO_ADDR and BAO_TOKEN via -e flags (no bao login needed).
+# Root token use is smoke-only; forbidden for W0-03a application adapters.
+# Does not throw on non-zero exit codes; caller checks ExitCode.
+function Invoke-Bao($baoArgs) {
+    $dargs = @("exec",
+        "-e", "BAO_ADDR=http://127.0.0.1:8200",
+        "-e", "BAO_TOKEN=$rootToken",
+        "markflow-local-openbao",
+        "bao") + $baoArgs
+    try { $output = & docker @dargs 2>&1 }
+    catch { $output = @($_.Exception.Message) }
     return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
 }
 
@@ -85,57 +86,56 @@ $readResult = Docker-Exec "markflow-local-minio" "mc cat local/markflow-local/$t
 if ($readResult.Output -match "smoke-test") { Check "MinIO read test object" 0 } else { Check "MinIO read test object" 1 }
 
 $rmResult = Docker-Exec "markflow-local-minio" "mc rm local/markflow-local/$testKey"
-if ($rmResult.ExitCode -ne 0) { Check "MinIO cleanup (rm)" 1 } else {
-    $statResult = Docker-Exec "markflow-local-minio" "mc stat local/markflow-local/$testKey 2>&1 || echo GONE"
-    if ($statResult.Output -match "GONE|not found|NoSuchKey") { Check "MinIO cleanup verified (stat confirms gone)" 0 }
+if ($rmResult.ExitCode -ne 0) {
+    Check "MinIO cleanup (rm)" 1
+} else {
+    # Verify absence: mc stat must return non-zero exit code after rm
+    $statResult = Docker-Exec "markflow-local-minio" "mc stat local/markflow-local/$testKey"
+    if ($statResult.ExitCode -ne 0) { Check "MinIO cleanup verified (stat confirms gone)" 0 }
     else { Check "MinIO cleanup verified (stat confirms gone)" 1 }
 }
 
 # ─── 3. OpenBao Transit ───
+# Root token from .env.local is used directly via BAO_TOKEN -e flag.
+# No bao login, no token-helper state, no printed tokens.
 Write-Host ""
 Write-Host "OpenBao Transit:"
 
-# Diagnostic: verify BAO_ADDR is correct before any bao command
-$baoDiag = Run-Bao 'printf "%s" "$BAO_ADDR"'
-if ($baoDiag.Output -eq "http://127.0.0.1:8200") { Check "BAO_ADDR diagnostic (http, not https)" 0 }
-else { Check "BAO_ADDR diagnostic (http, not https)" 1 }
-
-# Authenticate with root token from .env.local
-if ([string]::IsNullOrEmpty($rootToken)) {
-    Write-Host "  [FAIL] No root token in .env.local"
-    $FAIL++
+# Diagnostic: verify BAO_ADDR is HTTP by checking bao status succeeds
+# (HTTPS would fail with a connection error since server is HTTP-only)
+$baoDiag = Invoke-Bao @("status")
+if ($baoDiag.ExitCode -eq 0 -and $baoDiag.Output -match "Initialized") {
+    Check "BAO_ADDR diagnostic (HTTP, not HTTPS)" 0
 } else {
-    $baoAuth = Run-Bao "bao login '$rootToken'"
-    if ($baoAuth.Output -match "Success|already authenticated") { Check "OpenBao authentication" 0 }
-    else { Check "OpenBao authentication" 1 }
+    Check "BAO_ADDR diagnostic (HTTP, not HTTPS)" 1
 }
 
-# Check OpenBao status
-$baoStatus = Run-Bao "bao status -format=json"
-if ($baoStatus.Output -match '"initialized":\s*true') { Check "OpenBao initialized" 0 } else { Check "OpenBao initialized" 1 }
-
-# Check Transit engine
-$baoTransit = Run-Bao "bao secrets list -format=json"
+# Check Transit engine is enabled
+$baoTransit = Invoke-Bao @("secrets", "list", "-format=json")
 if ($baoTransit.Output -match '"transit/"') { Check "Transit engine enabled" 0 } else { Check "Transit engine enabled" 1 }
 
-# Encrypt round-trip
+# Transit encrypt round-trip
 $pt = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("smoke-test-$(Get-Date -UFormat %s)"))
-$encResult = Run-Bao "bao login '$rootToken' >/dev/null 2>&1 && bao write -format=json transit/encrypt/markflow-local plaintext=$pt"
+$encResult = Invoke-Bao @("write", "-format=json", "transit/encrypt/markflow-local", "plaintext=$pt")
+$encJson = $null
+try { $encJson = $encResult.Output | ConvertFrom-Json } catch { }
 $enc = ""
-if ($encResult.Output -match '"ciphertext":"([^"]+)"') { $enc = $Matches[1] }
+if ($encJson -and $encJson.data.ciphertext) { $enc = $encJson.data.ciphertext }
 if ($enc) { Check "Transit encrypt" 0 } else { Check "Transit encrypt" 1 }
 
-# Decrypt round-trip (only if encrypt succeeded)
+# Transit decrypt round-trip (only if encrypt succeeded)
 if ($enc) {
-    $decResult = Run-Bao "bao login '$rootToken' >/dev/null 2>&1 && bao write -format=json transit/decrypt/markflow-local ciphertext=$enc"
+    $decResult = Invoke-Bao @("write", "-format=json", "transit/decrypt/markflow-local", "ciphertext=$enc")
+    $decJson = $null
+    try { $decJson = $decResult.Output | ConvertFrom-Json } catch { }
     $decB64 = ""
-    if ($decResult.Output -match '"plaintext":"([^"]+)"') { $decB64 = $Matches[1] }
+    if ($decJson -and $decJson.data.plaintext) { $decB64 = $decJson.data.plaintext }
     if ($decB64) {
         $decText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($decB64))
         $origText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($pt))
         if ($decText -eq $origText) { Check "Transit decrypt round-trip" 0 } else { Check "Transit decrypt round-trip" 1 }
     } else {
-        Write-Host "  [FAIL] Transit decrypt (could not parse ciphertext)"
+        Write-Host "  [FAIL] Transit decrypt (could not parse response)"
         $FAIL++
     }
 } else {
