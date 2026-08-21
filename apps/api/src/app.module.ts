@@ -1,4 +1,4 @@
-import { Controller, Get, Module, Res, HttpCode } from "@nestjs/common";
+import { Controller, Get, Inject, Module, Res, HttpCode } from "@nestjs/common";
 import { APP_GUARD, APP_FILTER } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
@@ -65,7 +65,13 @@ import { FileKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
 import { OpenBaoTransitKmsAdapter } from "./openbao-kms.adapter";
 import { MinioStorageAdapter } from "./minio-storage.adapter";
 import { LocalStorageAdapter } from "@markflow/shared";
-import { sanitizeHealthError } from "./config-validation";
+import {
+  sanitizeHealthError,
+  buildAppConfig,
+  AppConfig,
+} from "./config-validation";
+
+export const APP_CONFIG = "APP_CONFIG";
 
 // W0-01b: Liveness = "process is alive" (always 200, never leaks internals).
 // Readiness = "dependencies are reachable" (503 if any critical dep fails).
@@ -73,7 +79,10 @@ import { sanitizeHealthError } from "./config-validation";
 
 @Controller("health")
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(APP_CONFIG) private readonly cfg: AppConfig
+  ) {}
 
   // Liveness probe — always 200 if process is alive; never expose error details.
   @Public()
@@ -85,7 +94,6 @@ export class HealthController {
     } catch {
       db = "error";
     }
-    // Liveness: return error state but NEVER the raw error message or connection string.
     return { status: db === "ok" ? "ok" : "degraded", db };
   }
 
@@ -94,11 +102,8 @@ export class HealthController {
   @HttpCode(200)
   @Get("ready")
   async ready(@Res() res: ExpressResponse) {
-    const env = process.env as Record<string, string>;
-    const mode = env.NODE_ENV ?? "";
     const checks: { name: string; status: string; message?: string }[] = [];
 
-    // 1. Database — must be reachable
     try {
       await this.prisma.$queryRaw`SELECT 1`;
       checks.push({ name: "database", status: "ok" });
@@ -110,7 +115,6 @@ export class HealthController {
       });
     }
 
-    // 2. Migration freshness — schema must include current tables
     try {
       await this.prisma.$queryRaw`SELECT 1 FROM "Outbox" LIMIT 1`;
       checks.push({ name: "migration", status: "ok" });
@@ -122,23 +126,19 @@ export class HealthController {
       });
     }
 
-    // 3. Adapter modes — read from env (config source)
-    const adapterMode = (name: string) =>
-      env[`ADAPTERS_${name}`] ?? env[`adapters_${name}`] ?? "mock";
     checks.push({
       name: "adapters",
-      status: `mpt=${adapterMode("MPT")} gs1=${adapterMode("GS1")} nkt=${adapterMode("NKT")}`,
+      status: `mpt=${this.cfg.adapters.mpt} gs1=${this.cfg.adapters.gs1} nkt=${this.cfg.adapters.nkt}`,
     });
-
-    // 4. KMS mode
-    checks.push({ name: "kms", status: env.KMS_PROFILE ?? "file" });
+    checks.push({ name: "kms", status: this.cfg.kms.profile });
+    checks.push({ name: "storage", status: this.cfg.storage.profile });
 
     const failed = checks.some(
       (c) => c.status === "error" || c.status === "stale"
     );
     res.status(failed ? 503 : 200).json({
       status: failed ? "not ready" : "ready",
-      mode: mode || "unset",
+      mode: this.cfg.mode || "unset",
       checks,
     });
   }
@@ -163,11 +163,13 @@ export class AdminController {
 
 @Module({
   imports: [
-    // ConfigService (C-01): выбор реализаций адаптеров через env (ADAPTERS_MPT и др.)
     ConfigModule.forRoot({ isGlobal: true }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET ?? "dev-secret",
-      signOptions: { expiresIn: "1h" },
+    JwtModule.registerAsync({
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>("JWT_SECRET"),
+        signOptions: { expiresIn: "1h" },
+      }),
+      inject: [ConfigService],
     }),
   ],
   controllers: [
@@ -196,6 +198,10 @@ export class AdminController {
     InvoiceController,
   ],
   providers: [
+    {
+      provide: APP_CONFIG,
+      useFactory: () => buildAppConfig(),
+    },
     PrismaService,
     AuthService,
     CatalogService,
@@ -216,41 +222,37 @@ export class AdminController {
     CodeLookupService,
     {
       provide: KMS_ADAPTER,
-      useFactory: (config: ConfigService) => {
-        const profile = config.get<string>("KMS_PROFILE") ?? "file";
-        if (profile === "openbao") {
+      useFactory: (cfg: AppConfig) => {
+        if (cfg.kms.profile === "openbao") {
           return new OpenBaoTransitKmsAdapter({
-            baseUrl:
-              config.get<string>("KMS_OPENBAO_ADDR") ?? "http://127.0.0.1:8200",
-            token: config.get<string>("KMS_OPENBAO_TOKEN") ?? "",
-            mount: config.get<string>("KMS_OPENBAO_MOUNT") ?? "transit",
-            key: config.get<string>("KMS_OPENBAO_KEY") ?? "markflow-local",
-            timeoutMs: Number(config.get("KMS_OPENBAO_TIMEOUT_MS") ?? 15000),
+            baseUrl: cfg.kms.openbaoAddr,
+            token: cfg.kms.openbaoToken,
+            mount: cfg.kms.openbaoMount,
+            key: cfg.kms.openbaoKey,
+            timeoutMs: cfg.kms.openbaoTimeoutMs,
           });
         }
         return new FileKmsAdapter();
       },
-      inject: [ConfigService],
+      inject: [APP_CONFIG],
     },
     {
       provide: STORAGE_ADAPTER,
-      useFactory: (config: ConfigService) => {
-        const storageDir = config.get<string>("STORAGE_DIR");
-        if (storageDir) {
-          return new LocalStorageAdapter(storageDir);
+      useFactory: (cfg: AppConfig) => {
+        if (cfg.storage.profile === "local") {
+          return new LocalStorageAdapter(cfg.storage.dir);
         }
         return new MinioStorageAdapter({
-          endpoint: config.get<string>("MINIO_ENDPOINT") ?? "localhost:9000",
-          accessKey: config.get<string>("MINIO_ACCESS_KEY") ?? "",
-          secretKey: config.get<string>("MINIO_SECRET_KEY") ?? "",
-          bucket: config.get<string>("MINIO_BUCKET") ?? "markflow-local",
-          useSsl: config.get<string>("MINIO_USE_SSL") === "true",
-          timeoutMs: Number(config.get("MINIO_TIMEOUT_MS") ?? 30000),
-          tenantPrefix:
-            config.get<string>("MINIO_TENANT_PREFIX") ?? "markflow-local",
+          endpoint: cfg.storage.minioEndpoint,
+          accessKey: cfg.storage.minioAccessKey,
+          secretKey: cfg.storage.minioSecretKey,
+          bucket: cfg.storage.minioBucket,
+          useSsl: cfg.storage.minioUseSsl,
+          timeoutMs: cfg.storage.minioTimeoutMs,
+          tenantPrefix: cfg.storage.minioTenantPrefix,
         });
       },
-      inject: [ConfigService],
+      inject: [APP_CONFIG],
     },
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },

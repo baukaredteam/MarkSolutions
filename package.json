@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
+    "test:local-adapters": "vitest run apps/api/test/minio-storage.spec.ts apps/api/test/openbao-kms.spec.ts apps/api/test/w0-03a-integration.spec.ts",
     "secret-scan": "node scripts/secret-scan.mjs",
     "dev": "npm run dev --workspace @markflow/api",
     "db:generate": "npm run generate --workspace @markflow/db",

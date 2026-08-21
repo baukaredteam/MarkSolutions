@@ -23,18 +23,25 @@ export interface AppConfig {
   db: { url: string };
   jwt: { secret: string; expiresIn: string };
   kms: {
-    profile: string;
+    profile: string; // "file" | "openbao"
     fileDir: string;
     openbaoAddr: string;
     openbaoToken: string;
+    openbaoMount: string; // e.g. "transit"
+    openbaoKey: string; // e.g. "markflow-local"
+    openbaoTimeoutMs: number;
   };
   storage: {
     local: boolean;
     dir: string;
+    profile: string; // "local" | "minio"
     minioEndpoint: string;
     minioAccessKey: string;
     minioSecretKey: string;
     minioBucket: string;
+    minioUseSsl: boolean;
+    minioTimeoutMs: number;
+    minioTenantPrefix: string;
   };
   adapters: { mpt: string; gs1: string; nkt: string; ecom: string };
   mpt: {
@@ -197,14 +204,21 @@ export function buildAppConfig(
       fileDir: env.KMS_FILE_DIR ?? "",
       openbaoAddr: env.KMS_OPENBAO_ADDR ?? "",
       openbaoToken: env.KMS_OPENBAO_TOKEN ?? "",
+      openbaoMount: env.KMS_OPENBAO_MOUNT ?? "transit",
+      openbaoKey: env.KMS_OPENBAO_KEY ?? "markflow-local",
+      openbaoTimeoutMs: num(env.KMS_OPENBAO_TIMEOUT_MS, 15000),
     },
     storage: {
       local: !blank(env.STORAGE_DIR),
       dir: env.STORAGE_DIR ?? "",
+      profile: !blank(env.STORAGE_DIR) ? "local" : "minio",
       minioEndpoint: env.MINIO_ENDPOINT ?? "",
       minioAccessKey: env.MINIO_ACCESS_KEY ?? "",
       minioSecretKey: env.MINIO_SECRET_KEY ?? "",
       minioBucket: env.MINIO_BUCKET ?? "",
+      minioUseSsl: env.MINIO_USE_SSL === "true",
+      minioTimeoutMs: num(env.MINIO_TIMEOUT_MS, 30000),
+      minioTenantPrefix: env.MINIO_TENANT_PREFIX ?? "markflow-local",
     },
     adapters: {
       mpt: env.ADAPTERS_MPT ?? "mock",
