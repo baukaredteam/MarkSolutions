@@ -1,7 +1,8 @@
 # W0-03 Local Stack Plan
 
-**Branch:** `w0-03-local-stack-fix` (from `4ce34b5`)
-**Goal:** Build a reproducible local production-like integration stack for development and W0-03a validation.
+**Branch:** `w0-03-local-stack-portability-fix` (from `fda1f47`)
+**Goal:** Build a reproducible local integration stack for development and W0-03a validation.
+**Authoritative platform:** Windows with Docker Desktop. PowerShell lifecycle wrappers.
 **Strictly local:** Never described as production. Never exposes ports to the internet.
 
 ---

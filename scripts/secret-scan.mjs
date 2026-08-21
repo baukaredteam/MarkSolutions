@@ -51,6 +51,7 @@ const ALLOWLIST = [
   "docs/production/W0-02R_FINAL2_EVIDENCE.md", // documentation references
   "docs/production/W0-02R_FINAL2_PLAN.md", // documentation references
   "docs/production/W0-03_LOCAL_STACK_PLAN.md", // local dev placeholder URLs
+  "scripts/local-stack-checks.ps1", // static checks reference DB URL patterns
 ];
 for (const file of files) {
   if (ALLOWLIST.includes(file)) continue;

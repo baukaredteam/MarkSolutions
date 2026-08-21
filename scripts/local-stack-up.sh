@@ -1,8 +1,8 @@
 #!/bin/sh
-# W0-03-fix: Start local integration stack (PG16, MinIO, OpenBao).
+# W0-03: Start local integration stack (Linux/WSL — PowerShell is authoritative Windows path).
 # Generates .env.local with random passwords on first run.
 # All services bind to 127.0.0.1 only.
-# Waits for OpenBao health, then runs bootstrap from the host.
+# OpenBao bootstrap runs via docker exec (no host bao required).
 
 set -e
 
@@ -36,30 +36,31 @@ docker compose -f compose.local.yml --env-file .env.local up -d
 
 # Wait for all services to be healthy
 echo "[local-stack] Waiting for services to be healthy..."
-TIMEOUT=120
-ELAPSED=0
+TIMEOUT=120; ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
   HEALTHY=$(docker compose -f compose.local.yml --env-file .env.local ps --format json 2>/dev/null | grep -o '"healthy"' | wc -l)
-  if [ "$HEALTHY" -ge 2 ]; then
-    break
-  fi
-  sleep 3
-  ELAPSED=$((ELAPSED + 3))
+  if [ "$HEALTHY" -ge 2 ]; then break; fi
+  sleep 3; ELAPSED=$((ELAPSED + 3))
 done
 
-# Run OpenBao bootstrap from the host (avoids container token-helper issues)
+# Bootstrap OpenBao via docker exec (no host bao required)
 echo "[local-stack] Bootstrapping OpenBao..."
-. "$ENV_LOCAL"
-export BAO_ADDR="http://127.0.0.1:8200"
-bash "$SCRIPT_DIR/local-openbao-bootstrap.sh"
-INIT_EXIT=$?
+ROOT_TOKEN=$(grep "LOCAL_OPENBAO_ROOT_TOKEN" "$ENV_LOCAL" | cut -d= -f2)
+docker exec -e BAO_ADDR=http://127.0.0.1:8200 markflow-local-openbao sh -c "
+bao login '$ROOT_TOKEN' >/dev/null 2>&1
+echo '[openbao-init] Authenticated.'
+bao secrets enable -path=transit transit 2>/dev/null || echo '[openbao-init] Transit already enabled.'
+bao write -f transit/keys/markflow-local 2>/dev/null || echo '[openbao-init] Key exists.'
+bao policy write markflow-dev - 'path transit/encrypt/markflow-local { capabilities = [update] } path transit/decrypt/markflow-local { capabilities = [update] } path transit/keys/markflow-local { capabilities = [read] } path sys/health { capabilities = [read] }'
+echo '[openbao-init] Bootstrap complete.'
+" 2>&1
 
-if [ $INIT_EXIT -ne 0 ]; then
-  echo "[local-stack] FAIL: OpenBao bootstrap failed (exit code $INIT_EXIT)"
+if [ $? -ne 0 ]; then
+  echo "[local-stack] FAIL: OpenBao bootstrap failed"
   exit 1
 fi
 
 echo ""
 echo "[local-stack] Services started and OpenBao bootstrapped."
 echo "[local-stack] Run 'scripts/local-stack-status.sh' to verify."
-echo "[local-stack] Run 'scripts/local-smoke.sh' to run integration smoke tests."
+echo "[local-stack] Run 'scripts/local-smoke.sh' to run smoke tests."
