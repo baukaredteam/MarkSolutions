@@ -1,7 +1,7 @@
 # W0-03: Start local integration stack (PowerShell — Windows authoritative path).
 # Generates .env.local with random secrets on first run.
 # All services bind to 127.0.0.1 only.
-# OpenBao bootstrap runs via docker exec (no host bao required).
+# OpenBao bootstrap uses docker exec with -e BAO_TOKEN (no host bao, no temp scripts).
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -11,7 +11,7 @@ $ENV_LOCAL = Join-Path $ROOT_DIR ".env.local"
 
 Set-Location $ROOT_DIR
 
-# Generate .env.local on first run
+# ─── Generate .env.local on first run ───
 if (!(Test-Path $ENV_LOCAL)) {
     Write-Host "[local-stack] Generating .env.local with random secrets..."
     $pgPass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 20 | ForEach-Object { [char]$_ })
@@ -23,14 +23,13 @@ if (!(Test-Path $ENV_LOCAL)) {
     Write-Host "[local-stack] .env.local created (random secrets)."
 }
 
-# Start services
+# ─── Start services ───
 Write-Host "[local-stack] Starting services..."
 docker compose -f compose.local.yml --env-file .env.local up -d
 
-# Wait for all services to be healthy
+# ─── Wait for all services to be healthy ───
 Write-Host "[local-stack] Waiting for services to be healthy..."
-$timeout = 120
-$elapsed = 0
+$timeout = 120; $elapsed = 0
 while ($elapsed -lt $timeout) {
     $psJson = docker compose -f compose.local.yml --env-file .env.local ps --format json 2>$null
     if ($psJson) {
@@ -40,19 +39,18 @@ while ($elapsed -lt $timeout) {
             if ($healthy -ge 2) { break }
         }
     }
-    Start-Sleep -Seconds 3
-    $elapsed += 3
+    Start-Sleep -Seconds 3; $elapsed += 3
 }
 
-# Bootstrap OpenBao via docker exec (no host bao required)
+# ─── Bootstrap OpenBao ───
+# Reads root token from .env.local; passes it via docker exec -e BAO_TOKEN.
+# No temp scripts, no docker cp, no bao login, no token-helper state.
+# Every error fails hard.
 Write-Host "[local-stack] Bootstrapping OpenBao..."
 
-# Parse .env.local for root token
 $envVars = @{}
 Get-Content $ENV_LOCAL | ForEach-Object {
-    if ($_ -match "^([^#=]+)=(.*)$") {
-        $envVars[$matches[1].Trim()] = $matches[2].Trim()
-    }
+    if ($_ -match "^([^#=]+)=(.*)$") { $envVars[$matches[1].Trim()] = $matches[2].Trim() }
 }
 $rootToken = $envVars["LOCAL_OPENBAO_ROOT_TOKEN"]
 if ([string]::IsNullOrEmpty($rootToken)) {
@@ -60,32 +58,47 @@ if ([string]::IsNullOrEmpty($rootToken)) {
     exit 1
 }
 
-# Write bootstrap script to temp file, docker cp into container, execute
-# This avoids PowerShell quoting issues with docker exec arguments.
-$bootstrapScript = @"
-export BAO_ADDR='http://127.0.0.1:8200'
-bao login $rootToken >/dev/null 2>&1
-echo '[openbao-init] Authenticated.'
-bao secrets enable -path=transit transit 2>/dev/null || echo '[openbao-init] Transit already enabled.'
-bao write -f transit/keys/markflow-local 2>/dev/null || echo '[openbao-init] Key exists.'
-bao policy write markflow-dev - 'path transit/encrypt/markflow-local { capabilities = [update] } path transit/decrypt/markflow-local { capabilities = [update] } path transit/keys/markflow-local { capabilities = [read] } path sys/health { capabilities = [read] }'
-echo '[openbao-init] Bootstrap complete.'
-"@
-$bootstrapFile = Join-Path $env:TEMP "openbao-bootstrap.sh"
-[System.IO.File]::WriteAllText($bootstrapFile, $bootstrapScript, [System.Text.UTF8Encoding]::new($false))
-docker cp $bootstrapFile markflow-local-openbao:/tmp/bootstrap.sh
-$proc = Start-Process -FilePath "docker" -ArgumentList @("exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "markflow-local-openbao", "sh", "/tmp/bootstrap.sh") -NoNewWindow -PassThru -Wait -RedirectStandardOutput "$env:TEMP\bootstrap-out.txt" -RedirectStandardError "$env:TEMP\bootstrap-err.txt"
-$bootstrapOutput = Get-Content "$env:TEMP\bootstrap-out.txt" -ErrorAction SilentlyContinue
-$bootstrapErr = Get-Content "$env:TEMP\bootstrap-err.txt" -ErrorAction SilentlyContinue
-$bootstrapExit = $proc.ExitCode
-Write-Host ($bootstrapOutput -join "`n")
-if ($bootstrapErr) { Write-Host ($bootstrapErr -join "`n") }
-Remove-Item $bootstrapFile -Force -ErrorAction SilentlyContinue
+# Helper: run bao via docker exec with explicit -e flags (no temp scripts).
+# Returns @{ Output; ExitCode }. Returns exit code 1 on exception (never stale LASTEXITCODE).
+function Invoke-Bao($baoArgs) {
+    $dargs = @("exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "BAO_TOKEN=$rootToken",
+               "markflow-local-openbao", "bao") + $baoArgs
+    try { $output = & docker @dargs 2>&1 }
+    catch { return @{ Output = $_.Exception.Message; ExitCode = 1 } }
+    return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
+}
 
-Write-Host $bootstrapOutput
-if ($bootstrapExit -ne 0) {
-    Write-Host "[local-stack] FAIL: OpenBao bootstrap failed (exit code $bootstrapExit)"
+# Verify Transit engine status (list mounts)
+$mounts = Invoke-Bao @("secrets", "list")
+if ($mounts.ExitCode -ne 0) {
+    Write-Host "[local-stack] FAIL: Could not list secrets engines (exit $($mounts.ExitCode))"
     exit 1
+}
+
+# Enable Transit only if absent
+if ($mounts.Output -notmatch '"transit/"') {
+    Write-Host "[local-stack] Enabling Transit engine..."
+    $enableResult = Invoke-Bao @("secrets", "enable", "-path=transit", "transit")
+    if ($enableResult.ExitCode -ne 0) {
+        Write-Host "[local-stack] FAIL: Could not enable Transit (exit $($enableResult.ExitCode))"
+        exit 1
+    }
+} else {
+    Write-Host "[local-stack] Transit engine already enabled."
+}
+
+# Read the markflow-local key
+$keyResult = Invoke-Bao @("read", "transit/keys/markflow-local")
+if ($keyResult.ExitCode -ne 0) {
+    # Create key if absent
+    Write-Host "[local-stack] Creating markflow-local key..."
+    $keyCreate = Invoke-Bao @("write", "-f", "transit/keys/markflow-local")
+    if ($keyCreate.ExitCode -ne 0) {
+        Write-Host "[local-stack] FAIL: Could not create markflow-local key (exit $($keyCreate.ExitCode))"
+        exit 1
+    }
+} else {
+    Write-Host "[local-stack] markflow-local key already exists."
 }
 
 Write-Host ""

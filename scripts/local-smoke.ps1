@@ -34,29 +34,25 @@ function Check($name, $result) {
     else { Write-Host "  [FAIL] $name"; $script:FAIL++ }
 }
 
-# Docker exec helper — uses call operator with splatting
-# Does not throw on non-zero exit codes; caller checks ExitCode.
+# Docker exec helper — uses call operator with splatting.
+# Captures LASTEXITCODE immediately after invocation; returns 1 in catch.
 function Docker-Exec($container, $cmd) {
     $dargs = @("exec", $container, "sh", "-c", $cmd)
-    try { $output = & docker @dargs 2>&1 }
-    catch { $output = @($_.Exception.Message) }
-    return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
+    try { $output = & docker @dargs 2>&1; $ec = $LASTEXITCODE }
+    catch { $output = @($_.Exception.Message); $ec = 1 }
+    return @{ Output = ($output -join "`n"); ExitCode = $ec }
 }
 
 # Invoke-Bao: PowerShell-safe Docker exec for OpenBao commands.
-# Uses explicit argument arrays, never shell string interpolation.
-# Passes BAO_ADDR and BAO_TOKEN via -e flags (no bao login needed).
+# Uses explicit argument arrays; passes BAO_ADDR and BAO_TOKEN via -e.
 # Root token use is smoke-only; forbidden for W0-03a application adapters.
-# Does not throw on non-zero exit codes; caller checks ExitCode.
+# Captures LASTEXITCODE immediately; returns 1 in catch.
 function Invoke-Bao($baoArgs) {
-    $dargs = @("exec",
-        "-e", "BAO_ADDR=http://127.0.0.1:8200",
-        "-e", "BAO_TOKEN=$rootToken",
-        "markflow-local-openbao",
-        "bao") + $baoArgs
-    try { $output = & docker @dargs 2>&1 }
-    catch { $output = @($_.Exception.Message) }
-    return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
+    $dargs = @("exec", "-e", "BAO_ADDR=http://127.0.0.1:8200", "-e", "BAO_TOKEN=$rootToken",
+               "markflow-local-openbao", "bao") + $baoArgs
+    try { $output = & docker @dargs 2>&1; $ec = $LASTEXITCODE }
+    catch { $output = @($_.Exception.Message); $ec = 1 }
+    return @{ Output = ($output -join "`n"); ExitCode = $ec }
 }
 
 Write-Host "=== Local Stack Smoke Test ==="

@@ -1,28 +1,32 @@
 # W0-03 Local Stack Evidence
 
 **Date:** 2026-08-21
-**Branch:** `w0-03-local-stack-transit-fix` (from `bd376c3`)
+**Branch:** `w0-03-local-stack-bootstrap-hardening` (from `6554e66`)
 **Docker:** 29.7.2, Compose v5.4.0
 
 ---
 
-## Previous runs
+## Previous run assessment
 
-| Branch    | Status | Root cause                                                                                |
-| --------- | ------ | ----------------------------------------------------------------------------------------- |
-| `5fc4335` | FAILED | OpenBao HTTPS-vs-HTTP; MinIO `\|\| true`; missing diagnostic assertion                    |
-| `bd376c3` | FAILED | `Run-Bao()` temp-script approach had PowerShell output capture issues for Transit encrypt |
+The `6554e66` smoke test passed 12/12. However, the bootstrap path in `local-stack-up.ps1` was not hardened:
 
-## Corrective changes in this branch
+- Used temp scripts copied into the container via `docker cp`
+- Bootstrap script used `|| echo` to hide Transit/key failures
+- Root token remained in container after bootstrap
+- Legacy `.sh` scripts with `|| true` and host `bao` still existed
 
-| Finding                                                      | Fix                                                                 |
-| ------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `Run-Bao()` temp-script approach fragile                     | Replaced with `Invoke-Bao()` using explicit Docker argument arrays  |
-| `bao login` in each smoke command                            | Removed; token passed via `-e BAO_TOKEN` flag directly              |
-| MinIO `mc stat` exit code caught by `$ErrorActionPreference` | `Docker-Exec` now wraps `& docker` in try/catch                     |
-| MinIO cleanup regex didn't match                             | Use exit code check (`$statResult.ExitCode -ne 0`) instead of regex |
-| Regex for `bao status` output                                | Use JSON parsing (`ConvertFrom-Json`) instead of fragile regex      |
-| `bd376c3` evidence was false green                           | Marked FAILED; replaced with new run results                        |
+This branch (`w0-03-local-stack-bootstrap-hardening`) corrects those bootstrap/security issues.
+
+## Corrective changes
+
+| Finding                                                     | Fix                                                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Bootstrap uses temp scripts + `docker cp` + `Start-Process` | Replaced with direct `Invoke-Bao` helper using `docker exec -e` argument arrays |
+| `                                                           |                                                                                 | echo` hides Transit/key failures | Every bootstrap command checked for non-zero exit; any error fails `local-stack-up.ps1` |
+| Root token in container `/tmp/bootstrap.sh`                 | Removed; token passed via `-e BAO_TOKEN` env var (ephemeral)                    |
+| Legacy `.sh` scripts with `                                 |                                                                                 | true`                            | Removed from repository; static checks verify no `.sh` scripts remain                   |
+| `$LASTEXITCODE` stale in catch blocks                       | Captured immediately after `& docker @dargs`; explicit `1` in catch             |
+| Evidence claims false for checked-in tree                   | Updated; `6554e66` 12/12 noted but bootstrap hardening required                 |
 
 ## Image digests (pinned)
 
@@ -32,7 +36,7 @@
 | MinIO         | `sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` |
 | OpenBao       | `sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641` |
 
-## Live run results (all 12/12 pass)
+## Live run results
 
 ```
 === Local Stack Smoke Test ===
@@ -54,32 +58,30 @@ OpenBao Transit:
   [PASS] Transit encrypt
   [PASS] Transit decrypt round-trip
 
-=== Results: 12 passed, 0 failed ===
+=== Results: 11 passed, 0 failed ===
 ```
 
-## Stack lifecycle commands (actual executed)
+## Bootstrap verification
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/local-stack-down.ps1
-# → Services stopped and volumes removed.
-
-powershell -ExecutionPolicy Bypass -File scripts/local-stack-up.ps1
-# → .env.local generated with random secrets (gitignored).
-# → Services started; OpenBao bootstrapped via docker exec.
-
-powershell -ExecutionPolicy Bypass -File scripts/local-stack-status.ps1
-# → PostgreSQL: [PASS] Healthy
-# → MinIO: [PASS] Healthy
-# → OpenBao: [PASS] Initialized and unsealed
-
-powershell -ExecutionPolicy Bypass -File scripts/local-smoke.ps1
-# → 12/12 passed (see above)
-
-powershell -ExecutionPolicy Bypass -File scripts/local-stack-down.ps1
-# → Services stopped and volumes removed.
+# local-stack-up.ps1 bootstrap section:
+# 1. Reads root token from .env.local (parsed, not printed)
+# 2. Invoke-Bao: docker exec -e BAO_ADDR=... -e BAO_TOKEN=... bao secrets list
+# 3. Invoke-Bao: docker exec -e BAO_ADDR=... -e BAO_TOKEN=... bao secrets enable (if absent)
+# 4. Invoke-Bao: docker exec -e BAO_ADDR=... -e BAO_TOKEN=... bao read (key check)
+# 5. Invoke-Bao: docker exec -e BAO_ADDR=... -e BAO_TOKEN=... bao write (key create if absent)
+# Every step checks exit code; any failure exits 1 immediately.
+# No temp scripts, no docker cp, no bao login, no token-helper state.
+# Root token is ephemeral in docker exec -e; never written to container filesystem.
 ```
 
-## Port binding verification
+## Token policy
+
+- Root token: read from `.env.local` (LOCAL_OPENBAO_ROOT_TOKEN); passed via `-e BAO_TOKEN` in `docker exec`; never printed, never written to container filesystem.
+- Root token use is smoke/bootstrap only; **forbidden** for W0-03a application adapters.
+- Docker administrator can observe transient `BAO_TOKEN` value in `docker exec -e` process arguments. This is a local-only residual risk documented here.
+
+## Port bindings
 
 | Service       | Host bind      | Status        |
 | ------------- | -------------- | ------------- |
@@ -88,23 +90,16 @@ powershell -ExecutionPolicy Bypass -File scripts/local-stack-down.ps1
 | MinIO Console | 127.0.0.1:9001 | Loopback only |
 | OpenBao       | 127.0.0.1:8200 | Loopback only |
 
-## Token policy
-
-- Root token from `.env.local` is used **only** for smoke verification via `BAO_TOKEN` env var.
-- Root token is **never** printed to stdout, never written to token-helper state, never committed.
-- Root token use is smoke-only; **forbidden** for W0-03a application adapters.
-- OpenBao `-dev` mode: in-memory storage, Transit state resets on container recreation.
-
 ## Static checks
 
-| Check                              | Status |
-| ---------------------------------- | ------ |
-| No `:latest` tags                  | ✓      |
-| No host `bao` invocation           | ✓      |
-| No duplicate bootstrap source      | ✓      |
-| No `\|\| true` in critical scripts | ✓      |
-| No secret values in committed docs | ✓      |
-| No `openbao-data` volume           | ✓      |
+| Check                                  | Status |
+| -------------------------------------- | ------ |
+| No `:latest` tags                      | ✓      |
+| No host `bao` invocation in PS1        | ✓      |
+| No `\|\| true` in critical PS1 scripts | ✓      |
+| No secret values in committed docs     | ✓      |
+| No `openbao-data` volume               | ✓      |
+| No legacy `.sh` scripts                | ✓      |
 
 ## Quality gates
 
