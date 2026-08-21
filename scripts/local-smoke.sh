@@ -1,7 +1,8 @@
 #!/bin/sh
-# W0-03: Local smoke test — PG, MinIO, OpenBao Transit round-trip.
+# W0-03-fix: Local smoke test — PG, MinIO, OpenBao Transit round-trip.
 # Verifies all services are accessible and functional.
-# Cleans up test objects. Redacts all sensitive output.
+# Cleans up test objects; exits nonzero on any failure.
+# Redacts all sensitive output.
 
 set -e
 
@@ -71,16 +72,21 @@ else
   check "MinIO write/read with tenant prefix" 1
 fi
 
-# Cleanup test object
+# Cleanup test object — verify it actually disappears
 docker compose -f compose.local.yml exec -T minio mc rm "$MINIO_ALIAS/markflow-local/$TEST_KEY" >/dev/null 2>&1
-check "MinIO test object cleanup" 0
+CLEANUP_CHECK=$(docker compose -f compose.local.yml exec -T minio mc ls "$MINIO_ALIAS/markflow-local/$TEST_KEY" 2>/dev/null || echo "not-found")
+if echo "$CLEANUP_CHECK" | grep -q "not-found\|no keys"; then
+  check "MinIO test object cleanup verified" 0
+else
+  check "MinIO test object cleanup verified" 1
+fi
 
 # --- 3. OpenBao Transit ---
 echo ""
 echo "OpenBao Transit:"
 
-# Check health
-BAO_HEALTH=$(docker compose -f compose.local.yml exec -T openbao bao status -format=json 2>/dev/null | grep -o '"initialized":true' || echo "")
+# Check health (use BAO_ADDR to avoid HTTPS default)
+BAO_HEALTH=$(docker compose -f compose.local.yml exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao status -format=json 2>/dev/null | grep -o '"initialized":true' || echo "")
 if [ -n "$BAO_HEALTH" ]; then
   check "OpenBao initialized" 0
 else
@@ -88,7 +94,7 @@ else
 fi
 
 # Check transit engine is enabled
-BAO_TRANSIT=$(docker compose -f compose.local.yml exec -T openbao bao secrets list -format=json 2>/dev/null | grep -o '"transit/"' || echo "")
+BAO_TRANSIT=$(docker compose -f compose.local.yml exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao secrets list -format=json 2>/dev/null | grep -o '"transit/"' || echo "")
 if [ -n "$BAO_TRANSIT" ]; then
   check "Transit engine enabled" 0
 else
@@ -97,14 +103,14 @@ fi
 
 # Encrypt/decrypt round-trip (no plaintext/ciphertext/token in output)
 PLAINTEXT="smoke-test-$(date +%s)"
-ENCRYPTED=$(docker compose -f compose.local.yml exec -T openbao bao write -format=json transit/encrypt/markflow-local plaintext="$(echo "$PLAINTEXT" | base64)" 2>/dev/null | grep -o '"ciphertext":"[^"]*"' | cut -d'"' -f4)
+ENCRYPTED=$(docker compose -f compose.local.yml exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao write -format=json transit/encrypt/markflow-local plaintext="$(echo "$PLAINTEXT" | base64)" 2>/dev/null | grep -o '"ciphertext":"[^"]*"' | cut -d'"' -f4)
 if [ -n "$ENCRYPTED" ]; then
   check "Transit encrypt" 0
 else
   check "Transit encrypt" 1
 fi
 
-DECRYPTED=$(docker compose -f compose.local.yml exec -T openbao bao write -format=json transit/decrypt/markflow-local ciphertext="$ENCRYPTED" 2>/dev/null | grep -o '"plaintext":"[^"]*"' | cut -d'"' -f4 | base64 -d 2>/dev/null)
+DECRYPTED=$(docker compose -f compose.local.yml exec -T -e BAO_ADDR=http://127.0.0.1:8200 openbao bao write -format=json transit/decrypt/markflow-local ciphertext="$ENCRYPTED" 2>/dev/null | grep -o '"plaintext":"[^"]*"' | cut -d'"' -f4 | base64 -d 2>/dev/null)
 if [ "$DECRYPTED" = "$PLAINTEXT" ]; then
   check "Transit decrypt round-trip" 0
 else

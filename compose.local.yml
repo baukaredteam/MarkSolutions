@@ -3,15 +3,20 @@
 # Never described as production. Never exposes ports to the internet.
 #
 # Usage:
-#   docker compose -f compose.local.yml up -d
-#   docker compose -f compose.local.yml ps
-#   docker compose -f compose.local.yml down -v
+#   docker compose -f compose.local.yml --env-file .env.local up -d
+#   docker compose -f compose.local.yml --env-file .env.local ps
+#   docker compose -f compose.local.yml --env-file .env.local down -v
+#
+# Image digests (pinned for reproducibility):
+#   postgres:16-alpine      sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+#   minio/minio:latest      sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+#   openbao/openbao:latest  sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
 
 name: markflow-local
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     container_name: markflow-local-pg
     restart: unless-stopped
     ports:
@@ -31,7 +36,7 @@ services:
       - local
 
   minio:
-    image: minio/minio:latest
+    image: docker.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: markflow-local-minio
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
@@ -52,42 +57,32 @@ services:
       - local
 
   openbao:
-    image: openbao/openbao:latest
+    image: docker.io/openbao/openbao@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
     container_name: markflow-local-openbao
     restart: unless-stopped
     user: root # local dev only — volume owned by root
     cap_add:
       - IPC_LOCK
-    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
-    environment:
-      BAO_DEV_ROOT_TOKEN_FILE: /bao/data/dev-root-token
+    # W0-03-fix: -dev mode auto-inits and unseals; no config.hcl needed.
+    # -dev-root-token-id sets a known root token (generated in .env.local).
+    # The root token is never printed to stdout; only used by bootstrap to create a limited dev token.
+    # Persistence: named volume (openbao-data) survives up/down; removed by down -v or reset.
+    command:
+      [
+        "server",
+        "-dev",
+        "-dev-listen-address=0.0.0.0:8200",
+        "-dev-root-token-id=${LOCAL_OPENBAO_ROOT_TOKEN}",
+      ]
     ports:
       - "127.0.0.1:8200:8200"
     volumes:
-      - ./infra/local/openbao/config.hcl:/bao/config/config.hcl:ro
       - openbao-data:/bao/data
     healthcheck:
       test: ["CMD-SHELL", "BAO_ADDR=http://127.0.0.1:8200 bao status"]
       interval: 10s
       timeout: 5s
       retries: 10
-    networks:
-      - local
-
-  # One-shot: init + unseal + kv-v2. Runs on every up -d, idempotent.
-  openbao-init:
-    image: openbao/openbao:latest
-    container_name: markflow-local-openbao-init
-    depends_on:
-      openbao:
-        condition: service_healthy
-    environment:
-      BAO_ADDR: http://openbao:8200
-    volumes:
-      - ./scripts/local-openbao-bootstrap.sh:/init.sh:ro
-      - openbao-data:/bao/data
-    entrypoint: ["/bin/sh", "/init.sh"]
-    restart: "no"
     networks:
       - local
 

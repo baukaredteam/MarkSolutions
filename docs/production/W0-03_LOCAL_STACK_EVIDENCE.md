@@ -1,45 +1,51 @@
-# W0-03 Local Stack Evidence
+# W0-03 Local Stack Evidence (Corrective)
 
 **Date:** 2026-08-21
-**Branch:** `w0-03-local-stack` (from `main` / `af3e1b5`)
+**Branch:** `w0-03-local-stack-fix` (from `4ce34b5`)
 **Docker:** 29.7.2, Compose v5.4.0
 
 ---
 
-## 1. Docker prerequisites verified
+## 1. Image digests (pinned)
+
+| Service       | Image                        | Digest                                                                    |
+| ------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| PostgreSQL 16 | `docker.io/library/postgres` | `sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685` |
+| MinIO         | `docker.io/minio/minio`      | `sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e` |
+| OpenBao       | `docker.io/openbao/openbao`  | `sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641` |
+
+## 2. Corrective changes applied
+
+| Finding                       | Fix                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| Floating image tags           | All 3 images pinned to immutable digests with full registry prefix          |
+| `\|\| true` in bootstrap      | Removed; probe-if-exists pattern; fail hard on token creation failure       |
+| openbao-init container timing | Removed init container; bootstrap runs from host via `local-stack-up.sh`    |
+| Root token printed to stdout  | Root token never printed; read from `.env.local` (LOCAL_OPENBAO_ROOT_TOKEN) |
+| config.hcl mismatch           | Removed unused `config.hcl`; `-dev` mode used without config file           |
+| Smoke/reset hide failures     | Smoke exits nonzero on any failure; reset exits nonzero on cleanup failure  |
+| MinIO cleanup verification    | Smoke verifies object is actually gone after rm                             |
+
+## 3. Service verification
 
 ```bash
-docker version
-# Client: 29.7.2, API 1.55
-# Server: 29.7.2 (Docker Desktop)
+# PostgreSQL 16
+docker exec markflow-local-pg psql -U markflow -d markflow_local -c "SELECT version()"
+# PostgreSQL 16.x on x86_64-pc-linux-musl, compiled by gcc ..., 64-bit
 
-docker compose version
-# Docker Compose version v5.4.0
+# MinIO
+docker exec markflow-local-minio mc alias set local http://127.0.0.1:9000 $KEY $SECRET
+docker exec markflow-local-minio mc mb local/markflow-local  # idempotent
+# write/read/verify/cleanup: all pass
 
-docker info
-# Server Version: 29.7.2
-# Operating System: Docker Desktop
-# Docker Root Dir: /var/lib/docker
+# OpenBao Transit
+docker exec -e BAO_ADDR=http://127.0.0.1:8200 markflow-local-openbao bao status
+# Seal Type: shamir, Initialized: true, Sealed: false, Version: 2.6.2
+# Transit engine: transit/, key: markflow-local (aes256-gcm96)
+# Encrypt/decrypt round-trip: pass
 ```
 
-## 2. Services started and healthy
-
-```bash
-docker compose -f compose.local.yml --env-file .env.local up -d
-# PostgreSQL 16: healthy (pg_isready)
-# MinIO: healthy (mc ready local)
-# OpenBao v2.6.2: initialized, unsealed (dev mode)
-```
-
-**Container status:**
-
-| Container              | Image                  | Status                     |
-| ---------------------- | ---------------------- | -------------------------- |
-| markflow-local-pg      | postgres:16-alpine     | Up, healthy                |
-| markflow-local-minio   | minio/minio:latest     | Up, healthy                |
-| markflow-local-openbao | openbao/openbao:latest | Up (dev mode, initialized) |
-
-## 3. Port binding verification
+## 4. Port binding verification
 
 | Service       | Host bind      | Status          |
 | ------------- | -------------- | --------------- |
@@ -48,76 +54,51 @@ docker compose -f compose.local.yml --env-file .env.local up -d
 | MinIO Console | 127.0.0.1:9001 | ✓ Loopback only |
 | OpenBao       | 127.0.0.1:8200 | ✓ Loopback only |
 
-**Note:** PostgreSQL uses port 5433 (host) → 5432 (container) to avoid conflict with existing PostgreSQL on port 5432.
+## 5. Data persistence model
 
-## 4. Smoke test results
+| Data       | Survives up/down?         | Removed by down -v? | Notes                                                   |
+| ---------- | ------------------------- | ------------------- | ------------------------------------------------------- |
+| PostgreSQL | Yes (pgdata volume)       | Yes                 | Real data in named volume                               |
+| MinIO      | Yes (miniodata volume)    | Yes                 | Real data in named volume                               |
+| OpenBao    | No (dev mode = in-memory) | N/A                 | openbao-data volume exists but dev mode doesn't persist |
+| .env.local | Yes (host filesystem)     | No                  | Generated at first start; gitignored                    |
 
-```
-PostgreSQL 16:
-  ✓ PostgreSQL 16 version
-  ✓ PostgreSQL connection
+## 6. Token flow (W0-03-fix)
 
-MinIO:
-  ✓ MinIO write/read with tenant prefix
-  ✓ MinIO test object cleaned up
+- Root token: generated by OpenBao `-dev` mode; stored in `.env.local` as `LOCAL_OPENBAO_ROOT_TOKEN`; never printed to stdout; never exposed to application scripts.
+- Derived dev token: created by bootstrap with `markflow-dev` policy (encrypt/decrypt/read); TTL 1h; stored in volume file `/bao/data/init-token` inside the container.
+- Application config: must never contain a root token; only the derived token (or its OpenBao auth method) should be used.
 
-OpenBao Transit:
-  ✓ OpenBao initialized
-  ✓ Transit engine enabled
-  ✓ Transit encrypt
-  ✓ Transit decrypt round-trip
-```
+## 7. Limitations
 
-## 5. OpenBao bootstrap
+- Scripts are `.sh` (require bash/sh); on Windows, run equivalent PowerShell commands directly.
+- OpenBao dev mode: in-memory storage; no HA; no audit to SIEM.
+- MinIO: no SSE-KMS; no lifecycle/retention; placeholder only.
+- No TLS; no backup/restore; no external egress.
+- PostgreSQL port 5433 (host) to avoid conflict with existing PG on 5432.
 
-- Dev mode: `bao server -dev` (auto-init, auto-unseal, root token printed to stdout)
-- Transit engine enabled at `transit/`
-- Key created: `transit/keys/markflow-local` (type: aes256-gcm96)
-- Root token used for bootstrap only (never in application config)
-- Dev policy `markflow-dev` created with encrypt/decrypt/read capabilities
+## 8. Quality gates
 
-## 6. Security verification
+| Gate                          | Status                                                     |
+| ----------------------------- | ---------------------------------------------------------- |
+| typecheck                     | ✓ Pass                                                     |
+| lint                          | ✓ Pass                                                     |
+| secret-scan                   | ✓ Pass                                                     |
+| docker compose config         | ✓ Valid (warnings about unset env vars expected)           |
+| Services bind loopback        | ✓ Verified                                                 |
+| No secrets in git             | ✓ .env.local gitignored                                    |
+| No DB/MinIO/Vault data in git | ✓                                                          |
+| open-code-review              | Not installed on this system; stated without claiming pass |
 
-| Check                               | Status                            |
-| ----------------------------------- | --------------------------------- |
-| No secrets committed to git         | ✓ (.env.local is gitignored)      |
-| No DB/MinIO/Vault data in git       | ✓                                 |
-| Services bind to loopback only      | ✓                                 |
-| OpenBao runs in dev mode only       | ✓ (root token for bootstrap only) |
-| MinIO uses `markflow-local` bucket  | ✓                                 |
-| Smoke test cleans up test objects   | ✓                                 |
-| Smoke test redacts sensitive output | ✓                                 |
+## 9. Files modified
 
-## 7. Quality gates
-
-| Gate                | Status             |
-| ------------------- | ------------------ |
-| typecheck           | ✓ Pass             |
-| lint                | ✓ Pass             |
-| secret-scan         | ✓ Pass             |
-| existing test suite | ✓ Pass (328 tests) |
-
-## 8. Non-production limitations
-
-- OpenBao: dev mode (no HA, no auto-unseal, in-memory storage, root token for bootstrap)
-- MinIO: no SSE-KMS (placeholder), no lifecycle/retention, no versioning
-- No TLS (HTTP only on loopback)
-- No backup/restore (ephemeral volumes)
-- Port 5433 used for PostgreSQL (avoids conflict with existing PG on 5432)
-
-## 9. Files created
-
-| File                                            | Purpose                                                 |
-| ----------------------------------------------- | ------------------------------------------------------- |
-| `compose.local.yml`                             | Docker Compose for PG16, MinIO, OpenBao                 |
-| `.env.local.example`                            | Placeholder variable names                              |
-| `.env.local`                                    | Generated secrets (gitignored)                          |
-| `infra/local/openbao/config.hcl`                | OpenBao dev config                                      |
-| `scripts/local-openbao-bootstrap.sh`            | Dev bootstrap (transit + key + policy + token)          |
-| `scripts/local-stack-up.sh`                     | Start stack + generate secrets                          |
-| `scripts/local-stack-down.sh`                   | Stop and remove volumes                                 |
-| `scripts/local-stack-status.sh`                 | Health check all services                               |
-| `scripts/local-stack-reset.sh`                  | Destroy data (requires CONFIRM_LOCAL_DATA_DELETION=YES) |
-| `scripts/local-smoke.sh`                        | PG, MinIO, OpenBao round-trip verification              |
-| `docs/production/W0-03_LOCAL_STACK_PLAN.md`     | Plan document                                           |
-| `docs/production/W0-03_LOCAL_STACK_EVIDENCE.md` | This evidence document                                  |
+| File                                            | Change                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------- |
+| `compose.local.yml`                             | Pinned digests, removed init container, removed config.hcl mount |
+| `.env.local.example`                            | Added `LOCAL_OPENBAO_ROOT_TOKEN` placeholder                     |
+| `scripts/local-openbao-bootstrap-inline.sh`     | New: bootstrap runs inside openbao container via docker exec     |
+| `scripts/local-openbao-bootstrap.sh`            | Updated: reads from LOCAL_OPENBAO_ROOT_TOKEN, bao login chain    |
+| `scripts/local-stack-up.sh`                     | Updated: runs bootstrap from host, generates root token          |
+| `docs/production/W0-03_LOCAL_STACK_PLAN.md`     | Updated: image digests, persistence model, token flow            |
+| `docs/production/W0-03_LOCAL_STACK_EVIDENCE.md` | This file                                                        |
+| `infra/local/openbao/config.hcl`                | Removed (unused with -dev mode)                                  |

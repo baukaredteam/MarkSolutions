@@ -1,6 +1,7 @@
 #!/bin/sh
-# W0-03: Destroy all local stack data (volumes, .env.local, OpenBao tokens).
+# W0-03-fix: Destroy all local stack data (volumes, .env.local, OpenBao tokens).
 # Requires CONFIRM_LOCAL_DATA_DELETION=YES. Refuses non-local endpoints.
+# Exits nonzero if any cleanup step fails.
 
 set -e
 
@@ -27,13 +28,19 @@ fi
 
 echo "[local-stack] Destroying all local data..."
 
-# Stop and remove volumes
-docker compose -f compose.local.yml --env-file .env.local down -v --remove-orphans 2>/dev/null || true
+# Stop and remove volumes — capture exit code
+docker compose -f compose.local.yml --env-file .env.local down -v --remove-orphans
+DOWN_EXIT=$?
+
+if [ $DOWN_EXIT -ne 0 ]; then
+  echo "[local-stack] FAIL: docker compose down failed (exit code $DOWN_EXIT)"
+  exit 1
+fi
 
 # Remove .env.local
 rm -f .env.local
 
-# Remove OpenBao data
+# Remove OpenBao data directory (if present outside volume)
 rm -rf infra/local/openbao-data
 
 echo "[local-stack] All local data destroyed."
