@@ -24,3 +24,8 @@ kms-keys/
 .pgdata/
 pgdata/
 *.pid
+
+# Leadership intake: raw sources and conversions are local-only, never tracked
+.local/leadership-intake/
+.local/anydoc-output/
+.local/exports/
