@@ -41,7 +41,7 @@
 |----|-------------|--------|--------|------|----------|
 | MF-REQ-020 | Counterparty verification | LEAD-001 | mock-only | 2026-08-21 | MockEcomAdapter; no real API |
 | MF-REQ-021 | Product catalog sync | LEAD-001/005 | mock-only | 2026-08-21 | MockEcomAdapter; no real API |
-| MF-REQ-022 | Manual resolution | LEAD-001 | verified-implemented | 2026-08-21 | onboarding.spec.ts |
+| MF-REQ-022 | Manual resolution | LEAD-001 | mock-only | 2026-08-21 | MockEcomAdapter.resolve is in-memory only; no real 1ecom verification |
 
 ## Billing / Invoice (MF-REQ-040–045)
 
@@ -49,8 +49,8 @@
 |----|-------------|--------|--------|------|----------|
 | MF-REQ-040 | Double-entry ledger | LEAD-014 | verified-implemented | 2026-08-21 | billing.spec.ts (invariant) |
 | MF-REQ-041 | Reserve/release/settle | LEAD-014 | verified-implemented | 2026-08-21 | billing.spec.ts |
-| MF-REQ-042 | Invoice creation + VAT | LEAD-014 | verified-implemented | 2026-08-21 | invoice.spec.ts |
-| MF-REQ-043 | Payment matching | LEAD-014 | verified-implemented | 2026-08-21 | invoice.spec.ts |
+| MF-REQ-042 | Invoice creation + VAT | LEAD-014 | partial | 2026-08-21 | Invoice CRUD works; Kaspi webhook response not validated against real API |
+| MF-REQ-043 | Payment matching | LEAD-014 | partial | 2026-08-21 | Webhook handler tested; no real Kaspi integration verified |
 | MF-REQ-044 | Tariff pricing | ROADMAP | decision-needed | — | D-001 pending |
 | MF-REQ-045 | Balance separation | LEAD-014 | verified-implemented | 2026-08-21 | billing.spec.ts |
 
@@ -67,8 +67,8 @@
 
 | ID | Requirement | Source | Status | Date | Evidence |
 |----|-------------|--------|--------|------|----------|
-| MF-REQ-060 | Encrypted code storage | LEAD-004 | verified-implemented | 2026-08-21 | code-vault.spec.ts |
-| MF-REQ-061 | AES-256-GCM | LEAD-004 | verified-implemented | 2026-08-21 | code-vault.spec.ts |
+| MF-REQ-060 | Encrypted code storage | LEAD-004 | development-only | 2026-08-21 | Uses FileKmsAdapter (dev key on disk); not production KMS |
+| MF-REQ-061 | AES-256-GCM | LEAD-004 | development-only | 2026-08-21 | Uses FileKmsAdapter (local key); OpenBaoTransitKmsAdapter not production-validated |
 | MF-REQ-062 | Label key PNG | LEAD-006 | verified-implemented | 2026-08-21 | label.spec.ts |
 | MF-REQ-063 | Code status machine | LEAD-004 | verified-implemented | 2026-08-21 | code-event.spec.ts |
 | MF-REQ-064 | Append-only audit | LEAD-004 | verified-implemented | 2026-08-21 | code-event.spec.ts |
@@ -123,7 +123,7 @@
 | ID | Requirement | Source | Status | Date | Evidence |
 |----|-------------|--------|--------|------|----------|
 | MF-REQ-120 | No hardcoded secrets | AGENTS.md | verified-implemented | 2026-08-21 | secret-scan pass |
-| MF-REQ-121 | Code Vault ciphertext redacted | AGENTS.md | verified-implemented | 2026-08-21 | health.spec.ts |
+| MF-REQ-121 | Code Vault ciphertext redacted | AGENTS.md | partial | 2026-08-21 | Strips connection strings; does not cover all error paths |
 | MF-REQ-122 | Encrypted payload not in logs | AGENTS.md | verified-implemented | 2026-08-21 | health.spec.ts |
 | MF-REQ-123 | Production rejects mock/file/local | AGENTS.md | verified-implemented | 2026-08-21 | db-bootstrap.spec.ts |
 
@@ -133,7 +133,7 @@
 |----|-------------|--------|--------|------|----------|
 | MF-REQ-130 | Correlation ID | ROADMAP | missing | — | — |
 | MF-REQ-131 | Structured log redaction | ROADMAP | partial | 2026-08-21 | sanitizeHealthError only |
-| MF-REQ-132 | Health/readiness probes | ROADMAP | verified-implemented | 2026-08-21 | http.spec.ts |
+| MF-REQ-132 | Health/readiness probes | ROADMAP | partial | 2026-08-21 | Liveness ok; readiness checks adapters/KMS/storage but depends on mock adapters in test |
 
 ## Decision-Needed (MF-DEC-001–006)
 

@@ -16,6 +16,22 @@ The following governance structure is approved:
 - **Versioning:** approved revisions receive version tags; unapproved drafts are unversioned
 - **Approval authority:** Project Owner (acting for leadership)
 
+## Cross-file consistency rule
+
+`TRACEABILITY_MATRIX.md` is the **sole source of truth** for implementation status, evidence quality, and verification date. `REQUIREMENTS_BASELINE_DRAFT.md` is the source of requirement wording and owner approval status. When a row is updated in the matrix, the corresponding baseline entry must be synchronized. The following seven statuses are synchronized from the matrix to the baseline:
+
+| MF-REQ | Matrix Status | Matrix Limitation |
+|--------|--------------|-------------------|
+| MF-REQ-022 | mock-only | MockEcomAdapter.resolve is in-memory only; no real 1ecom verification |
+| MF-REQ-042 | partial | Invoice CRUD works; Kaspi webhook response not validated against real API |
+| MF-REQ-043 | partial | Webhook handler tested; no real Kaspi integration verified |
+| MF-REQ-060 | development-only | Uses FileKmsAdapter (dev key on disk); not production KMS |
+| MF-REQ-061 | development-only | Uses FileKmsAdapter (local key); OpenBaoTransitKmsAdapter not production-validated |
+| MF-REQ-121 | partial | Strips connection strings; does not cover all error paths |
+| MF-REQ-132 | partial | Liveness ok; readiness checks adapters/KMS/storage but depends on mock adapters in test |
+
+**No row may be upgraded to `verified-implemented` in the baseline without a matching matrix update.**
+
 ## (b) What remains draft
 
 The entire `REQUIREMENTS_BASELINE_DRAFT.md` remains **DRAFT — NOT APPROVED FOR IMPLEMENTATION**. Specifically:

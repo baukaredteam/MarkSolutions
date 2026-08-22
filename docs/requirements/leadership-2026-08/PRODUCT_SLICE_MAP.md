@@ -1,7 +1,7 @@
 # Product Slice Map
 
 **Date:** 2026-08-21
-**Status:** DRAFT — comparison only where demo screens lack approved requirements
+**Status:** DRAFT — planning view only; not the full released product. Demo screens labeled **comparison only** where no approved requirement exists.
 
 ---
 
@@ -10,7 +10,7 @@
 | Aspect | Detail |
 |--------|--------|
 | MF-REQ group | MF-REQ-001–004 |
-| Roles | Руководитель, Специалист, Оператор, Бухгалтер, Модератор, Администратор, Просмотр |
+| Roles | Руководитель, Специалист, Оператор, Бухгалтер, Модератор, Администратор, Просмотр, **role #8: TBD by owner from LEAD source** (D-006) |
 | Data inputs | User registration, role assignment, MFA enrollment |
 | Data outputs | JWT token, role claims, RBAC-patched API responses |
 | Acceptance evidence | auth.spec.ts (login, JWT), rbac.spec.ts (role enforcement) |
@@ -71,12 +71,14 @@
 | Acceptance evidence | documents.spec.ts (CRUD, status) — **partial** (no async reconciliation) |
 | Demo screen | Documents list — **comparison only** (demo has no real MPT document submission) |
 
-## Slices NOT in scope (W0-03+)
+## Deliberately deferred domains (not in W0-03 scope)
 
-| Slice | MF-REQ range | Target WP |
-|-------|-------------|-----------|
-| Warehouse & TSD | MF-REQ-090–093 | W0-03 |
-| Exception handling | MF-REQ-110–112 | W0-04 |
-| Correlation ID | MF-REQ-130 | W0-05 |
-| Real MPT integration | MF-REF-100–105 | W0-03c + W0-04 |
-| Real GS1/NKT/1ecom | — | W0-03b |
+These domains have approved requirements in the traceability matrix but are deliberately unscheduled for W0-03. They are NOT missing — they are planned for later work packages.
+
+| Domain | MF-REQ range | Target WP | Reason deferred |
+|--------|-------------|-----------|-----------------|
+| Warehouse & TSD | MF-REQ-090–093 | W0-03 | Requires shipment/aggregation data model first |
+| Exception handling | MF-REQ-110–112 | W0-04 | Requires durable outbox and task center |
+| Correlation ID / observability | MF-REQ-130–131 | W0-05 | Requires structured logging infrastructure |
+| Real MPT integration | MF-REF-100–105 | W0-03c + W0-04 | Requires accepted adapters + outbox durability |
+| Real GS1/NKT/1ecom | — | W0-03b | Requires API contracts and test credentials |
