@@ -41,18 +41,18 @@ The entire `REQUIREMENTS_BASELINE_DRAFT.md` remains **DRAFT — NOT APPROVED FOR
 - No requirement may be used to drive implementation without explicit owner approval
 - The baseline becomes authoritative only after the six decision-log items are resolved and every `verified-implemented` row has code/test evidence matching the approved quality boundary
 
-## (c) Six leadership decisions still awaiting owner approval
+## (c) Six leadership decisions — adopted for implementation
 
-| ID | Decision | Current State | Required for |
-|----|----------|---------------|--------------|
-| D-001 | Tariff pricing (0.84 vs 8 KZT/code) | Conflict — seed uses 800 t. (8 KZT); management material shows 0.84 | W0-03+ billing implementation |
-| D-002 | Pilot MPT write authority | Decision-needed — no real Stage integration yet | W0-03c MPT contract verification |
-| D-003 | Data ownership (MarkFlow vs client) | Decision-needed | W1+ production deployment |
-| D-004 | Code Vault cryptotext retention | Decision-needed | W0-03a KMS adapter implementation |
-| D-005 | Document combinations (invoice/customs) | Unknown — no explicit rules in leadership docs | W0-03+ document workflows |
-| D-006 | Role matrix (full permission map) | Decision-needed — base roles defined; no full permission matrix | W0-01+ RBAC completion |
+All six decisions have been adopted for implementation by delegated Project Owner direction (MarkFlow_delegated_decision_records_and_prompts.md, 2026-08-22). Each requires named legal/finance/integration ratification before external-production scope.
 
-**These six decisions must be approved before any W0-03+ coding that depends on them.**
+| ID | Decision | Status | Record |
+|----|----------|--------|--------|
+| D-001 | Hybrid billing (800 tiyn/code) | Adopted | `decisions/D-001.md` |
+| D-002 | MPT read-only (writes denied) | Adopted | `decisions/D-002.md` |
+| D-003 | Client data ownership | Adopted | `decisions/D-003.md` |
+| D-004 | Code Vault 5-year retention | Adopted | `decisions/D-004.md` |
+| D-005 | Central document policy | Adopted | `decisions/D-005.md` |
+| D-006 | 8 default roles + permission primitive | Adopted | `decisions/D-006.md` |
 
 ## (d) Requirements completion policy
 
