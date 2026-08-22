@@ -13,6 +13,7 @@
 | `partial` | Some paths work; others missing or incomplete |
 | `demo-only` | Works in demo/local context only; no production path |
 | `mock-only` | Only mock adapter; no real API/service integration |
+| `development-only` | Works only with a local/development dependency, key or credential; explicitly not production requirement fulfillment |
 | `contract-stub` | Interface defined; implementation is placeholder |
 | `missing` | No implementation exists |
 | `conflict` | Conflicting requirements or decisions unresolved |

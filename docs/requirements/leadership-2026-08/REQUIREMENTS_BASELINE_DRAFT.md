@@ -10,7 +10,7 @@
 | Approval authority | Project Owner (acting for leadership) |
 | Versioning | Approved revisions get version tags (v1.0); unapproved drafts unversioned |
 | Change protocol | New requirements need LEAD-### reference + owner approval |
-| Status values | `verified-implemented`, `partial`, `demo-only`, `mock-only`, `contract-stub`, `missing`, `conflict`, `decision-needed`, `unknown` |
+| Status values | `verified-implemented`, `partial`, `demo-only`, `mock-only`, `development-only`, `contract-stub`, `missing`, `conflict`, `decision-needed`, `unknown` |
 | Evidence quality | `verified-implemented` = non-mock module + acceptance/integration test |
 | Decision linkage | DECISION_LOG.md items must be approved before coding |
 

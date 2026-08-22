@@ -9,7 +9,7 @@
 
 The following governance structure is approved:
 
-- **Status vocabulary:** `verified-implemented`, `partial`, `demo-only`, `mock-only`, `contract-stub`, `missing`, `conflict`, `decision-needed`, `unknown`
+- **Status vocabulary:** `verified-implemented`, `partial`, `demo-only`, `mock-only`, `development-only`, `contract-stub`, `missing`, `conflict`, `decision-needed`, `unknown`
 - **Evidence standard:** `verified-implemented` requires a non-mock module name AND an acceptance/integration test that actually exercises it against a real database/service
 - **Change protocol:** new requirements require LEAD-### source reference + owner approval
 - **Decision linkage:** DECISION_LOG.md items must be approved before coding begins
