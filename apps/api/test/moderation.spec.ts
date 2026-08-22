@@ -96,12 +96,14 @@ describe("catalog moderation (T3, CAT-013)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
     operatorToken = jwt.sign({
       sub: "operator-seeded",
       tenantId: null,
       roles: ["operator"],
+      activeLegalEntityId: "le-" + null,
       mfaCompleted: true,
     });
   }, 120000);
@@ -127,9 +129,10 @@ describe("catalog moderation (T3, CAT-013)", () => {
     });
     const jwt = app.get(JwtService);
     const tenantToken = jwt.sign({
-      sub: `u-${tenant.id}`,
+      sub: `u1`,
       tenantId: tenant.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenant.id,
       mfaCompleted: true,
     });
     const brand = `RAVENOL${tenant.id.slice(-4)}`;

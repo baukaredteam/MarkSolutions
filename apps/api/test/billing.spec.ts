@@ -61,6 +61,7 @@ describe("billing core (W3, ADR-007)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -129,9 +130,10 @@ describe("billing core (W3, ADR-007)", () => {
       data: { tenantId: t.id, balance: BigInt(0) },
     });
     const tok = app.get(JwtService).sign({
-      sub: `u-${t.id}`,
+      sub: `u1`,
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const res = await request(app.getHttpServer())
@@ -170,9 +172,10 @@ describe("billing core (W3, ADR-007)", () => {
       data: { balance: BigInt(100000) },
     });
     const tok = app.get(JwtService).sign({
-      sub: `u-${t.id}`,
+      sub: `u1`,
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const [a, b] = await Promise.all([
@@ -268,9 +271,10 @@ describe("billing core (W3, ADR-007)", () => {
       data: { balance: BigInt(50000) },
     });
     const tok = app.get(JwtService).sign({
-      sub: `u-${t.id}`,
+      sub: `u1`,
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     // списание 50000 проходит, баланс → 0
@@ -339,9 +343,10 @@ describe("billing core (W3, ADR-007)", () => {
       data: { tenantId: t.id, balance: BigInt(0) },
     });
     const tok = app.get(JwtService).sign({
-      sub: `u-${t.id}`,
+      sub: `u1`,
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const res = await request(app.getHttpServer())
@@ -360,9 +365,10 @@ describe("billing core (W3, ADR-007)", () => {
       data: { tenantId: t.id, balance: BigInt(0) },
     });
     const tok = app.get(JwtService).sign({
-      sub: `u-${t.id}`,
+      sub: `u1`,
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     await prisma.ledgerEntry.create({

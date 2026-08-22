@@ -61,7 +61,13 @@ describe("RBAC (T0-RBAC, ADR-020 апдейт)", () => {
     tenantId = tenant.id;
     const jwt = app.get(JwtService);
     tokenOf = (roles: string[]) =>
-      jwt.sign({ sub: "u1", tenantId, roles, mfaCompleted: true });
+      jwt.sign({
+        sub: "u1",
+        tenantId,
+        roles,
+        activeLegalEntityId: "le-" + tenantId,
+        mfaCompleted: true,
+      });
     // код для print/apply/export
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
@@ -77,6 +83,7 @@ describe("RBAC (T0-RBAC, ADR-020 апдейт)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-rbac",
         gtin: "04014835723399",
         mask: "04014835723399:00…01",
@@ -241,13 +248,17 @@ describe("RBAC (T0-RBAC, ADR-020 апдейт)", () => {
 
   it("login возвращает roles[] для UI", async () => {
     const { AuthService } = await import("../src/auth.service");
-    await prisma.user.create({
+    const u = await prisma.user.create({
       data: {
         login: "roles-check@demo",
         tenantId,
         passwordHash: AuthService.hashPassword("demo-password"),
         roles: JSON.stringify(["marking", "viewer"]),
       },
+    });
+    // ADR-027: без membership логин не выдаёт active scope (403)
+    await prisma.userLegalEntityMembership.create({
+      data: { userId: u.id, legalEntityId: "le-" + tenantId, scope: "member" },
     });
     const res = await request(app.getHttpServer())
       .post("/auth/login")

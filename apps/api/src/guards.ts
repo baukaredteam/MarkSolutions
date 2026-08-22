@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
   ForbiddenException,
+  ConflictException,
   SetMetadata,
   CustomDecorator,
 } from "@nestjs/common";
@@ -11,6 +12,8 @@ import { JwtService } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
 import { IS_PUBLIC_KEY } from "./public.decorator";
 import type { JwtClaims } from "./auth.service";
+import { ActiveScopeResolver, MembershipError } from "./active-scope.resolver";
+import type { ActiveScope } from "./active-scope.resolver";
 
 export const Roles = (...roles: string[]): CustomDecorator =>
   SetMetadata("roles", roles);
@@ -27,16 +30,23 @@ export const CLIENT_ROLES = [
 // GET-эндпоинты доступны ВСЕМ клиентским ролям (ТЗ: чтение разрешено по политике)
 export const READ_ROLES = [...CLIENT_ROLES] as const;
 
-// tenant-guard читает tenant ТОЛЬКО из JWT-клейма (ADR-017 апдейт).
-// x-tenant-id header игнорируется. Без/невалидный JWT → 401.
+// tenant-guard читает tenant/scope ТОЛЬКО из JWT-клеймов (ADR-017/ADR-027).
+// x-tenant-id и любые другие заголовки игнорируются. Без/невалидный JWT → 401.
+//
+// W0-03a pt2 (ADR-027): guard асинхронный, на КАЖДОМ защищённом запросе
+// валидирует tenantId + activeLegalEntityId + membership через ActiveScopeResolver
+// и кладёт validated value object на request.activeScope.
+// Оператор модерации проходит БЕЗ scope — но защищённые клиентские данные
+// требуют scope-объект (activeScopeOf), поэтому глобального bypass нет.
 @Injectable()
 export class TenantGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
-    private readonly reflector: Reflector
+    private readonly reflector: Reflector,
+    private readonly scopes: ActiveScopeResolver
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -55,8 +65,6 @@ export class TenantGuard implements CanActivate {
       throw new UnauthorizedException("invalid jwt");
     }
     const roles = claims.roles ?? [];
-    // оператор модерации — глобальная роль без tenant (CAT-013): ему tenant не нужен,
-    // tenant-scoped эндпоинты с req.tenantId=null не вернут чужие данные.
     const isOperator = roles.includes("operator");
     if (!claims.tenantId && !isOperator) {
       throw new UnauthorizedException("invalid jwt");
@@ -65,7 +73,29 @@ export class TenantGuard implements CanActivate {
     req.roles = roles;
     req.mfaCompleted = claims.mfaCompleted ?? false;
     req.actor = claims.sub;
-    return true;
+
+    if (!claims.tenantId) return true; // оператор: клиентские данные закрыты activeScopeOf
+
+    try {
+      const scope: ActiveScope = await this.scopes.resolve({
+        tenantId: claims.tenantId,
+        activeLegalEntityId: claims.activeLegalEntityId ?? null,
+        userId: claims.sub,
+      });
+      req.activeScope = {
+        organizationId: scope.organizationId,
+        legalEntityId: scope.legalEntityId,
+      };
+      req.legalEntityId = scope.legalEntityId;
+      return true;
+    } catch (e) {
+      if (e instanceof MembershipError) {
+        if (e.reason === "selection-required")
+          throw new ConflictException("legal-entity selection required");
+        throw new ForbiddenException("active legal entity membership required");
+      }
+      throw e;
+    }
   }
 }
 

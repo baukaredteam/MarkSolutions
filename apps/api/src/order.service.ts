@@ -44,6 +44,7 @@ export class OrderService {
 
   async create(
     tenantId: string,
+    legalEntityId: string,
     idempotencyKey: string,
     body: CreateOrderInput
   ) {
@@ -124,6 +125,7 @@ export class OrderService {
         const created = await tx.order.create({
           data: {
             tenantId,
+            legalEntityId, // ADR-027: validated active scope from the request
             idempotencyKey,
             cardId: card.id,
             gtin: body.gtin,

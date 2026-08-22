@@ -70,6 +70,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -112,6 +113,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId,
         gtin: "04014835723399",
         mask: "04014835723399:00…01",

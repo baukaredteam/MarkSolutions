@@ -1,4 +1,5 @@
 import { ScopeError } from "./scope";
+import { ForbiddenException } from "@nestjs/common";
 
 // W0-03a part 2 (ADR-027) — LegalEntityScopedRepository guard policy.
 //
@@ -10,6 +11,26 @@ export class CrossTenantScopeError extends ScopeError {
   constructor() {
     super("scope mismatch: legal entity does not belong to organization");
   }
+}
+
+/** Extract the guard-validated scope from a request; 403 when absent.
+ *  No operator bypass: customer data always requires an active legal entity. */
+export function activeScopeOf(req: unknown): {
+  organizationId: string;
+  legalEntityId: string;
+} {
+  const scope = (req as { activeScope?: unknown }).activeScope;
+  if (
+    !scope ||
+    typeof scope !== "object" ||
+    !(scope as { organizationId?: string }).organizationId ||
+    !(scope as { legalEntityId?: string }).legalEntityId
+  ) {
+    throw new ForbiddenException("active legal entity required");
+  }
+  return requireScope(
+    scope as { organizationId: string; legalEntityId: string }
+  );
 }
 
 export function requireScope(

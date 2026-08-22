@@ -82,6 +82,7 @@ describe("order create (W3, ORD-024..028)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -401,9 +402,10 @@ describe("order create (W3, ORD-024..028)", () => {
       data: { bin: "777000111333", name: "Чужой", status: "ACTIVE" },
     });
     const token2 = app.get(JwtService).sign({
-      sub: `u-${t2.id}`,
+      sub: `u1`,
       tenantId: t2.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t2.id,
       mfaCompleted: true,
     });
     await request(app.getHttpServer())
@@ -437,9 +439,10 @@ describe("order create (W3, ORD-024..028)", () => {
       data: { balance: BigInt(100000) },
     });
     const tok = app.get(JwtService).sign({
-      sub: `u-${t.id}`,
+      sub: `u1`,
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const { id: cardId, gtin } = await createCard(tok);

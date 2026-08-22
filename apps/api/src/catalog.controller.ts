@@ -20,6 +20,7 @@ import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
 import { KMS_ADAPTER, IKmsAdapter } from "./kms.adapter";
 import { Inject } from "@nestjs/common";
+import { activeScopeOf } from "./scoped-repository";
 import {
   tnvedHint,
   heuristicStrengthensFix,
@@ -512,12 +513,12 @@ export class DemoController {
     if (process.env.DEMO_ENABLED !== "true") {
       throw new NotFoundException("demo endpoint disabled");
     }
-    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
-    if (!tenantId) throw new ForbiddenException("tenant required");
-    return this.runW4Seed(tenantId);
+    // ADR-027: демо-сев идёт от валидированного active scope, не от «голого» tenantId.
+    const scope = activeScopeOf(req);
+    return this.runW4Seed(scope.organizationId, scope.legalEntityId);
   }
 
-  private async runW4Seed(tenantId: string) {
+  private async runW4Seed(tenantId: string, legalEntityId: string) {
     const existingApplied = await this.prisma.codeVault.count({
       where: { tenantId, status: "APPLIED" },
     });
@@ -541,12 +542,13 @@ export class DemoController {
         Buffer.from(
           JSON.stringify({ serial: "9000001", ai91: null, ai92: null })
         ),
-        { organizationId: tenantId, legalEntityId: tenantId, objectId: orderId }
+        { organizationId: tenantId, legalEntityId, objectId: orderId }
       );
       for (let i = 0; i < 2; i++) {
         await this.prisma.codeVault.create({
           data: {
             tenantId,
+            legalEntityId,
             orderId,
             gtin: "04014835723399",
             mask: `04014835723399:90…0${i + 1}`,

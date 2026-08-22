@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 import { StorageAdapter, FILE_LABELS, FileDescriptor } from "@markflow/shared";
+import { activeScopeOf } from "./scoped-repository";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
 export const STORAGE_ADAPTER = "STORAGE_ADAPTER";
@@ -58,6 +59,7 @@ export class FilesService {
 
   async upload(
     tenantId: string,
+    legalEntityId: string,
     cardId: string,
     label: string,
     file: UploadedMulterFile
@@ -74,7 +76,7 @@ export class FilesService {
     // дубль label → замена, не добавление (CAT-011: замена файла → новый ключ)
     const contentHash = createHash("sha256").update(file.buffer).digest("hex");
     const descriptor: FileDescriptor = {
-      key: await this.storage.write(tenantId, tenantId, file.buffer),
+      key: await this.storage.write(tenantId, legalEntityId, file.buffer),
       originalName: file.originalname,
       mimeType: file.mimetype,
       contentHash,
@@ -103,11 +105,16 @@ export class FilesService {
   }
 
   // GET файла: доступ через карточку (tenant-проверка), сырой ключ сам по себе доступа не даёт (IDOR).
-  async getFile(tenantId: string, cardId: string, key: string) {
+  async getFile(
+    tenantId: string,
+    legalEntityId: string,
+    cardId: string,
+    key: string
+  ) {
     const card = await this.getOwnedCard(tenantId, cardId);
     const file = this.descriptors(card).find((f) => f.key === key);
     if (!file) throw new NotFoundException("file not found");
-    const data = await this.storage.read(tenantId, tenantId, key);
+    const data = await this.storage.read(tenantId, legalEntityId, key);
     return { file, data };
   }
 
@@ -142,7 +149,14 @@ export class FilesController {
   ) {
     const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
     if (!tenantId) throw new ForbiddenException("tenant required");
-    return this.files.upload(tenantId, id, body.label, file);
+    const scope = activeScopeOf(req);
+    return this.files.upload(
+      scope.organizationId,
+      scope.legalEntityId,
+      id,
+      body.label,
+      file
+    );
   }
 
   @Roles(...READ_ROLES)
@@ -155,7 +169,13 @@ export class FilesController {
   ) {
     const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
     if (!tenantId) throw new ForbiddenException("tenant required");
-    const { file, data } = await this.files.getFile(tenantId, id, key);
+    const scope = activeScopeOf(req);
+    const { file, data } = await this.files.getFile(
+      scope.organizationId,
+      scope.legalEntityId,
+      id,
+      key
+    );
     // санация имени для заголовка (защита от CRLF-инъекции через originalName)
     const safeName = file.originalName.replace(/[\r\n"]/g, "_");
     res.setHeader("Content-Type", file.mimeType);

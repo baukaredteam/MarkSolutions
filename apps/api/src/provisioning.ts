@@ -13,6 +13,9 @@ export interface ProvisionResult {
 
 // Атомарный provisioning (ADR-016): tenant + счёт + базовые роли в одной транзакции.
 // Любой сбой → полный ROLLBACK, никаких осиротевших tenant/счёт.
+//
+// W0-03a pt2 (ADR-027): транзакционно создаёт LegalEntity юрлицо и membership
+// первого администратора — ноль членств невозможен, логин сразу выдаёт active scope.
 export async function provisionTenant(
   prisma: PrismaClient,
   input: ProvisionInput
@@ -31,12 +34,27 @@ export async function provisionTenant(
         balance: BigInt(0),
       },
     });
-    await tx.user.create({
+    const legalEntity = await tx.legalEntity.create({
+      data: {
+        tenantId: tenant.id,
+        bin: input.bin,
+        name: input.name,
+        status: "ACTIVE",
+      },
+    });
+    const admin = await tx.user.create({
       data: {
         tenantId: tenant.id,
         login: input.adminLogin,
         passwordHash: input.adminPasswordHash,
         roles: JSON.stringify(["admin", "accountant", "operator"]),
+      },
+    });
+    await tx.userLegalEntityMembership.create({
+      data: {
+        userId: admin.id,
+        legalEntityId: legalEntity.id,
+        scope: "admin",
       },
     });
     return { tenantId: tenant.id };

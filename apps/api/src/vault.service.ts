@@ -1,8 +1,12 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 import { IKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
-import { backfillLegalEntityId } from "./scope";
 
 // структура КМ (ADR-006): {gtin, serial, ai91, ai92}, form base|extended
 export interface VaultCode {
@@ -30,7 +34,7 @@ export class VaultService {
 
   // W0-03a (ADR-026): objectId is the stable CodeVault row id; seal/open use the
   // exact same metadata (organizationId + legalEntityId + objectId). legalEntityId
-  // is never duplicated from tenantId — it resolves to the backfilled entity.
+  // is never duplicated from tenantId — it comes from the authenticated scope.
   private async seal(
     organizationId: string,
     legalEntityId: string,
@@ -75,14 +79,18 @@ export class VaultService {
     if (!order) throw new NotFoundException("order not found");
     const existing = await this.prisma.codeVault.count({ where: { orderId } });
     if (existing > 0) return; // идемпотентно (поллер повторяет)
-    const legalEntityId =
-      order.legalEntityId ?? backfillLegalEntityId(order.tenantId);
+    // ADR-027: scope берётся из сохранённого заказа, без fallback из tenantId.
+    const legalEntityId = order.legalEntityId;
+    if (!legalEntityId) {
+      throw new ConflictException("order has no active legal entity scope");
+    }
     for (const c of codes) {
       // create first so the stable CodeVault id is available as the KMS objectId
       const row = await this.prisma.codeVault.create({
         data: {
           orderId,
           tenantId: order.tenantId,
+          legalEntityId,
           cardId,
           gtin: c.gtin,
           mask: this.maskOf(c.gtin, c.serial),
@@ -107,7 +115,9 @@ export class VaultService {
       throw new NotFoundException("order not found or no codes");
     const out: VaultCode[] = [];
     for (const r of rows) {
-      const le = r.legalEntityId ?? backfillLegalEntityId(r.tenantId);
+      const le = r.legalEntityId;
+      if (!le)
+        throw new ConflictException("code has no active legal entity scope");
       const { serial, ai91, ai92 } = await this.open(
         tenantId,
         le,
@@ -125,7 +135,9 @@ export class VaultService {
       where: { id: codeId, tenantId },
     });
     if (!row) throw new NotFoundException("code not found");
-    const le = row.legalEntityId ?? backfillLegalEntityId(row.tenantId);
+    const le = row.legalEntityId;
+    if (!le)
+      throw new ConflictException("code has no active legal entity scope");
     const { serial, ai91, ai92 } = await this.open(
       tenantId,
       le,
@@ -208,7 +220,9 @@ export class VaultService {
       : null;
     const out: VaultCode[] = [];
     for (const r of rows) {
-      const le = r.legalEntityId ?? backfillLegalEntityId(r.tenantId);
+      const le = r.legalEntityId;
+      if (!le)
+        throw new ConflictException("code has no active legal entity scope");
       const { serial, ai91, ai92 } = await this.open(
         tenantId,
         le,

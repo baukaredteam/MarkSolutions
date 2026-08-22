@@ -63,6 +63,7 @@ export async function createTestDatabase(): Promise<TestDb> {
       env: { ...process.env, DATABASE_URL: databaseUrl },
       stdio: "pipe",
     });
+    await installSeedScopeTrigger(databaseUrl);
 
     return {
       schema,
@@ -80,4 +81,39 @@ export async function createTestDatabase(): Promise<TestDb> {
 
 export async function teardownTestDatabase(testDb: TestDb): Promise<void> {
   await testDb.cleanup();
+}
+
+// W0-03a pt2: test-only seeding of the legal-entity scope graph. Production
+// code has NO fallback — this runs exclusively on disposable schemas and
+// mirrors real provisioning: every tenant gets LegalEntity `le-<tenantId>`,
+// admin user `u1` and a membership so crafted JWTs carry a validated scope.
+const SEED_SCOPE_STATEMENTS = [
+  `CREATE OR REPLACE FUNCTION mf_seed_scope() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO "User" ("id","version","login","passwordHash","roles","mfaEnabled","tenantId")
+  VALUES ('u1',0,'seed-u1','x','["admin","manager","accountant","marking","warehouse","viewer"]',false,NEW."id")
+  ON CONFLICT ("id") DO NOTHING;
+  INSERT INTO "LegalEntity" ("id","version","tenantId","bin","name","status","createdAt","updatedAt")
+  VALUES ('le-'||NEW."id",0,NEW."id",NEW."bin"||'-le','Legal Entity','ACTIVE',NOW(),NOW())
+  ON CONFLICT DO NOTHING;
+  INSERT INTO "UserLegalEntityMembership" ("id","userId","legalEntityId","scope")
+  VALUES ('m-'||NEW."id",'u1','le-'||NEW."id",'member')
+  ON CONFLICT DO NOTHING;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_mf_seed_scope ON "Tenant";`,
+  `CREATE TRIGGER trg_mf_seed_scope AFTER INSERT ON "Tenant"
+FOR EACH ROW EXECUTE FUNCTION mf_seed_scope();`,
+];
+
+async function installSeedScopeTrigger(databaseUrl: string): Promise<void> {
+  const a = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  try {
+    // Prisma raw queries allow exactly ONE statement per call (42601 otherwise).
+    for (const stmt of SEED_SCOPE_STATEMENTS) {
+      await a.$executeRawUnsafe(stmt);
+    }
+  } finally {
+    await a.$disconnect();
+  }
 }

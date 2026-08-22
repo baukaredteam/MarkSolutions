@@ -62,6 +62,7 @@ describe("code lookup (UI-03)", () => {
         sub: "u1",
         tenantId: tid,
         roles: ["admin"],
+        activeLegalEntityId: "le-" + tid,
         mfaCompleted: true,
       });
 
@@ -88,6 +89,7 @@ describe("code lookup (UI-03)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-lkp",
         gtin: "04014835723399",
         mask: "04014835723399:77…34",
@@ -179,6 +181,7 @@ describe("code lookup (UI-03)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-lkp2",
         gtin: "04210197500019",
         mask: "04210197500019:55…01",

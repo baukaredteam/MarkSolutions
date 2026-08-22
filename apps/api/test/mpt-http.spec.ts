@@ -446,6 +446,7 @@ describe("outbox correlation via OutboxPoller (e2e)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);

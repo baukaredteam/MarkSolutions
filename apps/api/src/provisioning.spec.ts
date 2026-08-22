@@ -10,8 +10,14 @@ describe("provisionTenant atomicity (ROLLBACK)", () => {
       account: {
         create: vi.fn().mockResolvedValue({ id: "a-1" }),
       },
+      legalEntity: {
+        create: vi.fn().mockResolvedValue({ id: "le-1" }),
+      },
       user: {
         create: vi.fn().mockRejectedValue(new Error("boom")),
+      },
+      userLegalEntityMembership: {
+        create: vi.fn().mockResolvedValue({ id: "m-1" }),
       },
     };
     const prisma = {

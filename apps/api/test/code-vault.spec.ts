@@ -89,6 +89,7 @@ describe("code vault (W3, CV-030..033)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -246,9 +247,10 @@ describe("code vault (W3, CV-030..033)", () => {
       data: { bin: "777000111333", name: "Чужой", status: "ACTIVE" },
     });
     const token2 = app.get(JwtService).sign({
-      sub: `u-${t2.id}`,
+      sub: `u1`,
       tenantId: t2.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t2.id,
       mfaCompleted: true,
     });
     await request(app.getHttpServer())

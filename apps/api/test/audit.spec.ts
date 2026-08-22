@@ -57,6 +57,7 @@ describe("audit journal (UI-07, SEC-057)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-audit",
         gtin: "04014835723399",
         mask: "04014835723399:00…01",
@@ -88,6 +89,7 @@ describe("audit journal (UI-07, SEC-057)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
     void acc;
@@ -129,9 +131,12 @@ describe("audit journal (UI-07, SEC-057)", () => {
     });
     const jwt = app.get(JwtService);
     const tok = jwt.sign({
-      sub: "u2",
+      // ADR-027: scope-инфраструктура тестов сеет membership только для u1;
+      // смена tenant при том же пользователи проверяет изоляцию так же строго.
+      sub: "u1",
       tenantId: t2.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t2.id,
       mfaCompleted: true,
     });
     const res = await request(app.getHttpServer())

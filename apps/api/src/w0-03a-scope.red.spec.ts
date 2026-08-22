@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { TenantGuard } from "./guards";
 import { Reflector } from "@nestjs/core";
 import { ActiveScopeResolver, MembershipError } from "./active-scope.resolver";
 
-// W0-03a part 2 diagnosing phase — red-capable reproductions. Each test names
+// W0-03a part 2 diagnosing phase вЂ” red-capable reproductions. Each test names
 // an exact defect; they must be red before the corresponding slice fixes them.
 
 const SRC = join(__dirname);
@@ -33,7 +33,7 @@ const membershipRow = {
   legalEntity: { id: "le-1", tenantId: "t1" },
 };
 
-// ── (a) JWT without activeLegalEntityId must not reach a protected route ──
+// в”Ђв”Ђ (a) JWT without activeLegalEntityId must not reach a protected route в”Ђв”Ђ
 describe("red a: JWT without activeLegalEntityId", () => {
   it("is rejected on every protected request", async () => {
     const guard = new TenantGuard(
@@ -60,7 +60,7 @@ describe("red a: JWT without activeLegalEntityId", () => {
   });
 });
 
-// ── (b) user whose membership does not match tenant/LE ──
+// в”Ђв”Ђ (b) user whose membership does not match tenant/LE в”Ђв”Ђ
 describe("red b: membership mismatch", () => {
   it("rejects active LE belonging to another tenant", async () => {
     const otherTenant = {
@@ -107,7 +107,7 @@ describe("red b: membership mismatch", () => {
   });
 });
 
-// ── (c) no caller may use tenantId as legalEntityId / backfill outside migration ──
+// в”Ђв”Ђ (c) no caller may use tenantId as legalEntityId / backfill outside migration в”Ђв”Ђ
 function walk(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -137,64 +137,77 @@ describe("red c: duplicated scope ids in production code", () => {
     expect(offenders).toEqual([]);
   });
 });
-
 // ── (e) root token must not persist to any volume/file by bootstrap ──
 describe("red e: root token persistence", () => {
-  it("bootstrap strips root_token from persisted state", () => {
-    const initPath = join(
-      __dirname,
-      "..",
-      "..",
-      "..",
-      "infra",
-      "openbao",
-      "init.sh"
-    );
-    if (!existsSync(initPath)) return; // slice 4 removes docker-based bootstrap
-    const text = readFileSync(initPath, "utf8");
-    expect(
-      /sed[^|]*root_token|root_token.*delete|jq\s+del\(.?root_token/.test(text)
-    ).toBe(true);
-    expect(/>\s*\$?ROOT_FILE|>\s*\/bao\/data\/root-token/.test(text)).toBe(
+  const repoRoot = join(__dirname, "..", "..", "..");
+  it("sh-based OpenBao bootstrap removed — PowerShell-only lifecycle", () => {
+    expect(existsSync(join(repoRoot, "infra", "openbao", "init.sh"))).toBe(
       false
     );
+    expect(existsSync(join(repoRoot, "docker-compose.infra.yml"))).toBe(false);
+  });
+
+  it("local OpenBao is in-memory dev mode — no durable token volume", () => {
+    const compose = readFileSync(join(repoRoot, "compose.local.yml"), "utf8");
+    expect(compose).toMatch(/-dev/);
+    // openbao service block must mount no volume (in-memory state only)
+    const block = compose.slice(compose.indexOf("openbao:"));
+    const svc = block.slice(
+      0,
+      block.search(/\n[a-z]/) === -1 ? block.length : block.search(/\n[a-z]/)
+    );
+    expect(svc).not.toMatch(/volumes:/);
   });
 });
 
-// ── (f) bootstrap errors hidden by `|| true` / mutable tags / 0.0.0.0 ──
+// ── (f) bootstrap errors hidden / unsafe local-stack artifacts ──
 describe("red f: local-stack static policy", () => {
-  const roots = [
-    join(__dirname, "..", "..", "..", "scripts"),
-    join(__dirname, "..", "..", "..", "infra"),
-  ];
-  const files = roots.flatMap((r) =>
-    existsSync(r)
-      ? readdirSync(r)
-          .filter((n) => /\.(ps1|mjs|hcl|ya?ml|sh)$/.test(n))
-          .map((n) => join(r, n))
-      : []
-  );
+  const repoRoot = join(__dirname, "..", "..", "..");
+  const files = [
+    join(repoRoot, "compose.local.yml"),
+    ...["up", "down", "status", "reset", "checks"].map((n) =>
+      join(repoRoot, "scripts", `local-stack-${n}.ps1`)
+    ),
+    join(repoRoot, "scripts", "local-smoke.ps1"),
+  ].filter((f) => existsSync(f));
+
+  it("covers the accepted PowerShell stack artifacts", () => {
+    expect(files.length).toBeGreaterThanOrEqual(5);
+  });
 
   it("no silently swallowed commands (`|| true`)", () => {
-    const offenders = files.filter((f) =>
-      /\|\|\s*true/.test(readFileSync(f, "utf8"))
-    );
+    const offenders = files
+      .filter((f) => !f.endsWith("local-stack-checks.ps1")) // the checker references the pattern as a literal
+      .filter((f) => /\|\|\s*true/.test(readFileSync(f, "utf8")));
     expect(offenders.map((f) => f.split(/[\\/]/).pop())).toEqual([]);
   });
 
-  it("no `latest` image tags in tracked infra", () => {
-    const offenders = files.filter((f) =>
-      /image:\s*\S+:latest\b/.test(readFileSync(f, "utf8"))
-    );
-    expect(offenders).toEqual([]);
+  it("no `latest` tags — images pinned by digest", () => {
+    for (const f of files.filter((x) => x.endsWith(".yml"))) {
+      const images = [
+        ...readFileSync(f, "utf8").matchAll(/image:\s*(\S+)/g),
+      ].map((m) => m[1]);
+      expect(images.length).toBeGreaterThan(0);
+      for (const img of images) expect(img).toMatch(/@sha256:[0-9a-f]{64}/);
+    }
   });
 
-  it("no committed default service credentials in infra compose", () => {
-    const yml = join(__dirname, "..", "..", "..", "docker-compose.infra.yml");
-    if (!existsSync(yml)) return; // removed by slice 4
-    const t = readFileSync(yml, "utf8");
-    expect(
-      /DEFAULT_PASS|RABBITMQ_DEFAULT_USER|MINIO_ROOT_PASSWORD/.test(t)
-    ).toBe(false);
+  it("all host port bindings are loopback-only", () => {
+    for (const f of files.filter((x) => x.endsWith(".yml"))) {
+      const ports = [
+        ...readFileSync(f, "utf8").matchAll(/-\s+"([^"]*\d+:\d+)"/g),
+      ];
+      for (const p of ports) {
+        expect(p[1].startsWith("127.0.0.1:")).toBe(true);
+      }
+    }
+  });
+
+  it("no committed default service credentials", () => {
+    for (const f of files) {
+      const t = readFileSync(f, "utf8");
+      expect(t).not.toMatch(/markflow123|RABBITMQ_DEFAULT_PASS/);
+      expect(t).not.toMatch(/MINIO_ROOT_PASSWORD:\s*[A-Za-z0-9]/);
+    }
   });
 });

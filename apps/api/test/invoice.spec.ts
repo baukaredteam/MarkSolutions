@@ -68,6 +68,7 @@ describe("W5-07: invoices (счета, НДС, оплата)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);

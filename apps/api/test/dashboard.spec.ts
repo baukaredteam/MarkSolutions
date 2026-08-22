@@ -63,6 +63,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -89,6 +90,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-dash-1",
         gtin: "04014835723399",
         mask: "04014835723399:00…01",
@@ -218,9 +220,10 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
       data: { bin: "777000111999", name: "Пустой", status: "ACTIVE" },
     });
     const tokenEmpty = app.get(JwtService).sign({
-      sub: "u-empty",
+      sub: "u1",
       tenantId: tEmpty.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tEmpty.id,
       mfaCompleted: true,
     });
     const s0 = await request(app.getHttpServer())
@@ -266,6 +269,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-flags",
         gtin: "04014835723399",
         mask: "04014835723399:90…01",

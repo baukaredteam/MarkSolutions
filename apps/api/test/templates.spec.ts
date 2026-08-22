@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AppModule } from "../src/app.module";
+import { PrismaService } from "../src/prisma.service";
 import { sheetModel, motorOilSchemaV1 } from "@markflow/shared";
 import {
   createTestDatabase,
@@ -41,12 +42,18 @@ describe("GET /templates/:productGroup (JWT-protected, F3)", () => {
     }).compile();
     app = module.createNestApplication();
     await app.init();
+    // ADR-027: synthetic tenant 't1' gets real scope rows via the harness trigger
+    const prisma = app.get(PrismaService);
+    await prisma.tenant.create({
+      data: { id: "t1", bin: "templates-bin-1", name: "Templates Tenant" },
+    });
     // подписать валидный JWT с tenant-клеймом (тот же секрет, что AppModule)
     const jwt = app.get(JwtService);
     token = jwt.sign({
       sub: "u1",
       tenantId: "t1",
       roles: ["admin"],
+      activeLegalEntityId: "le-" + "t1",
       mfaCompleted: true,
     });
   }, 120000);

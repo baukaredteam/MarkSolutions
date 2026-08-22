@@ -68,6 +68,7 @@ describe("labels W4-02 (bwip-js + ZXing-WASM roundtrip, ADR-025)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -103,6 +104,7 @@ describe("labels W4-02 (bwip-js + ZXing-WASM roundtrip, ADR-025)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-lbl-1",
         gtin,
         mask: `${gtin}:${serial.slice(0, 2)}…${serial.slice(-2)}`,

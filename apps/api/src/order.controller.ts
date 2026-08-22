@@ -14,6 +14,7 @@ import type { Request } from "express";
 import { OrderService } from "./order.service";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
+import { activeScopeOf } from "./scoped-repository";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -44,7 +45,13 @@ export class OrderController {
       businessPlaceId?: number; // C-04: площадка нанесения (int32)
     }
   ) {
-    return this.orders.create(tenantOf(req), idempotencyKey ?? "", body);
+    const scope = activeScopeOf(req);
+    return this.orders.create(
+      scope.organizationId,
+      scope.legalEntityId,
+      idempotencyKey ?? "",
+      body
+    );
   }
 
   @Roles("admin", "manager")

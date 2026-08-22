@@ -58,6 +58,7 @@ describe("products cards list/detail (UI-04)", () => {
         sub: "u1",
         tenantId: tid,
         roles: ["admin"],
+        activeLegalEntityId: "le-" + tid,
         mfaCompleted: true,
       });
 

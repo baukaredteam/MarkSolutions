@@ -55,6 +55,7 @@ describe("W5-01: 1ecom импорт товаров", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);

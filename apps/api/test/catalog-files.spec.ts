@@ -99,12 +99,14 @@ describe("catalog files (T3, ADR-015)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
     token2 = jwt.sign({
-      sub: "u2",
+      sub: "u1",
       tenantId: tenantId2,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId2,
       mfaCompleted: true,
     });
   }, 120000);

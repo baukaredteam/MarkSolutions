@@ -54,6 +54,7 @@ describe("catalog import (T3)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -99,9 +100,10 @@ describe("catalog import (T3)", () => {
       data: { bin: "777000555666", name: "Сидинжойс", status: "ACTIVE" },
     });
     const tokenT = app.get(JwtService).sign({
-      sub: "u3",
+      sub: "u1",
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const res = await request(app.getHttpServer())
@@ -202,9 +204,10 @@ describe("catalog import (T3)", () => {
       data: { bin: "777000333444", name: "ДрТенант", status: "ACTIVE" },
     });
     const token2 = app.get(JwtService).sign({
-      sub: "u2",
+      sub: "u1",
       tenantId: t2.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t2.id,
       mfaCompleted: true,
     });
     const other = await request(app.getHttpServer())
@@ -220,9 +223,10 @@ describe("catalog import (T3)", () => {
       data: { bin: "777000777888", name: "ГейтТен", status: "ACTIVE" },
     });
     const tok = app.get(JwtService).sign({
-      sub: "u4",
+      sub: "u1",
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
 
@@ -319,9 +323,10 @@ describe("catalog import (T3)", () => {
       data: { bin: "777000888999", name: "Ф2Тен", status: "ACTIVE" },
     });
     const tok = app.get(JwtService).sign({
-      sub: "u5",
+      sub: "u1",
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     await request(app.getHttpServer())
@@ -362,9 +367,10 @@ describe("catalog import (T3)", () => {
       data: { bin: "777000999000", name: "Ф3Тен", status: "ACTIVE" },
     });
     const tok = app.get(JwtService).sign({
-      sub: "u6",
+      sub: "u1",
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const attrs = {
@@ -454,9 +460,10 @@ describe("catalog import (T3)", () => {
       data: { bin: "777000111100", name: "Конкурент", status: "ACTIVE" },
     });
     const tok = app.get(JwtService).sign({
-      sub: "u7",
+      sub: "u1",
       tenantId: t.id,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + t.id,
       mfaCompleted: true,
     });
     const gtin = "06001234567890";

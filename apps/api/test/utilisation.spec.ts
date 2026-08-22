@@ -88,12 +88,14 @@ describe("utilisation (W3, п.26)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
     opToken = jwt.sign({
       sub: "op",
       tenantId: null,
       roles: ["operator"],
+      activeLegalEntityId: "le-" + null,
       mfaCompleted: true,
     });
   }, 120000);

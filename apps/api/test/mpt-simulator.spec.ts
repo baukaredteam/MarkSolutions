@@ -86,6 +86,7 @@ describe("mpt simulator + order poller (W3, ORD-029)", () => {
       sub: "u1",
       tenantId,
       roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
       mfaCompleted: true,
     });
   }, 120000);
@@ -305,6 +306,7 @@ describe("mpt simulator + order poller (W3, ORD-029)", () => {
         sub: "operator-seeded",
         tenantId: null,
         roles: ["operator"],
+        activeLegalEntityId: "le-" + null,
         mfaCompleted: true,
       });
       const exc = await request(app.getHttpServer())

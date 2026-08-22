@@ -52,7 +52,13 @@ describe("code events + status machine (W4, ADR-025)", () => {
     });
     tenantId = tenant.id;
     const jwt = app.get(JwtService);
-    jwt.sign({ sub: "u1", tenantId, roles: ["admin"], mfaCompleted: true });
+    jwt.sign({
+      sub: "u1",
+      tenantId,
+      roles: ["admin"],
+      activeLegalEntityId: "le-" + tenantId,
+      mfaCompleted: true,
+    });
   }, 120000);
 
   afterAll(async () => {
@@ -66,6 +72,7 @@ describe("code events + status machine (W4, ADR-025)", () => {
     const code = await prisma.codeVault.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-1",
         gtin: "04014835723399",
         mask: "04014835723399:00…99",

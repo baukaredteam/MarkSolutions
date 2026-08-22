@@ -68,6 +68,7 @@ import { LocalStorageAdapter, StorageAdapter } from "@markflow/shared";
 import { sanitizeHealthError } from "./config-validation";
 import { APP_CONFIG, AppConfig } from "./config-validation";
 import { AppConfigModule } from "./app-config.module";
+import { ActiveScopeResolver } from "./active-scope.resolver";
 import {
   MPT_WRITE_POLICY,
   createMptWritePolicy,
@@ -217,6 +218,7 @@ export class AdminController {
   ],
   providers: [
     PrismaService,
+    ActiveScopeResolver,
     AuthService,
     CatalogService,
     ModerationService,
