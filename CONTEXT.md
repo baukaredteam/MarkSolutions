@@ -72,6 +72,16 @@
 - **Создание заказа** — одна транзакция = заказ (Draft) + RESERVE-проводка (CAS) + outbox-событие `send-order-to-mpt`; отправка в ИС МПТ — поллером ПОСЛЕ коммита (Idempotency-Key = orderId, AT-07). Освобождение — явный RELEASE (компенсация, не откат: double-entry не удаляет проводки). REJECTED/таймаут симулятора → заказ Failed + RELEASE + задача оператору (ID-017). Отмена ORD-028 до эмиссии (до READY) → RELEASE; после эмиссии отмена запрещена (только нанесение/аннулирование по Правилам). SETTLE — только при регистрации нанесения (п.26).
 - **Reconciliation (ORD-029)** — поллер = сверка: опрашивает ВСЕ незакрытые заказы (Sent/Accepted/Processing) каждые MPT_POLL_MS и догоняет пропущенные статусы. Отдельного дневного джоба в MVP НЕТ (эволюция: после боевой интеграции — независимый дневной контрольный контур). Расхождение внешний quantity ≠ заказанный → заказ Partially Completed + задача оператору (ID-017), без авто-финкорректировки (SETTLE по фактическому количеству при нанесении + RELEASE разницы оператором; авто-корректировка — пост-интеграционная фаза).
 
+## Глоссарий платформы (W0-03a)
+
+- **LegalEntity** — юрлицо клиента, вложенное в Tenant (`Tenant 1:N LegalEntity`): `{id, tenantId, bin @unique, name, status}`. Authorization boundary ниже tenant: защищённые данные скоупятся по `(organizationId=tenantId, legalEntityId)`. _Avoid_: «юрлицо как tenant», «филиал без bin».
+- **organizationId / legalEntityId** — два обязательных скоупа каждого защищённого запроса/операции (DB, storage, KMS, file/vault/label). organizationId = tenantId; legalEntityId = активное юрлицо из токена. Никогда не дублировать tenantId в legalEntityId.
+- **UserLegalEntityMembership** — `(userId, legalEntityId, scope)`; определяет, какое юрлицо пользователь может выбрать. Нет членства → 403 на защищённых маршрутах.
+- **activeLegalEntityId** — выбранное юрлицо в короткоживущем access token; при одном членстве ставится при логине, при нескольких — через контролируемый выбор контекста (новый токен).
+- **Envelope (MFV1)** — длина-prefixed binary-конверт для секретной части КМ: magic `MFV1`, format version, algorithm, OpenBao key name/version, wrappedDEK, nonce, tag, ciphertext, AAD-hash, createdAt. AAD = канонические байты `{organizationId, legalEntityId, objectId, formatVersion, algorithm}`. objectId = id строки CodeVault.
+- **MptWritePolicy** — capability-guard бизнес-записей ИС МПТ (`createOrder`, utilisation, import/withdrawal submit). `MPT_WRITE_ENABLED=false` по умолчанию; `assertAllowed(operation)` бросает `WriteDisabledError` до сетевого I/O.
+- **APP_ENV** — канонический профиль окружения: `test|local|stage|production`; отсутствует/неизвестен → отклонение. Типизированный `APP_CONFIG` — единственный источник конфигурации DI-фабрик.
+
 ## Навигация по контексту
 
 Решения — docs/DECISIONS.md; роадмап — docs/ROADMAP.md; API — docs/CONTRACT-IS-MPT.md; Правила — docs/RULES-MM.md; каталог/инвойс — docs/CATALOG-MM.md; происхождение файлов — docs/SOURCE-MANIFEST.md. Правила агента — AGENTS.md.

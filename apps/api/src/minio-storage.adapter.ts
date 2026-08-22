@@ -4,45 +4,44 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
 } from "@aws-sdk/client-s3";
+import type { Agent } from "node:https";
 import { randomUUID } from "node:crypto";
+import type { MinioConfig } from "./config-validation";
+import { legalEntityScope } from "./scope";
 
-// W0-03a: MinIO S3-compatible storage adapter.
-// Tenant-scoped: every operation requires organizationId + legalEntityId.
-// Object keys: {organizationId}/{legalEntityId}/{uuid} — callers cannot choose arbitrary S3 keys.
-
-export interface MinioStorageConfig {
-  endpoint: string;
-  accessKey: string;
-  secretKey: string;
-  bucket: string;
-  useSsl: boolean;
-  timeoutMs: number;
-}
+// W0-03a: MinIO S3-compatible storage adapter (ADR-026).
+// Tenant + legal-entity scoped: every operation requires organizationId and
+// legalEntityId. Object keys: {organizationId}/{legalEntityId}/{uuid} — callers
+// cannot choose arbitrary S3 keys.
 
 @Injectable()
 export class MinioStorageAdapter implements StorageAdapter {
   private readonly logger = new Logger(MinioStorageAdapter.name);
   private readonly client: S3Client;
-  private readonly cfg: MinioStorageConfig;
+  private readonly cfg: MinioConfig;
 
-  constructor(
-    cfg: Partial<MinioStorageConfig> &
-      Pick<
-        MinioStorageConfig,
-        "endpoint" | "accessKey" | "secretKey" | "bucket"
-      >
-  ) {
-    this.cfg = { useSsl: false, timeoutMs: 30000, ...cfg };
+  constructor(cfg: MinioConfig) {
+    this.cfg = cfg;
+    let agent: Agent | undefined;
+    if (cfg.useTls && cfg.ca) {
+      const https = require("node:https") as typeof import("node:https");
+      agent = new https.Agent({ ca: cfg.ca });
+    }
     this.client = new S3Client({
-      endpoint: `${this.cfg.useSsl ? "https" : "http"}://${this.cfg.endpoint}`,
-      region: "us-east-1",
+      endpoint: `${cfg.useTls ? "https" : "http"}://${cfg.endpoint}`,
+      region: cfg.region || "us-east-1",
       credentials: {
-        accessKeyId: this.cfg.accessKey,
-        secretAccessKey: this.cfg.secretKey,
+        accessKeyId: cfg.accessKey,
+        secretAccessKey: cfg.secretKey,
       },
       forcePathStyle: true,
-      requestHandler: { requestTimeout: this.cfg.timeoutMs },
+      requestHandler: {
+        requestTimeout: cfg.timeoutMs,
+        connectionTimeout: cfg.timeoutMs,
+        ...(agent ? { httpsAgent: agent } : {}),
+      },
     });
   }
 
@@ -51,8 +50,8 @@ export class MinioStorageAdapter implements StorageAdapter {
     legalEntityId: string,
     data: Buffer
   ): Promise<string> {
-    this.validateScope(organizationId, legalEntityId);
-    const key = `${organizationId}/${legalEntityId}/${randomUUID()}`;
+    const scope = legalEntityScope(organizationId, legalEntityId);
+    const key = `${scope.organizationId}/${scope.legalEntityId}/${randomUUID()}`;
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.cfg.bucket,
@@ -69,30 +68,35 @@ export class MinioStorageAdapter implements StorageAdapter {
     legalEntityId: string,
     key: string
   ): Promise<Buffer> {
-    this.validateScope(organizationId, legalEntityId);
-    this.validateKey(key, organizationId, legalEntityId);
+    const scope = legalEntityScope(organizationId, legalEntityId);
+    this.validateKey(key, scope.organizationId, scope.legalEntityId);
     const response = await this.client.send(
       new GetObjectCommand({ Bucket: this.cfg.bucket, Key: key })
     );
-    const bytes = await (response.Body as any).transformToByteArray();
+    const bytes = await (
+      response.Body as { transformToByteArray(): Promise<Uint8Array> }
+    ).transformToByteArray();
     return Buffer.from(bytes);
   }
 
-  private validateScope(orgId: string, leId: string): void {
-    if (!orgId || orgId.trim() === "")
-      throw new Error("organizationId required");
-    if (!leId || leId.trim() === "") throw new Error("legalEntityId required");
-    if (orgId.includes("..") || orgId.includes("/") || orgId.includes("\\"))
-      throw new Error(`Invalid organizationId: ${orgId}`);
-    if (leId.includes("..") || leId.includes("/") || leId.includes("\\"))
-      throw new Error(`Invalid legalEntityId: ${leId}`);
+  async healthCheck(): Promise<boolean> {
+    try {
+      await this.client.send(
+        new HeadBucketCommand({ Bucket: this.cfg.bucket })
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private validateKey(key: string, orgId: string, leId: string): void {
-    if (!key || key.includes("..") || key.includes("\\"))
-      throw new Error(`Invalid key: ${key}`);
+    if (!key || key.includes("..") || key.includes("\\")) {
+      throw new Error(`invalid storage key: ${key}`);
+    }
     const expectedPrefix = `${orgId}/${leId}/`;
-    if (!key.startsWith(expectedPrefix))
-      throw new Error(`Key must start with ${expectedPrefix}`);
+    if (!key.startsWith(expectedPrefix)) {
+      throw new Error(`key must start with ${expectedPrefix}`);
+    }
   }
 }

@@ -2,14 +2,12 @@ import { Injectable } from "@nestjs/common";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { EnvelopeMeta } from "./envelope-codec";
+
 export const KMS_ADAPTER = "KMS_ADAPTER";
 
-// Порт KMS (W3, CV-030): file-KMS dev / OpenBao prod через KMS_PROFILE.
-export interface EnvelopeMetadata {
-  organizationId: string;
-  legalEntityId: string;
-  objectId: string;
-}
+// Port KMS (W3, CV-030): file-KMS dev / OpenBao prod (ADR-026).
+export type EnvelopeMetadata = EnvelopeMeta;
 
 export interface IKmsAdapter {
   encrypt(
@@ -22,15 +20,15 @@ export interface IKmsAdapter {
   ): Promise<{ plaintext: Buffer }>;
 }
 
-// AES-256-GCM с per-row nonce (12 байт) рядом с ciphertext + tag (16 байт).
-// Хранение: base64(nonce || tag || ciphertext).
+// File-KMS (dev/local only, ADR-026): AES-256-GCM with per-row nonce.
+// Storage: nonce(12) || tag(16) || ciphertext. NOT permitted in stage/production.
 @Injectable()
 export class FileKmsAdapter implements IKmsAdapter {
   private readonly keyPath: string;
 
-  constructor() {
+  constructor(fileDir: string) {
     this.keyPath = join(
-      process.env.KMS_FILE_DIR ?? join(process.cwd(), "kms-keys"),
+      fileDir || join(process.cwd(), "kms-keys"),
       "aes256.key"
     );
   }
@@ -55,7 +53,6 @@ export class FileKmsAdapter implements IKmsAdapter {
     const cipher = createCipheriv("aes-256-gcm", key, nonce);
     const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
     const tag = cipher.getAuthTag();
-    // формат: nonce(12) || tag(16) || ciphertext
     return { ciphertext: Buffer.concat([nonce, tag, enc]) };
   }
 
@@ -72,26 +69,5 @@ export class FileKmsAdapter implements IKmsAdapter {
     return {
       plaintext: Buffer.concat([decipher.update(enc), decipher.final()]),
     };
-  }
-}
-
-// OpenBao prod — заглушка (реализуется при деплое; тот же интерфейс).
-@Injectable()
-export class VaultKmsAdapter implements IKmsAdapter {
-  async encrypt(
-    plaintext: Buffer,
-    _meta: EnvelopeMetadata
-  ): Promise<{ ciphertext: Buffer }> {
-    void plaintext;
-    throw new Error(
-      "VaultKmsAdapter: OpenBao не подключён (KMS_PROFILE=openbao требует деплой)"
-    );
-  }
-  async decrypt(
-    ciphertext: Buffer,
-    _meta: EnvelopeMetadata
-  ): Promise<{ plaintext: Buffer }> {
-    void ciphertext;
-    throw new Error("VaultKmsAdapter: OpenBao не подключён");
   }
 }

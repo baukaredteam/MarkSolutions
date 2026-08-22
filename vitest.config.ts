@@ -16,6 +16,9 @@ export default defineConfig({
       "packages/**/*.spec.ts",
     ],
     setupFiles: ["apps/web/test-setup.ts"],
+    // W0-03a: canonical profile is APP_ENV; tests run under the "test" profile
+    // (file KMS, mock adapters, local storage allowed).
+    env: { APP_ENV: "test" },
     testTimeout: 30000,
     // W0-02R: beforeAll boots a disposable PostgreSQL schema + compiles the Nest
     // app; allow generous hook budget so slow specs don't trip the 30s default.

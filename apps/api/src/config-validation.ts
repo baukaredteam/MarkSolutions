@@ -1,42 +1,58 @@
-/**
- * W0-01b — Production configuration validation, typed config source, and
- * secret scan patterns.
- *
- * Single source of truth: buildAppConfig(env) returns a validated AppConfig
- * object consumed by bootstrap AND DI. validateProductionConfig() is called
- * at process start (before NestFactory.create()). Stage mode now rejects
- * demo-only config identically to production.
- *
- * sanitizeHealthError() strips connection strings and host:port from error
- * messages before they appear in health endpoints.
- */
+// W0-03a — single typed APP_CONFIG with strict profiles (ADR-026).
+//
+// Canonical profile source is APP_ENV ∈ {test,local,stage,production}.
+// Missing/unknown APP_ENV is rejected. For one compatibility release only,
+// NODE_ENV=development maps to "local" when APP_ENV is absent.
+//
+// Stage/production reject FileKMS, LocalStorage and mock adapters, and require
+// complete MinIO/OpenBao fields. Local/test reject production identity fields
+// when inappropriate (root token used as adapter token).
+//
+// buildAppConfig() returns the validated AppConfig consumed by bootstrap and
+// every DI factory (JWT, MPT, KMS, storage, readiness). Those factories never
+// read process.env / ConfigService for selection.
 
-// ═══════════════════════════════════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════════════════════════════════
+export const APP_CONFIG = "APP_CONFIG";
 
-export type EnvMode = "production" | "stage" | "test" | "development" | string;
+export type AppProfile = "test" | "local" | "stage" | "production";
+export type AdapterMode = "mock" | "http";
+export type KmsProfile = "file" | "openbao";
+export type StorageBackend = "local" | "minio";
+
+export interface OpenBaoConfig {
+  addr: string;
+  useTls: boolean;
+  ca: string;
+  mount: string;
+  key: string;
+  token: string;
+  timeoutMs: number;
+}
+
+export interface MinioConfig {
+  endpoint: string;
+  useTls: boolean;
+  ca: string;
+  bucket: string;
+  region: string;
+  accessKey: string;
+  secretKey: string;
+  timeoutMs: number;
+}
 
 export interface AppConfig {
-  mode: EnvMode;
-  isProduction: boolean;
+  profile: AppProfile;
+  isProduction: boolean; // stage OR production
   db: { url: string };
   jwt: { secret: string; expiresIn: string };
-  kms: {
-    profile: string;
-    fileDir: string;
-    openbaoAddr: string;
-    openbaoToken: string;
+  kms: { profile: KmsProfile; fileDir: string; openbao: OpenBaoConfig };
+  storage: { backend: StorageBackend; localDir: string; minio: MinioConfig };
+  adapters: {
+    mpt: AdapterMode;
+    gs1: AdapterMode;
+    nkt: AdapterMode;
+    ecom: AdapterMode;
   };
-  storage: {
-    local: boolean;
-    dir: string;
-    minioEndpoint: string;
-    minioAccessKey: string;
-    minioSecretKey: string;
-    minioBucket: string;
-  };
-  adapters: { mpt: string; gs1: string; nkt: string; ecom: string };
   mpt: {
     baseUrl: string;
     login: string;
@@ -45,12 +61,9 @@ export interface AppConfig {
     maxRetries: number;
     productGroup: string;
     businessPlaceId: string | null;
+    writeEnabled: boolean;
   };
 }
-
-// ═══════════════════════════════════════════════════════════════════════
-// Error type
-// ═══════════════════════════════════════════════════════════════════════
 
 export class ConfigValidationError extends Error {
   readonly errors: string[];
@@ -61,28 +74,31 @@ export class ConfigValidationError extends Error {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Secret scan patterns (shared between scanner and tests)
-// ═══════════════════════════════════════════════════════════════════════
-
 export const SECRET_SCAN_PATTERNS: Array<[RegExp, string]> = [
   [/AKIA[0-9A-Z]{16}/, "AWS access key"],
   [/-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/, "private key"],
   [/ghp_[A-Za-z0-9]{36}/, "GitHub PAT"],
   [/sk-[A-Za-z0-9]{20,}/, "OpenAI key"],
   [/postgresql:\/\/[^:]+:[^@]+@/, "hardcoded DB creds"],
-  // W0-01b: generic credential-like literals in non-test files
   [/_PASSWORD\s*=\s*"[^"]{8,}"/, "likely hardcoded password"],
   [/_SECRET_KEY\s*=\s*"[^"]{8,}"/, "likely hardcoded secret key"],
   [/Bearer\s+eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, "JWT token literal"],
 ];
 
-// ═══════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════
+const PROFILES: readonly AppProfile[] = [
+  "test",
+  "local",
+  "stage",
+  "production",
+];
 
 function blank(v: string | undefined): boolean {
   return v === undefined || v.trim() === "";
+}
+
+function bool(v: string | undefined, fallback: boolean): boolean {
+  if (blank(v)) return fallback;
+  return v === "true" || v === "1";
 }
 
 function num(v: string | undefined, fallback: number): number {
@@ -90,128 +106,190 @@ function num(v: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Validation (production AND stage reject; test/dev allow everything)
-// ═══════════════════════════════════════════════════════════════════════
-
-function buildConfigChecks(env: Record<string, string>): string[] {
-  const errors: string[] = [];
-
-  // JWT
-  const jwt = env.JWT_SECRET;
-  if (jwt === "dev-secret") {
-    errors.push(
-      'JWT_SECRET is "dev-secret" — requires a unique secret of ≥ 20 characters'
-    );
-  } else if (blank(jwt) || (jwt?.length ?? 0) < 20) {
-    errors.push("JWT_SECRET must be at least 20 characters");
+export function resolveProfile(env: Record<string, string>): AppProfile {
+  const appEnv = env.APP_ENV;
+  if (!blank(appEnv)) {
+    if ((PROFILES as readonly string[]).includes(appEnv))
+      return appEnv as AppProfile;
+    throw new ConfigValidationError([
+      `APP_ENV="${appEnv}" is not one of ${PROFILES.join("|")}`,
+    ]);
   }
-
-  // Mock adapters (AGENTS.md §4: no mock-адаптеры in production/stage)
-  for (const name of ["MPT", "GS1", "NKT", "1ECOM"] as const) {
-    const val = env[`ADAPTERS_${name}`];
-    if (blank(val) || val === "mock") {
-      errors.push(
-        `ADAPTERS_${name}="${val ?? "(unset)"}" — http adapter required`
-      );
-    }
-  }
-
-  // KMS
-  const kms = env.KMS_PROFILE;
-  if (blank(kms) || kms === "file") {
-    errors.push(`KMS_PROFILE="${kms ?? "(unset)"}" — openbao required`);
-  }
-
-  // Storage
-  if (!blank(env.STORAGE_DIR)) {
-    errors.push(
-      "STORAGE_DIR is set — use object storage, not local filesystem"
-    );
-  }
-
-  // Database
-  const dbUrl = env.DATABASE_URL;
-  if (blank(dbUrl)) {
-    errors.push("DATABASE_URL is required");
-  } else if (
-    !dbUrl.startsWith("postgresql://") &&
-    !dbUrl.startsWith("postgres://")
-  ) {
-    errors.push("DATABASE_URL must be a PostgreSQL connection string");
-  }
-
-  // MPT
-  if (blank(env.MPT_BASE_URL)) errors.push("MPT_BASE_URL is required");
-  if (blank(env.MPT_LOGIN)) errors.push("MPT_LOGIN is required");
-  if (blank(env.MPT_PASSWORD)) errors.push("MPT_PASSWORD is required");
-
-  // MinIO
-  if (blank(env.MINIO_ENDPOINT)) errors.push("MINIO_ENDPOINT is required");
-
-  return errors;
+  if (env.NODE_ENV === "development") return "local";
+  throw new ConfigValidationError([
+    `APP_ENV is required (one of ${PROFILES.join("|")})`,
+  ]);
 }
 
-/**
- * Validate the current environment configuration.
- * production AND stage reject demo-only config (fail closed).
- * test/dev/unset allow anything.
- */
-export function validateProductionConfig(
-  env: Record<string, string> = process.env as Record<string, string>
+function adapterMode(
+  errors: string[],
+  env: Record<string, string>,
+  name: string
+): AdapterMode {
+  const v = env[`ADAPTERS_${name}`];
+  if (blank(v)) return "mock";
+  if (v === "mock" || v === "http") return v;
+  errors.push(`ADAPTERS_${name}="${v}" must be mock|http`);
+  return "mock";
+}
+
+function validateOpenbao(
+  errors: string[],
+  env: Record<string, string>,
+  o: OpenBaoConfig
 ): void {
-  const mode: EnvMode = env.NODE_ENV ?? "";
-
-  // test/dev/unset — full allowance
-  if (mode === "test" || mode === "development" || mode === "") return;
-
-  // production AND stage — reject demo-only config
-  const errors = buildConfigChecks(env);
-  if (errors.length > 0) {
-    throw new ConfigValidationError(errors);
-  }
+  if (blank(o.addr)) errors.push("KMS_OPENBAO_ADDR is required");
+  if (blank(o.mount)) errors.push("KMS_OPENBAO_MOUNT is required");
+  if (blank(o.key)) errors.push("KMS_OPENBAO_KEY is required");
+  if (blank(o.token)) errors.push("KMS_OPENBAO_TOKEN is required");
+  if (o.useTls && blank(o.ca))
+    errors.push("KMS_OPENBAO_CA is required when TLS enabled");
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Typed config source (single source of truth for bootstrap AND DI)
-// ═══════════════════════════════════════════════════════════════════════
+function validateMinio(
+  errors: string[],
+  env: Record<string, string>,
+  m: MinioConfig
+): void {
+  if (blank(m.endpoint)) errors.push("MINIO_ENDPOINT is required");
+  if (blank(m.bucket)) errors.push("MINIO_BUCKET is required");
+  if (blank(m.region)) errors.push("MINIO_REGION is required");
+  if (blank(m.accessKey)) errors.push("MINIO_ACCESS_KEY is required");
+  if (blank(m.secretKey)) errors.push("MINIO_SECRET_KEY is required");
+  if (m.useTls && blank(m.ca))
+    errors.push("MINIO_CA is required when TLS enabled");
+}
 
 export function buildAppConfig(
   env: Record<string, string> = process.env as Record<string, string>
 ): AppConfig {
-  // Validates first — throws ConfigValidationError on failure
-  validateProductionConfig(env);
+  const profile = resolveProfile(env);
+  const isProduction = profile === "stage" || profile === "production";
+  const errors: string[] = [];
 
-  const mode: EnvMode = env.NODE_ENV ?? "";
+  // JWT
+  const jwtSecret = env.JWT_SECRET ?? "";
+  if (isProduction) {
+    if (jwtSecret === "dev-secret") {
+      errors.push(
+        'JWT_SECRET is "dev-secret" — requires a unique secret of ≥ 20 characters'
+      );
+    } else if (jwtSecret.length < 20) {
+      errors.push("JWT_SECRET must be at least 20 characters");
+    }
+  }
+
+  // Adapters
+  const mptMode = adapterMode(errors, env, "MPT");
+  const gs1Mode = adapterMode(errors, env, "GS1");
+  const nktMode = adapterMode(errors, env, "NKT");
+  const ecomMode = adapterMode(errors, env, "1ECOM");
+  if (isProduction) {
+    for (const [name, mode] of [
+      ["MPT", mptMode],
+      ["GS1", gs1Mode],
+      ["NKT", nktMode],
+      ["1ECOM", ecomMode],
+    ] as const) {
+      if (mode !== "http")
+        errors.push(`ADAPTERS_${name}="${mode}" — http adapter required`);
+    }
+  }
+
+  // KMS
+  const kmsProfileRaw = env.KMS_PROFILE ?? "file";
+  const kmsProfile: KmsProfile =
+    kmsProfileRaw === "openbao" ? "openbao" : "file";
+  const openbao: OpenBaoConfig = {
+    addr: env.KMS_OPENBAO_ADDR ?? "",
+    useTls: bool(env.KMS_OPENBAO_USE_TLS, false),
+    ca: env.KMS_OPENBAO_CA ?? "",
+    mount: env.KMS_OPENBAO_MOUNT ?? "transit",
+    key: env.KMS_OPENBAO_KEY ?? "markflow-local",
+    token: env.KMS_OPENBAO_TOKEN ?? "",
+    timeoutMs: num(env.KMS_OPENBAO_TIMEOUT_MS, 15000),
+  };
+  if (isProduction) {
+    if (kmsProfile !== "openbao")
+      errors.push(`KMS_PROFILE="${kmsProfileRaw}" — openbao required`);
+    validateOpenbao(errors, env, openbao);
+  } else {
+    // local/test: reject production identity fields when inappropriate —
+    // the restricted adapter token must not be the root token.
+    if (kmsProfile === "openbao") validateOpenbao(errors, env, openbao);
+    const rootToken = env.LOCAL_OPENBAO_ROOT_TOKEN;
+    if (
+      !blank(rootToken) &&
+      !blank(openbao.token) &&
+      openbao.token === rootToken
+    ) {
+      errors.push(
+        "KMS_OPENBAO_TOKEN must not be the OpenBao root token (use the restricted adapter token)"
+      );
+    }
+  }
+
+  // Storage
+  const localDir = env.STORAGE_DIR ?? "";
+  const minio: MinioConfig = {
+    endpoint: env.MINIO_ENDPOINT ?? "",
+    useTls: bool(env.MINIO_USE_SSL, false),
+    ca: env.MINIO_CA ?? "",
+    bucket: env.MINIO_BUCKET ?? "",
+    region: env.MINIO_REGION ?? "us-east-1",
+    accessKey: env.MINIO_ACCESS_KEY ?? "",
+    secretKey: env.MINIO_SECRET_KEY ?? "",
+    timeoutMs: num(env.MINIO_TIMEOUT_MS, 30000),
+  };
+  let backend: StorageBackend = "local";
+  if (isProduction) {
+    backend = "minio";
+    if (!blank(localDir))
+      errors.push(
+        "STORAGE_DIR is set — use object storage, not local filesystem"
+      );
+    validateMinio(errors, env, minio);
+  } else {
+    backend = !blank(minio.endpoint) ? "minio" : "local";
+    if (backend === "minio") validateMinio(errors, env, minio);
+  }
+
+  // Database
+  const dbUrl = env.DATABASE_URL ?? "";
+  if (isProduction) {
+    if (blank(dbUrl)) errors.push("DATABASE_URL is required");
+    else if (
+      !dbUrl.startsWith("postgresql://") &&
+      !dbUrl.startsWith("postgres://")
+    ) {
+      errors.push("DATABASE_URL must be a PostgreSQL connection string");
+    }
+  }
+
+  // MPT
+  if (isProduction) {
+    if (blank(env.MPT_BASE_URL)) errors.push("MPT_BASE_URL is required");
+    if (blank(env.MPT_LOGIN)) errors.push("MPT_LOGIN is required");
+    if (blank(env.MPT_PASSWORD)) errors.push("MPT_PASSWORD is required");
+  }
+
+  if (errors.length > 0) throw new ConfigValidationError(errors);
+
+  const writeEnabled = bool(env.MPT_WRITE_ENABLED, false);
+  if (isProduction && writeEnabled) {
+    throw new ConfigValidationError([
+      "MPT_WRITE_ENABLED=true is not permitted in this build (fail closed)",
+    ]);
+  }
 
   return {
-    mode,
-    isProduction: mode === "production",
-    db: { url: env.DATABASE_URL ?? "" },
-    jwt: {
-      secret: env.JWT_SECRET ?? "",
-      expiresIn: env.JWT_EXPIRES_IN ?? "1h",
-    },
-    kms: {
-      profile: env.KMS_PROFILE ?? "file",
-      fileDir: env.KMS_FILE_DIR ?? "",
-      openbaoAddr: env.KMS_OPENBAO_ADDR ?? "",
-      openbaoToken: env.KMS_OPENBAO_TOKEN ?? "",
-    },
-    storage: {
-      local: !blank(env.STORAGE_DIR),
-      dir: env.STORAGE_DIR ?? "",
-      minioEndpoint: env.MINIO_ENDPOINT ?? "",
-      minioAccessKey: env.MINIO_ACCESS_KEY ?? "",
-      minioSecretKey: env.MINIO_SECRET_KEY ?? "",
-      minioBucket: env.MINIO_BUCKET ?? "",
-    },
-    adapters: {
-      mpt: env.ADAPTERS_MPT ?? "mock",
-      gs1: env.ADAPTERS_GS1 ?? "mock",
-      nkt: env.ADAPTERS_NKT ?? "mock",
-      ecom: env.ADAPTERS_1ECOM ?? "mock",
-    },
+    profile,
+    isProduction,
+    db: { url: dbUrl },
+    jwt: { secret: jwtSecret, expiresIn: env.JWT_EXPIRES_IN ?? "1h" },
+    kms: { profile: kmsProfile, fileDir: env.KMS_FILE_DIR ?? "", openbao },
+    storage: { backend, localDir, minio },
+    adapters: { mpt: mptMode, gs1: gs1Mode, nkt: nktMode, ecom: ecomMode },
     mpt: {
       baseUrl: env.MPT_BASE_URL ?? "",
       login: env.MPT_LOGIN ?? "",
@@ -220,16 +298,11 @@ export function buildAppConfig(
       maxRetries: num(env.MPT_MAX_RETRIES, 2),
       productGroup: env.MPT_PRODUCT_GROUP ?? "motor-oils",
       businessPlaceId: env.MPT_BUSINESS_PLACE_ID ?? null,
+      writeEnabled,
     },
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Health endpoint sanitization
-// ═══════════════════════════════════════════════════════════════════════
-
-/** Remove connection strings, host:port, and credentials from error messages.
- *  Keep error class names and general descriptors for debugging. */
 export function sanitizeHealthError(msg: string): string {
   if (!msg) return "";
   return msg

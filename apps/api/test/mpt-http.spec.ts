@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -16,13 +15,13 @@ import {
   teardownTestDatabase,
   type TestDb,
 } from "./harness";
-import { MockMptAdapter } from "../src/integrations";
 import {
   HttpMptAdapter,
-  createMptAdapter,
   canonicalJson,
   toInt32,
 } from "../src/http-mpt.adapter";
+import { buildAppConfig } from "../src/config-validation";
+import { createMptWritePolicy } from "../src/mpt-write-policy";
 
 // ---- fake fetch: записывает вызовы, отвечает по хендлеру ----
 interface FetchCall {
@@ -74,7 +73,8 @@ function makeAdapter(
   ff: ReturnType<typeof fakeFetch>,
   env: Record<string, string> = {}
 ): HttpMptAdapter {
-  const config = new ConfigService({
+  const cfg = buildAppConfig({
+    APP_ENV: "test",
     MPT_BASE_URL: "https://test.markirovka.kz",
     MPT_LOGIN: "svc",
     MPT_PASSWORD: "secret",
@@ -82,27 +82,17 @@ function makeAdapter(
     MPT_REQUEST_TIMEOUT_MS: "2000",
     ...env,
   });
-  const adapter = new HttpMptAdapter(config, undefined as never);
+  // Transport tests inject an enabled policy in-memory to exercise the HTTP
+  // mechanics (auth/backoff/documentBody). The fail-closed default (disabled)
+  // is proven separately in http-mpt-write-guard.spec.ts; MPT_WRITE_ENABLED is
+  // never set true in config/env.
+  const policy = createMptWritePolicy({ mptWriteEnabled: true });
+  const adapter = new HttpMptAdapter(cfg, undefined as never, policy);
   adapter.setFetch(ff.fn);
   return adapter;
 }
 
 describe("HttpMptAdapter (unit, fake fetch)", () => {
-  it("createMptAdapter: ADAPTERS_MPT=http → HttpMptAdapter, mock → MockMptAdapter", () => {
-    const cfgHttp = new ConfigService({ ADAPTERS_MPT: "http" });
-    expect(createMptAdapter(cfgHttp, undefined as never)).toBeInstanceOf(
-      HttpMptAdapter
-    );
-    const cfgMock = new ConfigService({ ADAPTERS_MPT: "mock" });
-    expect(createMptAdapter(cfgMock, undefined as never)).toBeInstanceOf(
-      MockMptAdapter
-    );
-    const cfgEmpty = new ConfigService({});
-    expect(createMptAdapter(cfgEmpty, undefined as never)).toBeInstanceOf(
-      MockMptAdapter
-    );
-  });
-
   it("createOrder: Accept: */*, Bearer token, Idempotency-Key = orderId, businessPlaceId int32, возвращает status + requestId", async () => {
     const ff = fakeFetch((call) => {
       if (call.url.endsWith("/api/users/authenticate"))
@@ -366,13 +356,15 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     "контракт: authenticate → createOrder → getOrder против реального STAGE",
     async () => {
       const adapter = new HttpMptAdapter(
-        new ConfigService({
-          MPT_BASE_URL: process.env.MPT_BASE_URL,
-          MPT_LOGIN: process.env.MPT_LOGIN,
-          MPT_PASSWORD: process.env.MPT_PASSWORD,
+        buildAppConfig({
+          APP_ENV: "test",
+          MPT_BASE_URL: process.env.MPT_BASE_URL ?? "",
+          MPT_LOGIN: process.env.MPT_LOGIN ?? "",
+          MPT_PASSWORD: process.env.MPT_PASSWORD ?? "",
           MPT_MAX_RETRIES: "1",
         }),
-        undefined as never
+        undefined as never,
+        createMptWritePolicy({ mptWriteEnabled: true })
       );
       const res = await adapter.createOrder({
         orderId: `contract-${Date.now()}`,

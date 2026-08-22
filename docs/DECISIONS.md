@@ -20,6 +20,40 @@
 - ADR-024 Заказ КМ + Code Vault (W3): снимок единиц маркировки в строке заказа; тарифы = данные (Tariff seed); Ledger TOPUP/RESERVE/RELEASE/SETTLE + optimistic CAS на Account.version; симулятор ИС МПТ stateless (SIM_MPT_EMISSION_MS); Code Vault AES-256-GCM (KMS_PROFILE) + маска; поллер=сверка ORD-029; cisType=UNIT, serialNumberType=OPERATOR.
 - ADR-025 W4 — этикетки/нанесение/документы/1С: DataMatrix ECC200 roundtrip (bwip-js → ZBar WASM, PNG); CodeVault.status MVP-набор (ACTIVE|PRINTED|APPLIED|UTILISED|INTRODUCED|EXPIRED|AGGREGATED|WITHDRAWN|WRITTEN_OFF) + CodeEvent append-only; AggregationUnit SSCC + AT-13; ImportDocument + withdrawal; 1С-экспорт CSV v1 проекции (ServiceAct + MovementJournal с kmHash); REPRINT (AT-11); дашборд «что дальше».
 
+## ADR-026 — W0-03a корректирующий: реальный фундамент (LegalEntity-scope, APP_CONFIG, MFV1-конверт, MptWritePolicy, least-privilege OpenBao)
+
+Контекст: независимый review коммита 844b435 отклонил W0-03a — адаптеры MinIO/OpenBao не подключены к DI, конверт не парсится, scope только синтаксический (tenantId дублируется), конфигурация из process.env/ConfigService, нет fail-closed `test:local-adapters` и нет `MPT_WRITE_ENABLED`. Решения зафиксированы как обязательный design contract.
+
+### Юрлицо и скоуп (LegalEntity boundary)
+
+- **LegalEntity** — реальная модель: `Tenant 1:N LegalEntity` (`{id, tenantId FK, bin @unique, name, status, createdAt, updatedAt}`). Модель и authorization boundary поддерживают несколько юрлиц, но UI выбора юрлица пока не создаётся.
+- **UserLegalEntityMembership** — `(userId, legalEntityId, role/permission scope)`; `activeLegalEntityId` живёт в короткоживущем signed access token, а НЕ фиксируется навсегда при логине. Логин сидит/выбирает default только когда членство ровно одно; выбор контекста позже минтует новый токен после backend-проверки членства. Zero memberships → 403.
+- **TenantGuard** валидирует `tenantId` + `activeLegalEntityId` + членство, пишет оба в request context; защищённые маршруты требуют оба. Без header-спуфинга, без fallback `tenantId → legalEntityId`.
+- **Защищённые объекты** (несут обязательный `legalEntityId`): Product, ProductCard, DraftProposal, Order, OrderLine, CodeVault, CodeEvent, VaultExport, UtilisationReport, ImportDocument, WithdrawalDocument, AggregationUnit, AggregationMember, все file/label-записи (если persist/queryable), Account, LedgerEntry, Invoice (mockup показывает отдельные балансы юрлиц). **Tariff остаётся tenant/global policy** до появления обоснованного per-юрлицо тарифа. Outbox/Audit/Task несут scope-колонки или immutable payload-scope, но не являются источником авторизации.
+
+### Профили и конфигурация (APP_CONFIG)
+
+- Канонический источник профиля — **`APP_ENV`** со значениями `test|local|stage|production`; отсутствующий/неизвестный `APP_ENV` отклоняется (fail fast). Один совместимый релиз: `NODE_ENV=development` мапится в `local` ТОЛЬКО когда `APP_ENV` отсутствует (покрыто тестом, секретов не эмитит). Других legacy/пустых fallback нет.
+- Один типизированный `APP_CONFIG` регистрируется при bootstrap и инжектится в фабрики JWT, MPT, KMS, storage и readiness. Из этих фабрик убран выбор через process.env/ConfigService.
+- stage/production отклоняют FileKMS, LocalStorage и mock-адаптеры, требуют полные MinIO/OpenBao поля (endpoint/TLS/CA/bucket/region/identity/mount/key/timeout). local/test отклоняют production identity-поля где неуместно.
+
+### Конверт шифрования (MFV1)
+
+- Детерминированный **length-prefixed binary** конверт с magic `MFV1`, format version, algorithm id, OpenBao key name/version, фиксированные длины nonce/tag/AAD-hash и явные u32 длины wrappedDEK и ciphertext.
+- Канонические AAD-байты = `{organizationId, legalEntityId, objectId, formatVersion, algorithm}`. `cipher.setAAD(canonicalAad)` ДО encrypt, `decipher.setAAD(canonicalAad)` ДО final decrypt.
+- Персистятся: AAD SHA-256, возвращённый OpenBao key version, время создания. Строгий парсинг каждого поля; сравнение сохранённого key version с префиксом/семантикой API wrapped ciphertext; отказ на malformed/unknown/tampered. Границы полей никогда не выводятся.
+- **objectId стабилен** = CodeVault ID (не orderId/GTIN/serial-композит). `seal` и `open` используют ОДНИ И ТЕ ЖЕ метаданные.
+
+### MptWritePolicy
+
+- Один модуль/seam `MptWritePolicy.assertAllowed(operation)` + typed `WriteDisabledError`. Конфиг по умолчанию `MPT_WRITE_ENABLED=false`.
+- Каждый бизнес-write `HttpMptAdapter` вызывает policy ДО конструирования запроса/сетевого I/O; контроллеры/command-хендлеры проверяют ту же policy до постановки операции. Auth/refresh POST — транспорт, не бизнес-write.
+- Флаг никогда не ставится `true` в коде/тестах/локальном конфиге.
+
+### Локальный стек (least-privilege)
+
+- Bootstrap создаёт least-privilege policy `markflow-local-adapter` + короткоживущий локальный adapter token, который умеет только transit `encrypt/decrypt/datakey` для локального ключа. Root token живёт только в памяти bootstrap/smoke-процесса; никогда в app env/test fixtures/файлах контейнера/логах. Nest-тесты используют только restricted token.
+
 ## ADR-015 — профиль прототипа: SQLite + LocalStorage + OutboxPoller
 
 Контекст: ноутбук разработчика; Docker недоступен (≈40 ГБ, не ставим). Нужен живой прототип к демо.

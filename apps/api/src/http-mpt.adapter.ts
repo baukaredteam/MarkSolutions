@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import type { PrismaService } from "./prisma.service";
-import { MockMptAdapter } from "./integrations";
+import type { AppConfig } from "./config-validation";
+import type { MptWritePolicy } from "./mpt-write-policy";
 import type {
   IMptAdapter,
   MptCodeView,
@@ -117,21 +117,17 @@ export class HttpMptAdapter implements IMptAdapter {
   private fetchImpl: typeof fetch = globalThis.fetch;
 
   constructor(
-    config: ConfigService,
-    private readonly prisma: PrismaService
+    config: AppConfig,
+    private readonly prisma: PrismaService,
+    private readonly writePolicy: MptWritePolicy
   ) {
-    this.baseUrl = (config.get<string>("MPT_BASE_URL") ?? "").replace(
-      /\/+$/,
-      ""
-    );
-    this.login = config.get<string>("MPT_LOGIN") ?? "";
-    this.password = config.get<string>("MPT_PASSWORD") ?? "";
-    this.requestTimeoutMs = Number(
-      config.get("MPT_REQUEST_TIMEOUT_MS") ?? 15000
-    );
-    this.maxRetries = Number(config.get("MPT_MAX_RETRIES") ?? 2);
-    this.productGroup = config.get<string>("MPT_PRODUCT_GROUP") ?? "motor-oils";
-    const bp = config.get<string>("MPT_BUSINESS_PLACE_ID");
+    this.baseUrl = (config.mpt.baseUrl ?? "").replace(/\/+$/, "");
+    this.login = config.mpt.login ?? "";
+    this.password = config.mpt.password ?? "";
+    this.requestTimeoutMs = config.mpt.requestTimeoutMs;
+    this.maxRetries = config.mpt.maxRetries;
+    this.productGroup = config.mpt.productGroup ?? "motor-oils";
+    const bp = config.mpt.businessPlaceId;
     this.businessPlaceIdCfg = bp ? toInt32(bp) : undefined;
   }
 
@@ -306,6 +302,7 @@ export class HttpMptAdapter implements IMptAdapter {
     status: MptOrderStatus;
     requestId?: string;
   }> {
+    this.writePolicy.assertAllowed("createOrder");
     const requestId = randomUUID();
     const businessPlaceId = input.businessPlaceId ?? this.businessPlaceIdCfg;
     const body: Record<string, unknown> = {
@@ -380,6 +377,7 @@ export class HttpMptAdapter implements IMptAdapter {
     status: "IN_PROCESS" | "ERROR";
     rejectReason?: string;
   }> {
+    this.writePolicy.assertAllowed("submitUtilisation");
     const body = {
       sntins: input.sntins,
       businessPlaceId: toInt32(input.businessPlaceId),
@@ -433,6 +431,7 @@ export class HttpMptAdapter implements IMptAdapter {
     status: "IN_PROCESS" | "ERROR";
     rejectReason?: string;
   }> {
+    this.writePolicy.assertAllowed("submitImport");
     const documentBody = base64Utf8(
       canonicalJson({
         codes: input.codes,
@@ -473,6 +472,7 @@ export class HttpMptAdapter implements IMptAdapter {
     status: "IN_PROCESS" | "ERROR";
     rejectReason?: string;
   }> {
+    this.writePolicy.assertAllowed("submitWithdrawal");
     const documentBody = base64Utf8(
       canonicalJson({
         codes: input.codes,
@@ -515,14 +515,4 @@ export class HttpMptAdapter implements IMptAdapter {
     const st = (d.status ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
     return { status: st, rejectReason: d.rejectReason ?? undefined };
   }
-}
-
-// DI-фабрика (схема из аудита): ADAPTERS_MPT=http → HttpMptAdapter, иначе Mock.
-export function createMptAdapter(
-  config: ConfigService,
-  prisma: PrismaService
-): IMptAdapter {
-  return config.get<string>("ADAPTERS_MPT") === "http"
-    ? new HttpMptAdapter(config, prisma)
-    : new MockMptAdapter(prisma);
 }

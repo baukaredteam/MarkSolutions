@@ -36,7 +36,51 @@ model Tenant {
   users     User[]
   productCards ProductCard[]
   draftProposals DraftProposal[]
+  legalEntities LegalEntity[]
   createdAt DateTime @default(now())
+}
+
+// W0-03a (ADR-026): юрлицо клиента, вложенное в Tenant (Tenant 1:N LegalEntity).
+model LegalEntity {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  bin       String   @unique
+  name      String
+  status    String   @default("ACTIVE") // ACTIVE|INACTIVE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships          UserLegalEntityMembership[]
+  accounts             Account[]
+  ledgerEntries        LedgerEntry[]
+  invoices             Invoice[]
+  products             Product[]
+  productCards         ProductCard[]
+  draftProposals       DraftProposal[]
+  orders               Order[]
+  orderLines           OrderLine[]
+  codeVaults           CodeVault[]
+  codeEvents           CodeEvent[]
+  vaultExports         VaultExport[]
+  utilisationReports   UtilisationReport[]
+  importDocuments      ImportDocument[]
+  withdrawalDocuments  WithdrawalDocument[]
+  aggregationUnits     AggregationUnit[]
+  aggregationMembers   AggregationMember[]
+}
+
+// W0-03a (ADR-026): членство пользователя в юрлице; activeLegalEntityId в токене
+// валидируется против этой таблицы. Zero memberships → 403 на защищённых маршрутах.
+model UserLegalEntityMembership {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id])
+  scope         String      @default("member") // role/permission scope
+  createdAt     DateTime    @default(now())
+  @@unique([userId, legalEntityId])
 }
 
 model Account {
@@ -44,6 +88,8 @@ model Account {
   version Int     @default(0)
   tenantId String
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   balance BigInt  @default(0) // тиыны (ADR-016 W5-07, 1 ₸ = 100 тиын); кэш, источник — LedgerEntry
   ledgerEntries LedgerEntry[]
   createdAt DateTime @default(now())
@@ -55,6 +101,8 @@ model LedgerEntry {
   version   Int      @default(0)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   accountId String
   account   Account  @relation(fields: [accountId], references: [id])
   kind      String   // TOPUP|RESERVE|RELEASE|SETTLE (ADR-007)
@@ -89,6 +137,8 @@ model Invoice {
   version      Int      @default(0)
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   number       Int      @unique // MF-2026-NNNN (год+N)
   date         DateTime @default(now())
   productGroup String
@@ -109,6 +159,8 @@ model Product {
   version Int     @default(0)
   tenantId String
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   name    String
   tnved   String
   gtin    String?
@@ -122,6 +174,7 @@ model User {
   version    Int     @default(0)
   tenantId   String?
   tenant     Tenant? @relation(fields: [tenantId], references: [id])
+  legalEntityMemberships UserLegalEntityMembership[]
   login      String  @unique
   passwordHash String
   roles      String  @default("[]") // JSON-массив ролей: admin, accountant, operator (ADR-016)
@@ -168,6 +221,8 @@ model ProductCard {
   version       Int      @default(0)
   tenantId      String
   tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   status        String   @default("DRAFT") // ModerationRoute (CAT-013): DRAFT|VALIDATING|SUBMITTED|IN_REVIEW|APPROVED|NEEDS_CORRECTION|REJECTED|REGISTERING|REGISTERED (ADR-016: String)
   gtin          String?
   ntin          String?
@@ -202,6 +257,8 @@ model DraftProposal {
   version    Int      @default(0)
   tenantId   String
   tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   cardId     String?
   card       ProductCard? @relation(fields: [cardId], references: [id])
   source     String   // invoice|excel|form|clone|demo-seed
@@ -221,6 +278,8 @@ model Order {
   number       Int      @unique @default(dbgenerated("nextval('order_number_seq'::regclass)")) // W0-02R: PG sequence, no app-level retry
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   status       String   @default("DRAFT") // ORD-026: DRAFT|VALIDATING|FUNDS_RESERVED|QUEUED|SENT|ACCEPTED|PROCESSING|PARTIALLY_COMPLETED|COMPLETED|REJECTED|CANCELLED|FAILED
   idempotencyKey String  @unique
   cardId       String?
@@ -239,6 +298,8 @@ model OrderLine {
   version       Int      @default(0)
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   cardId        String
   gtin          String
   places        Int
@@ -308,6 +369,8 @@ model CodeVault {
   orderId   String
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   cardId    String?
   gtin      String   // открытый (публичный идентификатор, индекс)
   mask      String   // маска для UI/логов (CV-031)
@@ -327,6 +390,8 @@ model CodeEvent {
   version   Int      @default(0)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   codeId    String
   code      CodeVault @relation(fields: [codeId], references: [id])
   event     String   // PRINTED|REPRINTED|APPLIED|AGGREGATED|DISAGGREGATED|UTILISED|INTRODUCED|EXPIRED|WITHDRAWN|WRITTEN_OFF
@@ -357,6 +422,8 @@ model VaultExport {
   version   Int      @default(0)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   orderId   String
   actor     String
   kind      String   // export|print (CV-032)
@@ -371,6 +438,8 @@ model UtilisationReport {
   version      Int      @default(0)
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   orderId      String
   idempotencyKey String  @unique
   reportId     String   @unique
@@ -409,6 +478,8 @@ model ImportDocument {
   version   Int      @default(0)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   orderId   String
   customsDate   String   // дата ДТ (customsDeclaration.date)
   customsNumber String   // номер ДТ (customsDeclaration.number)
@@ -429,6 +500,8 @@ model WithdrawalDocument {
   version   Int      @default(0)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   codes     Json     // массив codeId (или codeKeys)
   withdrawalType String // WITHDRAWAL|WRITE_OFF
   withdrawalReason String // DEFECT|LOST|EXPIRY|RETURN_SUPPLIER|DESTRUCTION|OTHER
@@ -463,6 +536,8 @@ model AggregationUnit {
   version   Int      @default(0)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   sscc      String   @unique
   type      String   // BOX_LV_1|BOX_LV_2|PALLET
   parentId  String?
@@ -478,6 +553,8 @@ model AggregationMember {
   unitId    String
   unit      AggregationUnit @relation(fields: [unitId], references: [id])
   tenantId  String
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   codeKey   String
   addedAt   DateTime @default(now())
   addedBy   String

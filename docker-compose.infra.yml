@@ -1,0 +1,112 @@
+# Прод-инфраструктура MarkFlow (ШАГ 1 аудита 13.08): Valkey + RabbitMQ + MinIO + OpenBao.
+# Поднимается отдельно от docker-compose.yml (PostgreSQL ставится нативно на ноутбуке).
+#
+#   docker compose -f docker-compose.infra.yml up -d
+#   docker compose -f docker-compose.infra.yml ps
+#
+# Закрытые проблемы аудита:
+#   C-02 OpenBao — production-режим (file storage) вместо заглушки VaultKmsAdapter;
+#        KV v2 монтируется на secret/ через one-shot сервис openbao-init.
+#   C-06/Code Vault — MinIO для экспортов кодов (ZIP/CSV), audit-логов, payload документов
+#        (LocalStorageAdapter → MinIOStorageAdapter — следующий шаг).
+#   Outbox/RabbitMQ — очередь для асинхронной обработки документов ИС МПТ и Saga
+#        (замена in-process OutboxPoller).
+#   Valkey — распределённые блокировки (Redlock) + идемпотентность + кэш.
+name: markflow-infra
+
+services:
+  valkey:
+    image: valkey/valkey:8
+    container_name: markflow-valkey
+    # AOF для персистентности блокировок/идемпотентности (переживает рестарт).
+    command: ["valkey-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: markflow-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: markflow
+      RABBITMQ_DEFAULT_PASS: markflow
+    ports:
+      - "5672:5672" # AMQP (приложение)
+      - "15672:15672" # Management UI: http://localhost:15672 (markflow/markflow)
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: markflow-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: markflow
+      MINIO_ROOT_PASSWORD: markflow123
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Console: http://localhost:9001 (markflow/markflow123)
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  openbao:
+    image: openbao/openbao:2.6.1
+    container_name: markflow-openbao
+    cap_add:
+      - IPC_LOCK # mlock для file storage
+    command: ["server", "-config=/bao/config/config.hcl"]
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    ports:
+      - "8200:8200" # API + UI: http://localhost:8200/ui
+    volumes:
+      - ./infra/openbao/config.hcl:/bao/config/config.hcl:ro
+      - openbao-data:/bao/data
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: init + unseal + kv-v2. Выполняется при каждом `up -d`,
+  # но идемпотентен (состояние в openbao-data). Завершается с кодом 0.
+  openbao-init:
+    image: openbao/openbao:2.6.1
+    container_name: markflow-openbao-init
+    depends_on:
+      openbao:
+        condition: service_healthy
+    environment:
+      BAO_ADDR: http://openbao:8200
+    volumes:
+      - ./infra/openbao/init.sh:/init.sh:ro
+      - ./infra/openbao/policy-local-adapter.hcl:/init-policy.hcl:ro
+      - openbao-data:/bao/data
+    entrypoint: ["/bin/sh", "/init.sh"]
+    restart: "no"
+
+volumes:
+  valkeydata:
+  rabbitmqdata:
+  miniodata:
+  openbao-data:

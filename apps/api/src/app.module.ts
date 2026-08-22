@@ -1,6 +1,5 @@
-import { Controller, Get, Module, Res, HttpCode } from "@nestjs/common";
+import { Controller, Get, Module, Res, HttpCode, Inject } from "@nestjs/common";
 import { APP_GUARD, APP_FILTER } from "@nestjs/core";
-import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { Reflector } from "@nestjs/core";
 import type { Response as ExpressResponse } from "express";
@@ -29,11 +28,12 @@ import { SeedService } from "./seed.service";
 import {
   MockGs1Adapter,
   MockNktAdapter,
+  MockMptAdapter,
   IGS1_ADAPTER,
   NKT_ADAPTER,
   MPT_ADAPTER,
 } from "./integrations";
-import { createMptAdapter } from "./http-mpt.adapter";
+import { HttpMptAdapter } from "./http-mpt.adapter";
 import {
   FilesController,
   FilesService,
@@ -61,20 +61,51 @@ import { IntegrationsController } from "./integrations.controller";
 import { InvoiceController } from "./invoice.controller";
 import { InvoiceService } from "./invoice.service";
 import { CodeLookupService } from "./code-lookup.service";
-import { FileKmsAdapter, VaultKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
-import { LocalStorageAdapter } from "@markflow/shared";
+import { FileKmsAdapter, KMS_ADAPTER, IKmsAdapter } from "./kms.adapter";
+import { OpenBaoTransitKmsAdapter } from "./openbao-kms.adapter";
+import { MinioStorageAdapter } from "./minio-storage.adapter";
+import { LocalStorageAdapter, StorageAdapter } from "@markflow/shared";
 import { sanitizeHealthError } from "./config-validation";
+import { APP_CONFIG, AppConfig } from "./config-validation";
+import { AppConfigModule } from "./app-config.module";
+import {
+  MPT_WRITE_POLICY,
+  createMptWritePolicy,
+  MptWritePolicy,
+} from "./mpt-write-policy";
 import { join } from "node:path";
 
-// W0-01b: Liveness = "process is alive" (always 200, never leaks internals).
-// Readiness = "dependencies are reachable" (503 if any critical dep fails).
-// Separated per AGENTS.md §4 and production readiness principles.
+// W0-03a: single typed APP_CONFIG is the only configuration source for the
+// JWT, MPT, KMS, storage and readiness factories. It is produced once by
+// buildAppConfig() (which validates the profile) and injected everywhere; the
+// factories below never read process.env / ConfigService for selection.
+
+async function adapterHealth(
+  adapter: unknown
+): Promise<{ status: string; message?: string }> {
+  const health = (adapter as { healthCheck?: () => Promise<boolean> })
+    .healthCheck;
+  if (typeof health !== "function") return { status: "ok" };
+  try {
+    const ok = await health.call(adapter);
+    return ok ? { status: "ok" } : { status: "error", message: "unreachable" };
+  } catch (e) {
+    return {
+      status: "error",
+      message: sanitizeHealthError(String((e as Error).message)),
+    };
+  }
+}
 
 @Controller("health")
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(KMS_ADAPTER) private readonly kms: IKmsAdapter,
+    @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter
+  ) {}
 
-  // Liveness probe — always 200 if process is alive; never expose error details.
   @Public()
   @Get()
   async health() {
@@ -84,20 +115,15 @@ export class HealthController {
     } catch {
       db = "error";
     }
-    // Liveness: return error state but NEVER the raw error message or connection string.
     return { status: db === "ok" ? "ok" : "degraded", db };
   }
 
-  // Readiness probe — HTTP 503 if any critical dependency is unavailable.
   @Public()
   @HttpCode(200)
   @Get("ready")
   async ready(@Res() res: ExpressResponse) {
-    const env = process.env as Record<string, string>;
-    const mode = env.NODE_ENV ?? "";
     const checks: { name: string; status: string; message?: string }[] = [];
 
-    // 1. Database — must be reachable
     try {
       await this.prisma.$queryRaw`SELECT 1`;
       checks.push({ name: "database", status: "ok" });
@@ -109,7 +135,6 @@ export class HealthController {
       });
     }
 
-    // 2. Migration freshness — schema must include current tables
     try {
       await this.prisma.$queryRaw`SELECT 1 FROM "Outbox" LIMIT 1`;
       checks.push({ name: "migration", status: "ok" });
@@ -121,23 +146,17 @@ export class HealthController {
       });
     }
 
-    // 3. Adapter modes — read from env (config source)
-    const adapterMode = (name: string) =>
-      env[`ADAPTERS_${name}`] ?? env[`adapters_${name}`] ?? "mock";
-    checks.push({
-      name: "adapters",
-      status: `mpt=${adapterMode("MPT")} gs1=${adapterMode("GS1")} nkt=${adapterMode("NKT")}`,
-    });
-
-    // 4. KMS mode
-    checks.push({ name: "kms", status: env.KMS_PROFILE ?? "file" });
+    const kms = await adapterHealth(this.kms);
+    checks.push({ name: "kms", ...kms });
+    const storage = await adapterHealth(this.storage);
+    checks.push({ name: "storage", ...storage });
 
     const failed = checks.some(
       (c) => c.status === "error" || c.status === "stale"
     );
     res.status(failed ? 503 : 200).json({
       status: failed ? "not ready" : "ready",
-      mode: mode || "unset",
+      profile: this.config.profile,
       checks,
     });
   }
@@ -162,11 +181,13 @@ export class AdminController {
 
 @Module({
   imports: [
-    // ConfigService (C-01): выбор реализаций адаптеров через env (ADAPTERS_MPT и др.)
-    ConfigModule.forRoot({ isGlobal: true }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET ?? "dev-secret",
-      signOptions: { expiresIn: "1h" },
+    AppConfigModule,
+    JwtModule.registerAsync({
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig) => ({
+        secret: cfg.jwt.secret,
+        signOptions: { expiresIn: cfg.jwt.expiresIn as unknown as number },
+      }),
     }),
   ],
   controllers: [
@@ -215,27 +236,42 @@ export class AdminController {
     CodeLookupService,
     {
       provide: KMS_ADAPTER,
-      useFactory: () =>
-        process.env.KMS_PROFILE === "openbao"
-          ? new VaultKmsAdapter()
-          : new FileKmsAdapter(),
+      useFactory: (cfg: AppConfig): IKmsAdapter =>
+        cfg.kms.profile === "openbao"
+          ? new OpenBaoTransitKmsAdapter(cfg.kms.openbao)
+          : new FileKmsAdapter(cfg.kms.fileDir),
+      inject: [APP_CONFIG],
     },
     {
       provide: STORAGE_ADAPTER,
-      useFactory: () =>
-        new LocalStorageAdapter(
-          process.env.STORAGE_DIR ?? join(process.cwd(), "storage")
-        ),
+      useFactory: (cfg: AppConfig): StorageAdapter =>
+        cfg.storage.backend === "minio"
+          ? new MinioStorageAdapter(cfg.storage.minio)
+          : new LocalStorageAdapter(
+              cfg.storage.localDir || join(process.cwd(), "storage")
+            ),
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: MPT_WRITE_POLICY,
+      useFactory: (cfg: AppConfig): MptWritePolicy =>
+        createMptWritePolicy({ mptWriteEnabled: cfg.mpt.writeEnabled }),
+      inject: [APP_CONFIG],
     },
     { provide: ECOM_ADAPTER, useClass: MockEcomAdapter },
     { provide: IGS1_ADAPTER, useClass: MockGs1Adapter },
     { provide: NKT_ADAPTER, useClass: MockNktAdapter },
-    // C-01: ADAPTERS_MPT=http → HttpMptAdapter, иначе Mock (схема DI из аудита)
     {
       provide: MPT_ADAPTER,
-      useFactory: (config: ConfigService, prisma: PrismaService) =>
-        createMptAdapter(config, prisma),
-      inject: [ConfigService, PrismaService],
+      useFactory: (
+        cfg: AppConfig,
+        prisma: PrismaService,
+        policy: MptWritePolicy
+      ) =>
+        cfg.adapters.mpt === "http"
+          ? new HttpMptAdapter(cfg, prisma, policy)
+          : new MockMptAdapter(prisma),
+      inject: [APP_CONFIG, PrismaService, MPT_WRITE_POLICY],
     },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

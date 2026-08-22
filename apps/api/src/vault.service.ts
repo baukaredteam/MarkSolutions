@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 import { IKmsAdapter, KMS_ADAPTER } from "./kms.adapter";
+import { backfillLegalEntityId } from "./scope";
 
 // структура КМ (ADR-006): {gtin, serial, ai91, ai92}, form base|extended
 export interface VaultCode {
@@ -27,9 +28,13 @@ export class VaultService {
     return `${gtin}:${sm}`;
   }
 
+  // W0-03a (ADR-026): objectId is the stable CodeVault row id; seal/open use the
+  // exact same metadata (organizationId + legalEntityId + objectId). legalEntityId
+  // is never duplicated from tenantId — it resolves to the backfilled entity.
   private async seal(
-    tenantId: string,
-    orderId: string,
+    organizationId: string,
+    legalEntityId: string,
+    objectId: string,
     code: VaultCode
   ): Promise<string> {
     const { ciphertext } = await this.kms.encrypt(
@@ -40,27 +45,20 @@ export class VaultService {
           ai92: code.ai92,
         })
       ),
-      {
-        organizationId: tenantId,
-        legalEntityId: tenantId,
-        objectId: `${orderId}:${code.gtin}:${code.serial}`,
-      }
+      { organizationId, legalEntityId, objectId }
     );
     return ciphertext.toString("base64");
   }
 
   private async open(
-    tenantId: string,
-    orderId: string,
+    organizationId: string,
+    legalEntityId: string,
+    objectId: string,
     sealed: string
   ): Promise<{ serial: string; ai91: string | null; ai92: string | null }> {
     const { plaintext } = await this.kms.decrypt(
       Buffer.from(sealed, "base64"),
-      {
-        organizationId: tenantId,
-        legalEntityId: tenantId,
-        objectId: orderId,
-      }
+      { organizationId, legalEntityId, objectId }
     );
     return JSON.parse(plaintext.toString("utf8"));
   }
@@ -77,8 +75,11 @@ export class VaultService {
     if (!order) throw new NotFoundException("order not found");
     const existing = await this.prisma.codeVault.count({ where: { orderId } });
     if (existing > 0) return; // идемпотентно (поллер повторяет)
+    const legalEntityId =
+      order.legalEntityId ?? backfillLegalEntityId(order.tenantId);
     for (const c of codes) {
-      await this.prisma.codeVault.create({
+      // create first so the stable CodeVault id is available as the KMS objectId
+      const row = await this.prisma.codeVault.create({
         data: {
           orderId,
           tenantId: order.tenantId,
@@ -86,8 +87,13 @@ export class VaultService {
           gtin: c.gtin,
           mask: this.maskOf(c.gtin, c.serial),
           status: "ACTIVE",
-          ciphertext: await this.seal(order.tenantId, orderId, c),
+          ciphertext: "",
         },
+      });
+      const sealed = await this.seal(order.tenantId, legalEntityId, row.id, c);
+      await this.prisma.codeVault.update({
+        where: { id: row.id },
+        data: { ciphertext: sealed },
       });
     }
   }
@@ -101,9 +107,11 @@ export class VaultService {
       throw new NotFoundException("order not found or no codes");
     const out: VaultCode[] = [];
     for (const r of rows) {
+      const le = r.legalEntityId ?? backfillLegalEntityId(r.tenantId);
       const { serial, ai91, ai92 } = await this.open(
         tenantId,
-        orderId,
+        le,
+        r.id,
         r.ciphertext
       );
       out.push({ gtin: r.gtin, serial, ai91, ai92, form: "base" });
@@ -117,9 +125,11 @@ export class VaultService {
       where: { id: codeId, tenantId },
     });
     if (!row) throw new NotFoundException("code not found");
+    const le = row.legalEntityId ?? backfillLegalEntityId(row.tenantId);
     const { serial, ai91, ai92 } = await this.open(
       tenantId,
-      row.orderId,
+      le,
+      row.id,
       row.ciphertext
     );
     const card = row.cardId
@@ -198,9 +208,11 @@ export class VaultService {
       : null;
     const out: VaultCode[] = [];
     for (const r of rows) {
+      const le = r.legalEntityId ?? backfillLegalEntityId(r.tenantId);
       const { serial, ai91, ai92 } = await this.open(
         tenantId,
-        orderId,
+        le,
+        r.id,
         r.ciphertext
       );
       out.push(

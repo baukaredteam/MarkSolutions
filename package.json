@@ -19,6 +19,7 @@
     "db:seed": "npm run seed --workspace @markflow/db",
     "db:bootstrap:dev": "npm install && npm run db:generate && npm run db:migrate:dev && npm run db:seed && npm run build:cjs --workspace @markflow/shared",
     "db:validate": "node scripts/db-validate.mjs",
+    "test:local-adapters": "node scripts/test-local-adapters.mjs",
     "verify": "npm run db:generate && npm run build:cjs --workspace @markflow/shared && npm run typecheck && npm run lint && npm run secret-scan && npm test",
     "demo:reset": "node scripts/demo-reset.mjs",
     "demo:smoke": "node scripts/demo-smoke.mjs",
