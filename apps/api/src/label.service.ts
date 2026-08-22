@@ -130,12 +130,13 @@ export class LabelService {
 
   // content-addressed key: существующая этикетка (тот же PNG) или новая запись
   private async labelKeyFor(
+    tenantId: string,
     codeKey: string,
     existing: string | null,
     png: Buffer
   ): Promise<string> {
     if (existing) return existing;
-    const key = await this.storage.write(png);
+    const key = await this.storage.write(tenantId, tenantId, png);
     await this.prisma.codeVault.update({
       where: { id: codeKey },
       data: { labelKey: key },
@@ -158,7 +159,7 @@ export class LabelService {
     const code = await this.vault.revealOne(codeKey, tenantId);
     const raw = rawStringOf(code);
     const png = await this.renderPng(raw);
-    const key = await this.labelKeyFor(codeKey, row.labelKey, png);
+    const key = await this.labelKeyFor(tenantId, codeKey, row.labelKey, png);
     const evt = await this.events.recordEvent(
       tenantId,
       codeKey,
@@ -198,7 +199,7 @@ export class LabelService {
       );
     const code = await this.vault.revealOne(codeKey, tenantId);
     const png = await this.renderPng(rawStringOf(code));
-    const key = await this.labelKeyFor(codeKey, row.labelKey, png);
+    const key = await this.labelKeyFor(tenantId, codeKey, row.labelKey, png);
     const evt = await this.events.recordEvent(
       tenantId,
       codeKey,

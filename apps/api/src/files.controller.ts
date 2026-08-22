@@ -74,7 +74,7 @@ export class FilesService {
     // дубль label → замена, не добавление (CAT-011: замена файла → новый ключ)
     const contentHash = createHash("sha256").update(file.buffer).digest("hex");
     const descriptor: FileDescriptor = {
-      key: await this.storage.write(file.buffer),
+      key: await this.storage.write(tenantId, tenantId, file.buffer),
       originalName: file.originalname,
       mimeType: file.mimetype,
       contentHash,
@@ -107,7 +107,7 @@ export class FilesService {
     const card = await this.getOwnedCard(tenantId, cardId);
     const file = this.descriptors(card).find((f) => f.key === key);
     if (!file) throw new NotFoundException("file not found");
-    const data = await this.storage.read(key);
+    const data = await this.storage.read(tenantId, tenantId, key);
     return { file, data };
   }
 

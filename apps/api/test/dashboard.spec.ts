@@ -77,7 +77,14 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
   async function makeCode(status = "ACTIVE"): Promise<string> {
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
-      Buffer.from(JSON.stringify({ serial: "0002001", ai91: null, ai92: null }))
+      Buffer.from(
+        JSON.stringify({ serial: "0002001", ai91: null, ai92: null })
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: "dash-code",
+      }
     );
     const code = await prisma.codeVault.create({
       data: {
@@ -247,7 +254,14 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     });
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
-      Buffer.from(JSON.stringify({ serial: "9000001", ai91: null, ai92: null }))
+      Buffer.from(
+        JSON.stringify({ serial: "9000001", ai91: null, ai92: null })
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: "flags-code",
+      }
     );
     const code = await prisma.codeVault.create({
       data: {

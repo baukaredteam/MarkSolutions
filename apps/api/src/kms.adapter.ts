@@ -5,9 +5,21 @@ import { join } from "node:path";
 export const KMS_ADAPTER = "KMS_ADAPTER";
 
 // Порт KMS (W3, CV-030): file-KMS dev / OpenBao prod через KMS_PROFILE.
+export interface EnvelopeMetadata {
+  organizationId: string;
+  legalEntityId: string;
+  objectId: string;
+}
+
 export interface IKmsAdapter {
-  encrypt(plaintext: Buffer): Promise<{ ciphertext: Buffer }>;
-  decrypt(ciphertext: Buffer): Promise<{ plaintext: Buffer }>;
+  encrypt(
+    plaintext: Buffer,
+    meta: EnvelopeMetadata
+  ): Promise<{ ciphertext: Buffer }>;
+  decrypt(
+    ciphertext: Buffer,
+    meta: EnvelopeMetadata
+  ): Promise<{ plaintext: Buffer }>;
 }
 
 // AES-256-GCM с per-row nonce (12 байт) рядом с ciphertext + tag (16 байт).
@@ -34,7 +46,10 @@ export class FileKmsAdapter implements IKmsAdapter {
     }
   }
 
-  async encrypt(plaintext: Buffer): Promise<{ ciphertext: Buffer }> {
+  async encrypt(
+    plaintext: Buffer,
+    _meta: EnvelopeMetadata
+  ): Promise<{ ciphertext: Buffer }> {
     const key = await this.getKey();
     const nonce = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", key, nonce);
@@ -44,7 +59,10 @@ export class FileKmsAdapter implements IKmsAdapter {
     return { ciphertext: Buffer.concat([nonce, tag, enc]) };
   }
 
-  async decrypt(ciphertext: Buffer): Promise<{ plaintext: Buffer }> {
+  async decrypt(
+    ciphertext: Buffer,
+    _meta: EnvelopeMetadata
+  ): Promise<{ plaintext: Buffer }> {
     const key = await this.getKey();
     const nonce = ciphertext.subarray(0, 12);
     const tag = ciphertext.subarray(12, 28);
@@ -60,13 +78,19 @@ export class FileKmsAdapter implements IKmsAdapter {
 // OpenBao prod — заглушка (реализуется при деплое; тот же интерфейс).
 @Injectable()
 export class VaultKmsAdapter implements IKmsAdapter {
-  async encrypt(plaintext: Buffer): Promise<{ ciphertext: Buffer }> {
+  async encrypt(
+    plaintext: Buffer,
+    _meta: EnvelopeMetadata
+  ): Promise<{ ciphertext: Buffer }> {
     void plaintext;
     throw new Error(
       "VaultKmsAdapter: OpenBao не подключён (KMS_PROFILE=openbao требует деплой)"
     );
   }
-  async decrypt(ciphertext: Buffer): Promise<{ plaintext: Buffer }> {
+  async decrypt(
+    ciphertext: Buffer,
+    _meta: EnvelopeMetadata
+  ): Promise<{ plaintext: Buffer }> {
     void ciphertext;
     throw new Error("VaultKmsAdapter: OpenBao не подключён");
   }

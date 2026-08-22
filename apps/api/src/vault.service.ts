@@ -27,7 +27,11 @@ export class VaultService {
     return `${gtin}:${sm}`;
   }
 
-  private async seal(code: VaultCode): Promise<string> {
+  private async seal(
+    tenantId: string,
+    orderId: string,
+    code: VaultCode
+  ): Promise<string> {
     const { ciphertext } = await this.kms.encrypt(
       Buffer.from(
         JSON.stringify({
@@ -35,15 +39,29 @@ export class VaultService {
           ai91: code.ai91,
           ai92: code.ai92,
         })
-      )
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: `${orderId}:${code.gtin}:${code.serial}`,
+      }
     );
     return ciphertext.toString("base64");
   }
 
   private async open(
+    tenantId: string,
+    orderId: string,
     sealed: string
   ): Promise<{ serial: string; ai91: string | null; ai92: string | null }> {
-    const { plaintext } = await this.kms.decrypt(Buffer.from(sealed, "base64"));
+    const { plaintext } = await this.kms.decrypt(
+      Buffer.from(sealed, "base64"),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: orderId,
+      }
+    );
     return JSON.parse(plaintext.toString("utf8"));
   }
 
@@ -68,7 +86,7 @@ export class VaultService {
           gtin: c.gtin,
           mask: this.maskOf(c.gtin, c.serial),
           status: "ACTIVE",
-          ciphertext: await this.seal(c),
+          ciphertext: await this.seal(order.tenantId, orderId, c),
         },
       });
     }
@@ -83,7 +101,11 @@ export class VaultService {
       throw new NotFoundException("order not found or no codes");
     const out: VaultCode[] = [];
     for (const r of rows) {
-      const { serial, ai91, ai92 } = await this.open(r.ciphertext);
+      const { serial, ai91, ai92 } = await this.open(
+        tenantId,
+        orderId,
+        r.ciphertext
+      );
       out.push({ gtin: r.gtin, serial, ai91, ai92, form: "base" });
     }
     return out;
@@ -95,7 +117,11 @@ export class VaultService {
       where: { id: codeId, tenantId },
     });
     if (!row) throw new NotFoundException("code not found");
-    const { serial, ai91, ai92 } = await this.open(row.ciphertext);
+    const { serial, ai91, ai92 } = await this.open(
+      tenantId,
+      row.orderId,
+      row.ciphertext
+    );
     const card = row.cardId
       ? await this.prisma.productCard.findUnique({ where: { id: row.cardId } })
       : null;
@@ -172,7 +198,11 @@ export class VaultService {
       : null;
     const out: VaultCode[] = [];
     for (const r of rows) {
-      const { serial, ai91, ai92 } = await this.open(r.ciphertext);
+      const { serial, ai91, ai92 } = await this.open(
+        tenantId,
+        orderId,
+        r.ciphertext
+      );
       out.push(
         await this.withExtended(
           { gtin: r.gtin, serial, ai91, ai92, form: "base" },

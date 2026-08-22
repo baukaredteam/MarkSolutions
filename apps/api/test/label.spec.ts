@@ -93,7 +93,12 @@ describe("labels W4-02 (bwip-js + ZXing-WASM roundtrip, ADR-025)", () => {
           ai91: opts.ai91 ?? null,
           ai92: opts.ai92 ?? null,
         })
-      )
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: `label-${serial}`,
+      }
     );
     const code = await prisma.codeVault.create({
       data: {

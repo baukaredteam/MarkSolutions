@@ -65,7 +65,14 @@ describe("RBAC (T0-RBAC, ADR-020 апдейт)", () => {
     // код для print/apply/export
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
-      Buffer.from(JSON.stringify({ serial: "0003001", ai91: null, ai92: null }))
+      Buffer.from(
+        JSON.stringify({ serial: "0003001", ai91: null, ai92: null })
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: "rbac-code",
+      }
     );
     const code = await prisma.codeVault.create({
       data: {

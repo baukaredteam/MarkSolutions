@@ -100,7 +100,14 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
   ): Promise<string> {
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
-      Buffer.from(JSON.stringify({ serial: "0001001", ai91: null, ai92: null }))
+      Buffer.from(
+        JSON.stringify({ serial: "0001001", ai91: null, ai92: null })
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: "doc-code",
+      }
     );
     const code = await prisma.codeVault.create({
       data: {

@@ -76,7 +76,14 @@ describe("code lookup (UI-03)", () => {
 
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
-      Buffer.from(JSON.stringify({ serial: "7771234", ai91: null, ai92: null }))
+      Buffer.from(
+        JSON.stringify({ serial: "7771234", ai91: null, ai92: null })
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: "test-code-777",
+      }
     );
     const code = await prisma.codeVault.create({
       data: {
@@ -160,7 +167,14 @@ describe("code lookup (UI-03)", () => {
     // gtin 04210197500019 (валидный mod10) содержит "21" в позиции 3-4
     const kms = app.get(KMS_ADAPTER);
     const { ciphertext } = await kms.encrypt(
-      Buffer.from(JSON.stringify({ serial: "5550001", ai91: null, ai92: null }))
+      Buffer.from(
+        JSON.stringify({ serial: "5550001", ai91: null, ai92: null })
+      ),
+      {
+        organizationId: tenantId,
+        legalEntityId: tenantId,
+        objectId: "test-code-555",
+      }
     );
     const code = await prisma.codeVault.create({
       data: {

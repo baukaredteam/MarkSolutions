@@ -540,7 +540,8 @@ export class DemoController {
       const { ciphertext } = await this.kms.encrypt(
         Buffer.from(
           JSON.stringify({ serial: "9000001", ai91: null, ai92: null })
-        )
+        ),
+        { organizationId: tenantId, legalEntityId: tenantId, objectId: orderId }
       );
       for (let i = 0; i < 2; i++) {
         await this.prisma.codeVault.create({
