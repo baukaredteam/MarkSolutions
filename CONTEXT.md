@@ -75,12 +75,18 @@
 ## Глоссарий платформы (W0-03a)
 
 - **LegalEntity** — юрлицо клиента, вложенное в Tenant (`Tenant 1:N LegalEntity`): `{id, tenantId, bin @unique, name, status}`. Authorization boundary ниже tenant: защищённые данные скоупятся по `(organizationId=tenantId, legalEntityId)`. _Avoid_: «юрлицо как tenant», «филиал без bin».
+- **Tenant** — клиентская организация, владелец бизнес-данных; имеет ≥1 юрлицо. Не синоним юрлица.
+- **UserLegalEntityMembership** — `(userId, legalEntityId, scope)`; определяет, какое юрлицо пользователь может выбрать. Нет членства → 403 на защищённых маршрутах.
+- **ActiveLegalEntityScope** — validated value object `{ organizationId, legalEntityId }` на request после проверки membership; никогда не конструируется из tenantId и не берётся из заголовков.
 - **organizationId / legalEntityId** — два обязательных скоупа каждого защищённого запроса/операции (DB, storage, KMS, file/vault/label). organizationId = tenantId; legalEntityId = активное юрлицо из токена. Никогда не дублировать tenantId в legalEntityId.
 - **UserLegalEntityMembership** — `(userId, legalEntityId, scope)`; определяет, какое юрлицо пользователь может выбрать. Нет членства → 403 на защищённых маршрутах.
 - **activeLegalEntityId** — выбранное юрлицо в короткоживущем access token; при одном членстве ставится при логине, при нескольких — через контролируемый выбор контекста (новый токен).
 - **Envelope (MFV1)** — длина-prefixed binary-конверт для секретной части КМ: magic `MFV1`, format version, algorithm, OpenBao key name/version, wrappedDEK, nonce, tag, ciphertext, AAD-hash, createdAt. AAD = канонические байты `{organizationId, legalEntityId, objectId, formatVersion, algorithm}`. objectId = id строки CodeVault.
 - **MptWritePolicy** — capability-guard бизнес-записей ИС МПТ (`createOrder`, utilisation, import/withdrawal submit). `MPT_WRITE_ENABLED=false` по умолчанию; `assertAllowed(operation)` бросает `WriteDisabledError` до сетевого I/O.
 - **APP_ENV** — канонический профиль окружения: `test|local|stage|production`; отсутствует/неизвестен → отклонение. Типизированный `APP_CONFIG` — единственный источник конфигурации DI-фабрик.
+- **Protected aggregate** — совокупность строк с `legalEntityId` (каталог, заказы, Vault/события/экспорты, этикетки, документы, агрегация, финансы). Читается/пишется только по обоим scope-идентификаторам.
+- **Scoped event** — outbox/audit/task запись от protected aggregate: несёт scope в payload (immutable), но не источник авторизации.
+- **Retention (юрлицо)** — удаление/деактивация юрлица не стирает финансовые, аудиторские данные и Code Vault evidence (restriction/inactivation вместо erase).
 
 ## Навигация по контексту
 

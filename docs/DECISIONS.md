@@ -54,6 +54,47 @@
 
 - Bootstrap создаёт least-privilege policy `markflow-local-adapter` + короткоживущий локальный adapter token, который умеет только transit `encrypt/decrypt/datakey` для локального ключа. Root token живёт только в памяти bootstrap/smoke-процесса; никогда в app env/test fixtures/файлах контейнера/логах. Nest-тесты используют только restricted token.
 
+## ADR-027 — W0-03a корректирующий, часть 2: ActiveLegalEntityScope, scoped persistence, expand-contract completion, PowerShell-only local stack
+
+Контекст: review коммита 62c175e требует закрыть identity/request-scope, persistence-scope,
+завершить expand-contract и вернуть принятую локальную модель стека (без Docker compose
+с захардкоженными кредами и root-token на volume).
+
+### Термины
+
+- **Tenant** — клиентская организация (владелец бизнес-данных). Имеет ≥1 юрлицо.
+- **LegalEntity** — юрлицо внутри Tenant; единица разделения прав, балансов и документов.
+- **UserLegalEntityMembership** — `(userId, legalEntityId, scope)`: какие юрлица доступны пользователю.
+- **ActiveLegalEntityScope** — validated value object `{ organizationId, legalEntityId }`,
+  размещаемый на request после проверки membership; НЕ конструируется из tenantId.
+- **Protected aggregate** — совокупность строк, несущих `legalEntityId` (продукты/карточки/файлы,
+  заказы/строки, Code Vault/события/экспорты, этикетки, нанесение, документы ввоза-вывода,
+  агрегация, финансы: account/ledger/invoice).
+- **Scoped event** — outbox/audit/task запись, происходящая от protected aggregate; несёт scope
+  в payload (immutable), но НЕ является источником авторизации.
+
+### Решения
+
+1. **JWT**: claim `activeLegalEntityId`. При логине: ровно одно активное membership → этот scope;
+   ноль → 403; больше одного → детерминированный ответ `legal-entity selection required`
+   (отдельный flow выбора/refresh токена — отдельное ревью). Нет доверенных заголовков,
+   нет fallback `le_${tenantId}`, нет глобального operator-bypass для защищённых клиентских данных.
+2. **TenantGuard асинхронный**, инжектит Prisma и на КАЖДОМ защищённом запросе проверяет
+   tenantId + activeLegalEntityId + membership; кладёт validated scope value object на request.
+3. **Persistence**: все reads/creates/updates/deletes protected aggregates предикатятся по
+   обоим id. Запрещены вызовы вида `(tenantId, tenantId)` и использование
+   `backfillLegalEntityId()` вне migration-only кода.
+4. **Expand-contract completion**: compound unique `LegalEntity(id, tenantId)` + composite FK
+   из защищённых строк (`legalEntityId, tenantId`) → cross-tenant mismatch не может быть
+   записан; после verified backfill `legalEntityId NOT NULL`.
+5. **Retention**: для protected records `ON DELETE SET NULL` заменён на restriction/inactivation;
+   удаление/деактивация юрлица не стирает финансовые, аудиторские данные и Code Vault evidence.
+6. **Local stack**: только PowerShell lifecycle (PostgreSQL 16 / MinIO / OpenBao как dev-test цель),
+   loopback-only bindings, immutable image digests, runtime-generated игнорируемые локальные секреты,
+   никаких token-bearing временных файлов, root token только в памяти bootstrap, restricted token
+   только через контролируемый путь локального теста. Каждый шаг bootstrap проверяется явно —
+   без `|| true`. Valkey/RabbitMQ НЕ вводятся (W0-04 scope).
+
 ## ADR-015 — профиль прототипа: SQLite + LocalStorage + OutboxPoller
 
 Контекст: ноутбук разработчика; Docker недоступен (≈40 ГБ, не ставим). Нужен живой прототип к демо.
