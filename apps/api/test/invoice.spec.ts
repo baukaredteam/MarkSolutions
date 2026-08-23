@@ -51,7 +51,7 @@ describe("W5-07: invoices (счета, НДС, оплата)", () => {
     });
     tenantId = tenant.id;
     const account = await prisma.account.create({
-      data: { tenantId, balance: BigInt(0) },
+      data: { tenantId, legalEntityId: "le-" + tenantId, balance: BigInt(0) },
     });
     void account;
     await prisma.tariff.create({

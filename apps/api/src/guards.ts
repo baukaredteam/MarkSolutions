@@ -65,6 +65,12 @@ export class TenantGuard implements CanActivate {
       throw new UnauthorizedException("invalid jwt");
     }
     const roles = claims.roles ?? [];
+    // purpose-limited selection token не открывает защищённые маршруты (ADR-027)
+    if (claims.purpose === "le-select") {
+      throw new ForbiddenException(
+        "selection token: choose a legal entity first"
+      );
+    }
     const isOperator = roles.includes("operator");
     if (!claims.tenantId && !isOperator) {
       throw new UnauthorizedException("invalid jwt");

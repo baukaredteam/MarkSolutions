@@ -30,6 +30,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
     const card = await prisma.productCard.create({
       data: {
         tenantId: tenant.id,
+        legalEntityId: "le-" + tenant.id,
         status: "DRAFT",
         gtin: "04014835723399",
         attributes: {
@@ -54,6 +55,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
     const prop = await prisma.draftProposal.create({
       data: {
         tenantId: tenant.id,
+        legalEntityId: "le-" + tenant.id,
         source: "demo-seed",
         proposed: {
           schemaVersion: 1,
@@ -83,6 +85,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
     await prisma.productCard.create({
       data: {
         tenantId: t1.id,
+        legalEntityId: "le-" + t1.id,
         gtin,
         status: "DRAFT",
         attributes: { schemaVersion: 1 },
@@ -93,6 +96,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
       prisma.productCard.create({
         data: {
           tenantId: t1.id,
+          legalEntityId: "le-" + t1.id,
           gtin,
           status: "DRAFT",
           attributes: { schemaVersion: 1 },
@@ -103,6 +107,7 @@ describe("ProductCard + DraftProposal (t3-catalog migration)", () => {
     await prisma.productCard.create({
       data: {
         tenantId: t2.id,
+        legalEntityId: "le-" + t2.id,
         gtin,
         status: "DRAFT",
         attributes: { schemaVersion: 1 },

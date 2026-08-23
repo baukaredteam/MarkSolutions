@@ -152,6 +152,7 @@ describe("catalog moderation (T3, CAT-013)", () => {
     const card = await prisma.productCard.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         gtin: "04014835723399",
         status: "DRAFT",
         attributes: { schemaVersion: 1, name: "Только имя" },

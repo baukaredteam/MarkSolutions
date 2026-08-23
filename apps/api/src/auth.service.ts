@@ -1,13 +1,14 @@
 import {
-  ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { randomUUID } from "node:crypto";
 import { PrismaService } from "./prisma.service";
-import { ActiveScopeResolver } from "./active-scope.resolver";
-import { MembershipError } from "./active-scope.resolver";
+import { ActiveScopeResolver, MembershipError } from "./active-scope.resolver";
 import { createHash } from "node:crypto";
 
 export interface JwtClaims {
@@ -15,23 +16,11 @@ export interface JwtClaims {
   tenantId: string | null;
   roles: string[];
   mfaCompleted: boolean;
-  /** W0-03a pt2 (ADR-027): активное юрлицо; обязателен для клиентских ролей. */
+  /** W0-03a (ADR-027): активное юрлицо; обязательно для клиентских ролей. */
   activeLegalEntityId?: string | null;
-}
-
-// Детерминированный ответ, когда у пользователя несколько членств:
-// выбор юрлица и mint нового токена — отдельное ревьюимое flow (ADR-027).
-export class LegalEntitySelectionRequired extends ConflictException {
-  constructor(memberships: string[]) {
-    super({
-      code: 409,
-      message: "legal-entity selection required",
-      details: { memberships },
-      fieldErrors: {},
-      correlationId: "",
-      retryable: false,
-    });
-  }
+  /** purpose-limited selection token — не даёт доступа к бизнес-данным. */
+  purpose?: "le-select";
+  jti?: string;
 }
 
 @Injectable()
@@ -55,6 +44,7 @@ export class AuthService {
     tenantId: string | null;
     roles: string[];
     activeLegalEntityId: string | null;
+    selectionRequired?: boolean;
   }> {
     const user = await this.prisma.user.findUnique({ where: { login } });
     if (!user) throw new UnauthorizedException("invalid credentials");
@@ -63,7 +53,6 @@ export class AuthService {
       throw new UnauthorizedException("invalid credentials");
 
     const roles: string[] = JSON.parse(user.roles);
-    // оператор модерации — глобальная роль без tenant (CAT-013); остальные обязаны иметь tenant
     if (!user.tenantId && !roles.includes("operator")) {
       throw new UnauthorizedException("no tenant");
     }
@@ -75,8 +64,10 @@ export class AuthService {
         ["admin", "accountant", "operator", "marking"].includes(r)
       );
 
-    // W0-03a pt2 (ADR-027): ровно одно активное membership может выдать active scope.
+    // ADR-027: ровно одно активное membership выдаёт active scope; несколько →
+    // purpose-limited selection token (выбор юрлица — отдельный flow); ноль → 403.
     let activeLegalEntityId: string | null = null;
+    let selectionToken: string | undefined;
     if (user.tenantId) {
       try {
         activeLegalEntityId = await this.scopes.membershipForLogin(
@@ -85,19 +76,25 @@ export class AuthService {
         );
       } catch (e) {
         if (e instanceof MembershipError) {
-          if (e.reason === "selection-required")
-            throw new LegalEntitySelectionRequired(
-              (
-                await this.prisma.userLegalEntityMembership.findMany({
-                  where: { userId: user.id },
-                  select: { legalEntityId: true },
-                })
-              ).map((m) => m.legalEntityId)
-            );
-          throw new ForbiddenException("no legal entity membership");
+          if (e.reason === "selection-required") {
+            selectionToken = this.issueSelectionToken(user.id, user.tenantId);
+          } else {
+            throw new ForbiddenException("no legal entity membership");
+          }
+        } else {
+          throw e;
         }
-        throw e;
       }
+    }
+
+    if (selectionToken) {
+      return {
+        token: selectionToken,
+        tenantId: user.tenantId ?? null,
+        roles: [],
+        activeLegalEntityId: null,
+        selectionRequired: true,
+      };
     }
 
     const claims: JwtClaims = {
@@ -113,5 +110,103 @@ export class AuthService {
       roles,
       activeLegalEntityId,
     };
+  }
+
+  // ─── ADR-027: выбор юрлица при нескольких членствах ────────────────────────
+  private readonly usedSelectionJti = new Set<string>();
+  private readonly selectAttempts = new Map<string, number[]>();
+
+  /** Короткоживущий purpose-limited токен: sub+tenantId+jti, БЕЗ ролей/scope. */
+  issueSelectionToken(userId: string, tenantId: string): string {
+    return this.jwt.sign({
+      sub: userId,
+      tenantId,
+      roles: [],
+      mfaCompleted: false,
+      purpose: "le-select",
+      jti: randomUUID(),
+    } as JwtClaims);
+  }
+
+  private rateLimited(userId: string): boolean {
+    const now = Date.now();
+    const window = (this.selectAttempts.get(userId) ?? []).filter(
+      (t) => now - t < 60_000
+    );
+    window.push(now);
+    this.selectAttempts.set(userId, window);
+    return window.length > 10;
+  }
+
+  async selectLegalEntity(
+    selectionToken: string,
+    legalEntityId: string
+  ): Promise<{
+    token: string;
+    tenantId: string;
+    roles: string[];
+    activeLegalEntityId: string;
+  }> {
+    let claims: JwtClaims;
+    try {
+      claims = this.jwt.verify(selectionToken) as JwtClaims;
+    } catch {
+      throw new UnauthorizedException("invalid or expired selection token");
+    }
+    if (
+      claims.purpose !== "le-select" ||
+      !claims.tenantId ||
+      !claims.jti ||
+      !claims.sub
+    ) {
+      throw new UnauthorizedException("invalid selection token");
+    }
+    if (this.usedSelectionJti.has(claims.jti)) {
+      throw new UnauthorizedException("selection token already used");
+    }
+    if (!legalEntityId || legalEntityId.trim() === "") {
+      throw new ForbiddenException("legal entity not available for user");
+    }
+    if (this.rateLimited(claims.sub)) {
+      throw new HttpException(
+        "too many selection attempts",
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+    try {
+      const le = await this.scopes.membershipForLogin(
+        claims.tenantId,
+        claims.sub,
+        legalEntityId
+      );
+      this.usedSelectionJti.add(claims.jti);
+      const user = await this.prisma.user.findUnique({
+        where: { id: claims.sub },
+      });
+      let roles: string[] = [];
+      try {
+        roles = JSON.parse(user?.roles ?? "[]") as string[];
+      } catch {
+        roles = [];
+      }
+      const token = this.jwt.sign({
+        sub: claims.sub,
+        tenantId: claims.tenantId,
+        roles,
+        mfaCompleted: false,
+        activeLegalEntityId: le,
+      } as JwtClaims);
+      return {
+        token,
+        tenantId: claims.tenantId,
+        roles,
+        activeLegalEntityId: le,
+      };
+    } catch (e) {
+      if (e instanceof MembershipError) {
+        throw new ForbiddenException("legal entity not available for user");
+      }
+      throw e;
+    }
   }
 }

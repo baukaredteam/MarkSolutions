@@ -125,6 +125,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
         id: "o-seed-1",
         number: 101,
         tenantId,
+        legalEntityId: "le-" + tenantId,
         status: "COMPLETED",
         idempotencyKey: "seed-order-1",
       },
@@ -174,6 +175,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
         id: "o-deadline",
         number: 102,
         tenantId,
+        legalEntityId: "le-" + tenantId,
         status: "COMPLETED",
         idempotencyKey: "deadline-order",
         updatedAt: new Date(Date.now() - 24 * 86400000), // 24 дня назад
@@ -241,6 +243,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     const card = await prisma.productCard.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         gtin: "04014835723399",
         status: "REGISTERED",
         attributes: { name: "Test" },
@@ -251,6 +254,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
         id: "o-flags",
         number: 103,
         tenantId,
+        legalEntityId: "le-" + tenantId,
         status: "COMPLETED",
         idempotencyKey: "flags-order",
       },
@@ -281,6 +285,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     await prisma.codeEvent.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         codeId: code.id,
         event: "PRINTED",
         at: new Date(),
@@ -290,6 +295,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     await prisma.codeEvent.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         codeId: code.id,
         event: "APPLIED",
         at: new Date(),
@@ -299,6 +305,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     await prisma.codeEvent.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         codeId: code.id,
         event: "INTRODUCED",
         at: new Date(),

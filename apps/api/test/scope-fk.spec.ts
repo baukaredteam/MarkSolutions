@@ -50,6 +50,7 @@ describe("W0-03a scope invariants (database level)", () => {
       prisma.account.create({
         data: {
           tenantId: a.tenant.id,
+          legalEntityId: "le-" + a.tenant.id,
           legalEntityId: b.le.id, // чужое юрлицо
           balance: BigInt(0),
         },
@@ -60,6 +61,7 @@ describe("W0-03a scope invariants (database level)", () => {
     const ok = await prisma.account.create({
       data: {
         tenantId: a.tenant.id,
+        legalEntityId: "le-" + a.tenant.id,
         legalEntityId: a.le.id,
         balance: BigInt(5),
       },
@@ -72,6 +74,7 @@ describe("W0-03a scope invariants (database level)", () => {
     await prisma.codeVault.create({
       data: {
         tenantId: t.tenant.id,
+        legalEntityId: "le-" + t.tenant.id,
         legalEntityId: t.le.id,
         orderId: "o-retention",
         gtin: "04014835723399",

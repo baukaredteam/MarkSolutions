@@ -28,18 +28,20 @@ export async function provisionTenant(
         status: "ACTIVE",
       },
     });
-    await tx.account.create({
-      data: {
-        tenantId: tenant.id,
-        balance: BigInt(0),
-      },
-    });
     const legalEntity = await tx.legalEntity.create({
       data: {
         tenantId: tenant.id,
         bin: input.bin,
         name: input.name,
         status: "ACTIVE",
+      },
+    });
+    // ADR-027: счёт принадлежит юрлицу с первого коммита (composite FK валиден)
+    await tx.account.create({
+      data: {
+        tenantId: tenant.id,
+        legalEntityId: legalEntity.id,
+        balance: BigInt(0),
       },
     });
     const admin = await tx.user.create({

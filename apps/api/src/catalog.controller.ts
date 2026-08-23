@@ -20,7 +20,8 @@ import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
 import { KMS_ADAPTER, IKmsAdapter } from "./kms.adapter";
 import { Inject } from "@nestjs/common";
-import { activeScopeOf } from "./scoped-repository";
+import { activeScopeOf, scopeWhere } from "./scoped-repository";
+import type { LegalEntityScope } from "./scope";
 import {
   tnvedHint,
   heuristicStrengthensFix,
@@ -49,9 +50,14 @@ export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
   // UI-04: tenant-список карточек (id/name/gtin/ntin/status/updatedAt), sort desc
-  async listCards(tenantId: string) {
+  async listCards(scope: LegalEntityScope) {
+    const tenantId = scope.organizationId;
     const rows = await this.prisma.productCard.findMany({
-      where: { tenantId, status: { not: "ARCHIVED" } },
+      where: {
+        tenantId,
+        legalEntityId: scope.legalEntityId,
+        status: { not: "ARCHIVED" },
+      },
       orderBy: { updatedAt: "desc" },
     });
     return rows.map((r) => {
@@ -68,9 +74,9 @@ export class CatalogService {
   }
 
   // UI-04: карточка по id (attributes + audit + status); чужой tenant → 404
-  async getCard(tenantId: string, cardId: string) {
+  async getCard(scope: LegalEntityScope, cardId: string) {
     const card = await this.prisma.productCard.findFirst({
-      where: { id: cardId, tenantId },
+      where: { id: cardId, ...scopeWhere(scope) },
     });
     if (!card) throw new NotFoundException("card not found");
     return {
@@ -85,7 +91,7 @@ export class CatalogService {
   }
 
   async createCard(
-    tenantId: string,
+    scope: LegalEntityScope,
     actor: string,
     body: {
       gtin: string;
@@ -93,6 +99,7 @@ export class CatalogService {
       confirmDuplicate?: boolean;
     }
   ): Promise<unknown> {
+    const tenantId = scope.organizationId;
     if (!body.gtin || !/^\d{14}$/.test(body.gtin)) {
       throw new BadRequestException("gtin must be 14 digits");
     }
@@ -173,6 +180,7 @@ export class CatalogService {
         const created = await tx.productCard.create({
           data: {
             tenantId,
+            legalEntityId: scope.legalEntityId,
             gtin: body.gtin,
             status: "DRAFT",
             attributes: {
@@ -222,7 +230,8 @@ export class CatalogService {
     }
   }
 
-  async createDraft(tenantId: string, row: DraftRow): Promise<unknown> {
+  async createDraft(scope: LegalEntityScope, row: DraftRow): Promise<unknown> {
+    const tenantId = scope.organizationId;
     const tnved = row.tnved ?? "";
     const missing: string[] = [];
     if (!row.gtin) missing.push("gtin");
@@ -236,6 +245,7 @@ export class CatalogService {
     return this.prisma.draftProposal.create({
       data: {
         tenantId,
+        legalEntityId: scope.legalEntityId,
         source: row.source ?? "invoice",
         proposed: {
           schemaVersion: 1,
@@ -255,12 +265,15 @@ export class CatalogService {
     });
   }
 
-  async listDrafts(tenantId: string, status?: string): Promise<unknown[]> {
+  async listDrafts(
+    scope: LegalEntityScope,
+    status?: string
+  ): Promise<unknown[]> {
     // F2: по умолчанию OUT_OF_SCOPE скрыт; ?status=OUT_OF_SCOPE — отдельный список
     const where =
       status === "OUT_OF_SCOPE"
-        ? { tenantId, status: "OUT_OF_SCOPE" }
-        : { tenantId, status: { not: "OUT_OF_SCOPE" } };
+        ? { ...scopeWhere(scope), status: "OUT_OF_SCOPE" }
+        : { ...scopeWhere(scope), status: { not: "OUT_OF_SCOPE" } };
     return this.prisma.draftProposal.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -286,7 +299,7 @@ export class CatalogService {
 
   // ADR-022: «Исправить код» — выбор кода из перечня, строка → карточка/Submitted-путь.
   async fixTnved(
-    tenantId: string,
+    scope: LegalEntityScope,
     id: string,
     actor: string,
     newTnved: string
@@ -294,7 +307,7 @@ export class CatalogService {
     if (!isInList(newTnved))
       throw new BadRequestException(`tnved not in list: ${newTnved}`);
     const draft = await this.prisma.draftProposal.findFirst({
-      where: { id, tenantId },
+      where: { id, ...scopeWhere(scope) },
     });
     if (!draft) throw new BadRequestException("draft not found");
     const proposed = draft.proposed as Record<string, unknown>;
@@ -311,12 +324,12 @@ export class CatalogService {
 
   // ADR-022: «Не подлежит маркировке» — терминальный «вне скоупа».
   async outOfScope(
-    tenantId: string,
+    scope: LegalEntityScope,
     id: string,
     actor: string
   ): Promise<unknown> {
     const draft = await this.prisma.draftProposal.findFirst({
-      where: { id, tenantId },
+      where: { id, ...scopeWhere(scope) },
     });
     if (!draft) throw new BadRequestException("draft not found");
     await this.prisma.draftProposal.update({
@@ -329,12 +342,12 @@ export class CatalogService {
 
   // Фаза 2 (ADR-022): гейт на Submitted — «вне перечня И без решения» не отправляется.
   async submitDraft(
-    tenantId: string,
+    scope: LegalEntityScope,
     id: string,
     actor: string
   ): Promise<unknown> {
     const draft = await this.prisma.draftProposal.findFirst({
-      where: { id, tenantId },
+      where: { id, ...scopeWhere(scope) },
     });
     if (!draft) throw new BadRequestException("draft not found");
     const tnved = (draft.proposed as Record<string, unknown>).tnved as
@@ -355,7 +368,7 @@ export class CatalogService {
     return { id, status: "SUBMITTED" };
   }
 
-  async seedInvoice(tenantId: string): Promise<number> {
+  async seedInvoice(scope: LegalEntityScope): Promise<number> {
     // читаем фикстуру (38 реальных + 2 demo)
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -366,7 +379,7 @@ export class CatalogService {
       )
     ) as DraftRow[];
     for (const r of rows) {
-      await this.createDraft(tenantId, { ...r, demo: r.demo ?? false });
+      await this.createDraft(scope, { ...r, demo: r.demo ?? false });
     }
     return rows.length;
   }
@@ -381,6 +394,10 @@ export class CatalogController {
 
   // Роль OPERATOR не имеет tenant — tenant-scoped эндпоинты для него закрыты (403),
   // кроме модерации (CAT-013).
+  private scopeOf(req: Request): LegalEntityScope {
+    return activeScopeOf(req);
+  }
+
   private tenantOf(req: Request): string {
     const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
     if (!tenantId) throw new ForbiddenException("tenant required");
@@ -390,29 +407,29 @@ export class CatalogController {
   @Roles(...READ_ROLES)
   @Get("cards")
   async cards(@Req() req: Request) {
-    return { items: await this.catalog.listCards(this.tenantOf(req)) };
+    return { items: await this.catalog.listCards(this.scopeOf(req)) };
   }
 
   @Roles(...READ_ROLES)
   @Get("cards/:id")
   async card(@Req() req: Request, @Param("id") id: string) {
-    return this.catalog.getCard(this.tenantOf(req), id);
+    return this.catalog.getCard(this.scopeOf(req), id);
   }
 
   @Roles(...READ_ROLES)
   @Get("drafts")
   async drafts(@Req() req: Request, @Query("status") status?: string) {
-    return { items: await this.catalog.listDrafts(this.tenantOf(req), status) };
+    return { items: await this.catalog.listDrafts(this.scopeOf(req), status) };
   }
 
   @Roles("admin", "manager")
   @HttpCode(201)
   @Post("drafts/import")
   async importDrafts(@Req() req: Request, @Body() body: { rows: DraftRow[] }) {
-    const tenantId = this.tenantOf(req);
+    const scope = this.scopeOf(req);
     // MVP: синхронно создаём (OutboxPoller-асинхронность — след. итерация),
     // но возвращаем jobId для совместимости с acceptance.
-    for (const row of body.rows) await this.catalog.createDraft(tenantId, row);
+    for (const row of body.rows) await this.catalog.createDraft(scope, row);
     return { jobId: `job-${Date.now()}`, created: body.rows.length };
   }
 
@@ -428,9 +445,9 @@ export class CatalogController {
       confirmDuplicate?: boolean;
     }
   ) {
-    const tenantId = this.tenantOf(req);
+    const scope = this.scopeOf(req);
     const actor = (req as unknown as { actor: string }).actor;
-    return this.catalog.createCard(tenantId, actor, body);
+    return this.catalog.createCard(scope, actor, body);
   }
 
   @Roles("admin", "manager")
@@ -442,7 +459,7 @@ export class CatalogController {
     @Body() body: { tnved: string }
   ) {
     return this.catalog.fixTnved(
-      this.tenantOf(req),
+      this.scopeOf(req),
       id,
       (req as unknown as { actor: string }).actor,
       body.tnved
@@ -454,7 +471,7 @@ export class CatalogController {
   @Post("drafts/:id/out-of-scope")
   async outOfScope(@Req() req: Request, @Param("id") id: string) {
     return this.catalog.outOfScope(
-      this.tenantOf(req),
+      this.scopeOf(req),
       id,
       (req as unknown as { actor: string }).actor
     );
@@ -465,7 +482,7 @@ export class CatalogController {
   @Post("drafts/:id/submit")
   async submitDraft(@Req() req: Request, @Param("id") id: string) {
     return this.catalog.submitDraft(
-      this.tenantOf(req),
+      this.scopeOf(req),
       id,
       (req as unknown as { actor: string }).actor
     );
@@ -477,7 +494,7 @@ export class CatalogController {
   @Post("cards/:id/submit")
   async submitCard(@Req() req: Request, @Param("id") id: string) {
     return this.moderation.submitCard(
-      this.tenantOf(req),
+      this.scopeOf(req).organizationId,
       id,
       (req as unknown as { actor: string }).actor
     );
@@ -498,9 +515,7 @@ export class DemoController {
     if (process.env.DEMO_ENABLED !== "true") {
       throw new NotFoundException("demo endpoint disabled"); // F4: 404, не 400
     }
-    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
-    if (!tenantId) throw new ForbiddenException("tenant required");
-    const count = await this.catalog.seedInvoice(tenantId);
+    const count = await this.catalog.seedInvoice(activeScopeOf(req));
     return { count };
   }
 

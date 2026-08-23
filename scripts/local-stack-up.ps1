@@ -143,5 +143,10 @@ if ($restricted -eq $rootToken) {
     Write-Host "[local-stack] FAIL: restricted token equals root token"
     exit 1
 }
-Write-Host "[local-stack] RESTRICTED_ADAPTER_TOKEN=$restricted"
-Write-Host "[local-stack] Pass it to tests via LOCAL_OPENBAO_ADAPTER_TOKEN (never a file)."
+# ADR-027: never print the raw token — log a fingerprint only. The value is
+# passed in-memory via the LOCAL_OPENBAO_ADAPTER_TOKEN environment variable.
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$fp = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($restricted))) -replace "-", "").Substring(0, 12).ToLowerInvariant()
+Write-Host "[local-stack] restricted adapter token minted [REDACTED] fingerprint=sha256:$fp"
+Write-Host "[local-stack] Provide it to tests in-memory: " -NoNewline
+Write-Host '$env:LOCAL_OPENBAO_ADAPTER_TOKEN = <token>'

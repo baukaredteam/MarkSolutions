@@ -29,6 +29,12 @@ export async function requireTestDatabaseUrl(): Promise<string> {
 function withSchema(baseUrl: string, schema: string): string {
   const u = new URL(baseUrl);
   u.searchParams.set("schema", schema);
+  // W0-03a pt3: стабилизация Prisma-движка на Windows при частых
+  // connect/disconnect циклов между спецификациями.
+  if (!u.searchParams.has("connection_limit"))
+    u.searchParams.set("connection_limit", "3");
+  if (!u.searchParams.has("pool_timeout"))
+    u.searchParams.set("pool_timeout", "20");
   return u.toString();
 }
 

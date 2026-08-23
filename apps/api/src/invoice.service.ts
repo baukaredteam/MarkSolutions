@@ -23,6 +23,7 @@ export class InvoiceService {
 
   async create(
     tenantId: string,
+    legalEntityId: string,
     body: { productGroup: string; quantity: number }
   ) {
     if (!body.productGroup)
@@ -47,6 +48,7 @@ export class InvoiceService {
         invoice = await this.prisma.invoice.create({
           data: {
             tenantId,
+            legalEntityId,
             number,
             productGroup: body.productGroup,
             quantity: qty,

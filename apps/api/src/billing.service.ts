@@ -30,6 +30,11 @@ export class BillingService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async getAccount(db: Db, tenantId: string) {
+    // ADR-027: предпочтён счёт с заполненным юрлицом (NOT NULL для проводок)
+    const scoped = await db.account.findFirst({
+      where: { tenantId, legalEntityId: { not: null } },
+    });
+    if (scoped) return scoped;
     const account = await db.account.findFirst({
       where: { tenantId },
     });
@@ -204,6 +209,8 @@ export class BillingService {
         const entry = await db.ledgerEntry.create({
           data: {
             tenantId,
+            // ADR-027: проводка наследует юрлицо своего счёта (composite FK)
+            legalEntityId: account.legalEntityId,
             accountId: account.id,
             kind,
             amount,

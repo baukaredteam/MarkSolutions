@@ -32,7 +32,7 @@ describe("onboarding flow (T1)", () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = module.createNestApplication();
+    app = module.createNestApplication({ logger: ["error", "warn"] });
     await app.init();
     prisma = app.get(PrismaService);
   }, 120000);
@@ -97,10 +97,10 @@ describe("onboarding flow (T1)", () => {
     expect(approve1.body.status).toBe("APPROVED");
     expect(approve1.body.tenantId).toBeTruthy();
 
-    await request(app.getHttpServer())
+    const r2 = await request(app.getHttpServer())
       .post(`/operator/approvals/${id}`)
-      .send({ decision: "approve" })
-      .expect(200);
+      .send({ decision: "approve" });
+    expect(r2.status).toBe(200);
 
     const tenants = await prisma.tenant.count({
       where: { bin: "998877665544" },

@@ -283,6 +283,7 @@ describe("Order number sequence (W0-02R-final2)", () => {
           await prisma.order.create({
             data: {
               tenantId: tenant.id,
+              legalEntityId: "le-" + tenant.id,
               idempotencyKey: `seq-n-${i}`,
               status: "DRAFT",
             },
@@ -317,6 +318,7 @@ describe("Order number sequence (W0-02R-final2)", () => {
           prisma.order.create({
             data: {
               tenantId: tenant.id,
+              legalEntityId: "le-" + tenant.id,
               idempotencyKey: `seq-test-${i}`,
               status: "DRAFT",
             },

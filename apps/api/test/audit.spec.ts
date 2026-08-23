@@ -51,7 +51,7 @@ describe("audit journal (UI-07, SEC-057)", () => {
     });
     tenantId = tenant.id;
     const acc = await prisma.account.create({
-      data: { tenantId, balance: BigInt(0) },
+      data: { tenantId, legalEntityId: "le-" + tenantId, balance: BigInt(0) },
     });
     // codeVault для CodeEvent
     const code = await prisma.codeVault.create({
@@ -66,11 +66,18 @@ describe("audit journal (UI-07, SEC-057)", () => {
       },
     });
     await prisma.codeEvent.create({
-      data: { tenantId, codeId: code.id, event: "PRINTED", actor: "u1" },
+      data: {
+        tenantId,
+        legalEntityId: "le-" + tenantId,
+        codeId: code.id,
+        event: "PRINTED",
+        actor: "u1",
+      },
     });
     await prisma.vaultExport.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         orderId: "o-audit",
         actor: "u1",
         kind: "export",

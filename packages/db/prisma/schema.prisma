@@ -298,6 +298,10 @@ model OrderLine {
   version       Int      @default(0)
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id])
+  // W0-03a pt3 (ADR-027): dual-scope columns enable the composite FK
+  // (legalEntityId, tenantId) → LegalEntity(id, tenantId), so an OrderLine can
+  // never reference another tenant's legal entity at the database level.
+  tenantId      String
   legalEntityId String?
   legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id])
   cardId        String

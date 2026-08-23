@@ -25,7 +25,8 @@
     "demo:smoke": "node scripts/demo-smoke.mjs",
     "prepare": "husky",
     "predev": "npm run build:cjs --workspace @markflow/shared",
-    "prestart": "npm run build:cjs --workspace @markflow/shared"
+    "prestart": "npm run build:cjs --workspace @markflow/shared",
+    "scope:check": "node scripts/scope-inventory-check.mjs"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.1.28",

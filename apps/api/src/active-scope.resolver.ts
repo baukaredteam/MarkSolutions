@@ -74,10 +74,27 @@ export class ActiveScopeResolver {
   /**
    * Login-time decision: exactly one active membership may mint an active scope.
    * zero → no-membership; >1 → selection-required (deterministic response).
+   * With `expected`, validates that THIS legal entity is among the user's
+   * memberships in the tenant (used by POST /auth/select-legal-entity).
    */
-  async membershipForLogin(tenantId: string, userId: string): Promise<string> {
+  async membershipForLogin(
+    tenantId: string,
+    userId: string,
+    expected?: string
+  ): Promise<string> {
     assertSegment("tenantId", tenantId);
     assertSegment("userId", userId);
+    if (expected !== undefined) {
+      assertSegment("legalEntityId", expected);
+      const m = await this.prisma.userLegalEntityMembership.findFirst({
+        where: { userId, legalEntityId: expected },
+        include: { legalEntity: { select: { id: true, tenantId: true } } },
+      });
+      if (!m || m.legalEntity.tenantId !== tenantId) {
+        throw new MembershipError("no-membership");
+      }
+      return expected;
+    }
     const memberships = await this.prisma.userLegalEntityMembership.findMany({
       where: { userId, legalEntity: { tenantId } },
       select: { legalEntityId: true },

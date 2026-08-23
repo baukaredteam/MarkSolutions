@@ -241,6 +241,7 @@ export class VaultService {
 
   async logExport(
     tenantId: string,
+    legalEntityId: string | null,
     orderId: string,
     actor: string,
     kind: "export" | "print",
@@ -248,7 +249,15 @@ export class VaultService {
     reason?: string
   ): Promise<void> {
     await this.prisma.vaultExport.create({
-      data: { tenantId, orderId, actor, kind, reason: reason ?? null, count },
+      data: {
+        tenantId,
+        legalEntityId,
+        orderId,
+        actor,
+        kind,
+        reason: reason ?? null,
+        count,
+      },
     });
   }
 }

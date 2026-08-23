@@ -88,6 +88,7 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
       data: {
         number: 500 + orderSeq,
         tenantId,
+        legalEntityId: "le-" + tenantId,
         status: "COMPLETED",
         idempotencyKey: `doc-order-${tenantId}-${orderSeq}-${Date.now()}`,
       },
@@ -421,16 +422,29 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
     const unit = await prisma.aggregationUnit.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         sscc: "0" + "1234567" + "000000000" + "0",
         type: "PALLET",
         status: "SEALED",
       },
     });
     await prisma.aggregationMember.create({
-      data: { unitId: unit.id, tenantId, codeKey: member1, addedBy: "u1" },
+      data: {
+        unitId: unit.id,
+        tenantId,
+        legalEntityId: "le-" + tenantId,
+        codeKey: member1,
+        addedBy: "u1",
+      },
     });
     await prisma.aggregationMember.create({
-      data: { unitId: unit.id, tenantId, codeKey: member2, addedBy: "u1" },
+      data: {
+        unitId: unit.id,
+        tenantId,
+        legalEntityId: "le-" + tenantId,
+        codeKey: member2,
+        addedBy: "u1",
+      },
     });
     const res = await request(app.getHttpServer())
       .post("/withdrawal")
@@ -465,13 +479,20 @@ describe("documents W4-04 (import/withdrawal, Q5/Q9, ADR-025) async", () => {
     const unit = await prisma.aggregationUnit.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         sscc: "0" + "7654321" + "000000001" + "0",
         type: "PALLET",
         status: "SEALED",
       },
     });
     await prisma.aggregationMember.create({
-      data: { unitId: unit.id, tenantId, codeKey: member, addedBy: "u1" },
+      data: {
+        unitId: unit.id,
+        tenantId,
+        legalEntityId: "le-" + tenantId,
+        codeKey: member,
+        addedBy: "u1",
+      },
     });
     // член в одиночку → 409
     await request(app.getHttpServer())

@@ -246,6 +246,7 @@ describe("labels W4-02 (bwip-js + ZXing-WASM roundtrip, ADR-025)", () => {
     const code = await prisma.codeEvent.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         codeId: id,
         event: "APPLIED",
         at: new Date(),

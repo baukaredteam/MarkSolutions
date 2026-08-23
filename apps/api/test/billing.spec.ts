@@ -51,7 +51,7 @@ describe("billing core (W3, ADR-007)", () => {
     });
     tenantId = tenant.id;
     const account = await prisma.account.create({
-      data: { tenantId, balance: BigInt(0) },
+      data: { tenantId, legalEntityId: "le-" + tenantId, balance: BigInt(0) },
     });
     accountId = account.id;
     // убрать seed-тариф — тест проверяет «нет активного тарифа» сначала
@@ -127,7 +127,7 @@ describe("billing core (W3, ADR-007)", () => {
       data: { bin: "777000111333", name: "НольБал", status: "ACTIVE" },
     });
     await prisma.account.create({
-      data: { tenantId: t.id, balance: BigInt(0) },
+      data: { tenantId: t.id, legalEntityId: "le-" + t.id, balance: BigInt(0) },
     });
     const tok = app.get(JwtService).sign({
       sub: `u1`,
@@ -156,11 +156,12 @@ describe("billing core (W3, ADR-007)", () => {
       data: { bin: "777000111444", name: "КонкТен", status: "ACTIVE" },
     });
     const acc = await prisma.account.create({
-      data: { tenantId: t.id, balance: BigInt(0) },
+      data: { tenantId: t.id, legalEntityId: "le-" + t.id, balance: BigInt(0) },
     });
     await prisma.ledgerEntry.create({
       data: {
         tenantId: t.id,
+        legalEntityId: "le-" + t.id,
         accountId: acc.id,
         kind: "TOPUP",
         amount: BigInt(100000),
@@ -255,11 +256,12 @@ describe("billing core (W3, ADR-007)", () => {
       data: { bin: "777000111555", name: "СеттлТен", status: "ACTIVE" },
     });
     const acc = await prisma.account.create({
-      data: { tenantId: t.id, balance: BigInt(0) },
+      data: { tenantId: t.id, legalEntityId: "le-" + t.id, balance: BigInt(0) },
     });
     await prisma.ledgerEntry.create({
       data: {
         tenantId: t.id,
+        legalEntityId: "le-" + t.id,
         accountId: acc.id,
         kind: "TOPUP",
         amount: BigInt(50000),
@@ -340,7 +342,7 @@ describe("billing core (W3, ADR-007)", () => {
       data: { bin: "777000111666", name: "ПустоТен", status: "ACTIVE" },
     });
     await prisma.account.create({
-      data: { tenantId: t.id, balance: BigInt(0) },
+      data: { tenantId: t.id, legalEntityId: "le-" + t.id, balance: BigInt(0) },
     });
     const tok = app.get(JwtService).sign({
       sub: `u1`,
@@ -362,7 +364,7 @@ describe("billing core (W3, ADR-007)", () => {
       data: { bin: "777000111777", name: "ЛеджТен", status: "ACTIVE" },
     });
     const acc = await prisma.account.create({
-      data: { tenantId: t.id, balance: BigInt(0) },
+      data: { tenantId: t.id, legalEntityId: "le-" + t.id, balance: BigInt(0) },
     });
     const tok = app.get(JwtService).sign({
       sub: `u1`,
@@ -374,6 +376,7 @@ describe("billing core (W3, ADR-007)", () => {
     await prisma.ledgerEntry.create({
       data: {
         tenantId: t.id,
+        legalEntityId: "le-" + t.id,
         accountId: acc.id,
         kind: "TOPUP",
         amount: BigInt(1000),
@@ -384,6 +387,7 @@ describe("billing core (W3, ADR-007)", () => {
     await prisma.ledgerEntry.create({
       data: {
         tenantId: t.id,
+        legalEntityId: "le-" + t.id,
         accountId: acc.id,
         kind: "SETTLE",
         amount: BigInt(300),
@@ -394,6 +398,7 @@ describe("billing core (W3, ADR-007)", () => {
     await prisma.ledgerEntry.create({
       data: {
         tenantId: t.id,
+        legalEntityId: "le-" + t.id,
         accountId: acc.id,
         kind: "TOPUP",
         amount: BigInt(500),

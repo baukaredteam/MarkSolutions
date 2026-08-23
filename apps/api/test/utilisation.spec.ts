@@ -60,11 +60,12 @@ describe("utilisation (W3, п.26)", () => {
     });
     tenantId = tenant.id;
     const account = await prisma.account.create({
-      data: { tenantId, balance: BigInt(0) },
+      data: { tenantId, legalEntityId: "le-" + tenantId, balance: BigInt(0) },
     });
     await prisma.ledgerEntry.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         accountId: account.id,
         kind: "TOPUP",
         amount: BigInt(1000000),

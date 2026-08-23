@@ -13,6 +13,7 @@ import type { Request } from "express";
 import { ECOM_ADAPTER, IEcomAdapter } from "./ecom.adapter";
 import { CatalogService } from "./catalog.controller";
 import { Roles } from "./guards";
+import { activeScopeOf } from "./scoped-repository";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -41,12 +42,22 @@ export class EcomProductsController {
   @Post("import")
   async importProducts(
     @Req() req: Request,
-    @Body() body: { items: { gtin: string; tnved?: string; name?: string; brand?: string; sae?: string; volumeL?: number }[] }
+    @Body()
+    body: {
+      items: {
+        gtin: string;
+        tnved?: string;
+        name?: string;
+        brand?: string;
+        sae?: string;
+        volumeL?: number;
+      }[];
+    }
   ) {
-    const tenantId = tenantOf(req);
+    const scope = activeScopeOf(req);
     let created = 0;
     for (const it of body.items ?? []) {
-      await this.catalog.createDraft(tenantId, {
+      await this.catalog.createDraft(scope, {
         gtin: it.gtin,
         tnved: it.tnved,
         name: it.name,

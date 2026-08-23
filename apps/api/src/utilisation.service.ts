@@ -70,6 +70,7 @@ export class UtilisationService {
     const sntins = codes.map((c) => c.serial);
     await this.vault.logExport(
       tenantId,
+      order.legalEntityId,
       body.orderId,
       "tenant",
       "export",
@@ -92,6 +93,7 @@ export class UtilisationService {
     await this.prisma.utilisationReport.create({
       data: {
         tenantId,
+        legalEntityId: order.legalEntityId,
         orderId: body.orderId,
         idempotencyKey,
         reportId: sub.reportId,

@@ -74,6 +74,7 @@ describe("products cards list/detail (UI-04)", () => {
     const card = await prisma.productCard.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         gtin: "04014835723399",
         status: "REGISTERED",
         ntin: "KZ-MO-0001",

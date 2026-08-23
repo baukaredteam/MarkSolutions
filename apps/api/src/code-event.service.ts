@@ -103,6 +103,8 @@ export class CodeEventService {
     const evt = await db.codeEvent.create({
       data: {
         tenantId,
+        // ADR-027: событие наследует юрлицо своего кода Vault
+        legalEntityId: code.legalEntityId,
         codeId,
         event,
         at: new Date(),

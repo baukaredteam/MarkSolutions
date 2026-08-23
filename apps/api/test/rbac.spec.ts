@@ -97,17 +97,23 @@ describe("RBAC (T0-RBAC, ADR-020 апдейт)", () => {
         id: "o-rbac",
         number: 301,
         tenantId,
+        legalEntityId: "le-" + tenantId,
         status: "COMPLETED",
         idempotencyKey: "rbac-order",
       },
     });
     // account + tariff для billing/orders
     const acc = await prisma.account.create({
-      data: { tenantId, balance: BigInt(1000000) },
+      data: {
+        tenantId,
+        legalEntityId: "le-" + tenantId,
+        balance: BigInt(1000000),
+      },
     });
     await prisma.ledgerEntry.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         accountId: acc.id,
         kind: "TOPUP",
         amount: BigInt(1000000),

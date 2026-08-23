@@ -12,6 +12,7 @@ import type { Request } from "express";
 import { DocumentService } from "./document.service";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
+import { activeScopeOf } from "./scoped-repository";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -40,7 +41,12 @@ export class DocumentController {
       };
     }
   ) {
-    return this.documents.submitImport(tenantOf(req), body);
+    const scope = activeScopeOf(req);
+    return this.documents.submitImport(
+      scope.organizationId,
+      scope.legalEntityId,
+      body
+    );
   }
 
   // Q9: вывод из оборота / списание
@@ -59,7 +65,12 @@ export class DocumentController {
       primaryDocument?: { type?: string; date?: string; number?: string };
     }
   ) {
-    return this.documents.submitWithdrawal(tenantOf(req), body);
+    const scope = activeScopeOf(req);
+    return this.documents.submitWithdrawal(
+      scope.organizationId,
+      scope.legalEntityId,
+      body
+    );
   }
 
   // дашборд: все документы tenant

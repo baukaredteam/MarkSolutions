@@ -15,6 +15,7 @@ import { InvoiceService, invoiceNumber } from "./invoice.service";
 import { PrismaService } from "./prisma.service";
 import { Public } from "./public.decorator";
 import { Roles, READ_ROLES } from "./guards";
+import { activeScopeOf } from "./scoped-repository";
 import { formatTenge } from "@markflow/shared";
 
 function tenantOf(req: Request): string {
@@ -39,7 +40,11 @@ export class InvoiceController {
     @Req() req: Request,
     @Body() body: { productGroup: string; quantity: number }
   ) {
-    return this.invoices.create(tenantOf(req), body);
+    return this.invoices.create(
+      activeScopeOf(req).organizationId,
+      activeScopeOf(req).legalEntityId,
+      body
+    );
   }
 
   // HTML-печать счёта (счёт на оплату, как ИП К9)

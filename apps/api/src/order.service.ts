@@ -154,6 +154,8 @@ export class OrderService {
         await tx.orderLine.create({
           data: {
             orderId: created.id,
+            tenantId,
+            legalEntityId, // validated active scope (ADR-027)
             cardId: card.id,
             gtin: body.gtin,
             places: body.places,

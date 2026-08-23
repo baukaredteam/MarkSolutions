@@ -40,6 +40,7 @@ export class DocumentService {
   // Q5: импорт партии по заказу — все коды APPLIED → INTRODUCED
   async submitImport(
     tenantId: string,
+    legalEntityId: string,
     body: {
       orderId: string;
       customsDeclaration: {
@@ -78,6 +79,7 @@ export class DocumentService {
       await this.prisma.importDocument.create({
         data: {
           tenantId,
+          legalEntityId,
           orderId: body.orderId,
           customsDate: cd.date,
           customsNumber: cd.number,
@@ -113,6 +115,7 @@ export class DocumentService {
       await this.prisma.importDocument.create({
         data: {
           tenantId,
+          legalEntityId,
           orderId: body.orderId,
           customsDate: cd.date,
           customsNumber: cd.number,
@@ -141,6 +144,7 @@ export class DocumentService {
     const doc = await this.prisma.importDocument.create({
       data: {
         tenantId,
+        legalEntityId,
         orderId: body.orderId,
         customsDate: cd.date,
         customsNumber: cd.number,
@@ -156,6 +160,7 @@ export class DocumentService {
   // Q9: вывод из оборота — WITHDRAWAL→WITHDRAWN, WRITE_OFF→WRITTEN_OFF
   async submitWithdrawal(
     tenantId: string,
+    legalEntityId: string,
     body: {
       codes: WithdrawalCode[];
       withdrawalType: string;
@@ -276,6 +281,7 @@ export class DocumentService {
       const doc = await this.prisma.withdrawalDocument.create({
         data: {
           tenantId,
+          legalEntityId,
           codes: codeKeys,
           withdrawalType,
           withdrawalReason: body.withdrawalReason,
@@ -296,6 +302,7 @@ export class DocumentService {
     const doc = await this.prisma.withdrawalDocument.create({
       data: {
         tenantId,
+        legalEntityId,
         codes: toProcess, // полный набор для событий (включая членов агрегатов)
         withdrawalType,
         withdrawalReason: body.withdrawalReason,

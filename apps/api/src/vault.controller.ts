@@ -16,6 +16,7 @@ import type { Request, Response } from "express";
 import { PrismaService } from "./prisma.service";
 import { VaultService } from "./vault.service";
 import { OutboxPoller } from "./outbox-poller";
+import { activeScopeOf } from "./scoped-repository";
 import { buildXlsx } from "@markflow/shared";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
@@ -135,7 +136,8 @@ export class VaultController {
     @Res() res: Response,
     @Body() body: { orderId: string; reason?: string }
   ) {
-    const tenantId = tenantOf(req);
+    const scope = activeScopeOf(req);
+    const tenantId = scope.organizationId;
     const order = await this.prisma.order.findUnique({
       where: { id: body.orderId },
     });
@@ -173,6 +175,7 @@ export class VaultController {
     const ts = Date.now();
     await this.vault.logExport(
       tenantId,
+      scope.legalEntityId,
       body.orderId,
       (req as unknown as { actor: string }).actor,
       "export",
@@ -198,7 +201,8 @@ export class VaultController {
     @Res() res: Response,
     @Body() body: { orderId: string; reason?: string }
   ) {
-    const tenantId = tenantOf(req);
+    const scope = activeScopeOf(req);
+    const tenantId = scope.organizationId;
     const order = await this.prisma.order.findUnique({
       where: { id: body.orderId },
     });
@@ -244,6 +248,7 @@ export class VaultController {
     const ts = Date.now();
     await this.vault.logExport(
       tenantId,
+      scope.legalEntityId,
       body.orderId,
       (req as unknown as { actor: string }).actor,
       "export",
@@ -269,7 +274,8 @@ export class VaultController {
     @Req() req: Request,
     @Body() body: { orderId: string; count: number; reason?: string }
   ) {
-    const tenantId = tenantOf(req);
+    const scope = activeScopeOf(req);
+    const tenantId = scope.organizationId;
     const order = await this.prisma.order.findUnique({
       where: { id: body.orderId },
     });
@@ -292,6 +298,7 @@ export class VaultController {
     const count = Math.min(body.count ?? codes.length, codes.length);
     await this.vault.logExport(
       tenantId,
+      order.legalEntityId,
       order.id,
       (req as unknown as { actor: string }).actor,
       "print",

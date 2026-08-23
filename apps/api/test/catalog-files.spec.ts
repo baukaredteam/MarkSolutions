@@ -276,7 +276,7 @@ describe("catalog files (T3, ADR-015)", () => {
     expect(afterKeys).toHaveLength(origKeys.length); // замена, не добавление
   });
 
-  it("GET файла: чужой tenant → 403 (IDOR); свой tenant → 200 с байтами", async () => {
+  it("GET файла: чужой tenant/LE → 404 (IDOR, ADR-027); свой tenant → 200 с байтами", async () => {
     const cardId = await createCard();
     await uploadExpect(cardId, "front", Buffer.from("secret-photo"));
     const card = await prisma.productCard.findUnique({ where: { id: cardId } });
@@ -291,11 +291,11 @@ describe("catalog files (T3, ADR-015)", () => {
       .expect(200);
     expect(ok.body.toString?.()).toBe("secret-photo");
 
-    // чужой tenant → 403
+    // чужой tenant/LE → 404 (ADR-027: 404 скрывает существование)
     await request(app.getHttpServer())
       .get(`/products/cards/${cardId}/files/${front.key}`)
       .set("Authorization", `Bearer ${token2}`)
-      .expect(403);
+      .expect(404);
 
     // без JWT → 401
     await request(app.getHttpServer())

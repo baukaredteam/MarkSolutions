@@ -21,7 +21,8 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma.service";
 import { StorageAdapter, FILE_LABELS, FileDescriptor } from "@markflow/shared";
-import { activeScopeOf } from "./scoped-repository";
+import { activeScopeOf, scopeWhere } from "./scoped-repository";
+import type { LegalEntityScope } from "./scope";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
 export const STORAGE_ADAPTER = "STORAGE_ADAPTER";
@@ -42,13 +43,12 @@ export class FilesService {
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter
   ) {}
 
-  private async getOwnedCard(tenantId: string, cardId: string) {
-    const card = await this.prisma.productCard.findUnique({
-      where: { id: cardId },
+  private async getOwnedCard(scope: LegalEntityScope, cardId: string) {
+    // ADR-027: dual-scope ownership — same tenant, different LE = 404 (IDOR-safe)
+    const card = await this.prisma.productCard.findFirst({
+      where: { id: cardId, ...scopeWhere(scope) },
     });
     if (!card) throw new NotFoundException("card not found");
-    if (card.tenantId !== tenantId)
-      throw new ForbiddenException("no access to card");
     return card;
   }
 
@@ -58,8 +58,7 @@ export class FilesService {
   }
 
   async upload(
-    tenantId: string,
-    legalEntityId: string,
+    scope: LegalEntityScope,
     cardId: string,
     label: string,
     file: UploadedMulterFile
@@ -71,12 +70,16 @@ export class FilesService {
     }
     if (!file?.buffer) throw new BadRequestException("file required");
 
-    const card = await this.getOwnedCard(tenantId, cardId);
+    const card = await this.getOwnedCard(scope, cardId);
     const existing = this.descriptors(card);
     // дубль label → замена, не добавление (CAT-011: замена файла → новый ключ)
     const contentHash = createHash("sha256").update(file.buffer).digest("hex");
     const descriptor: FileDescriptor = {
-      key: await this.storage.write(tenantId, legalEntityId, file.buffer),
+      key: await this.storage.write(
+        scope.organizationId,
+        scope.legalEntityId,
+        file.buffer
+      ),
       originalName: file.originalname,
       mimeType: file.mimetype,
       contentHash,
@@ -105,25 +108,25 @@ export class FilesService {
   }
 
   // GET файла: доступ через карточку (tenant-проверка), сырой ключ сам по себе доступа не даёт (IDOR).
-  async getFile(
-    tenantId: string,
-    legalEntityId: string,
-    cardId: string,
-    key: string
-  ) {
-    const card = await this.getOwnedCard(tenantId, cardId);
+  async getFile(scope: LegalEntityScope, cardId: string, key: string) {
+    const card = await this.getOwnedCard(scope, cardId);
     const file = this.descriptors(card).find((f) => f.key === key);
     if (!file) throw new NotFoundException("file not found");
-    const data = await this.storage.read(tenantId, legalEntityId, key);
+    const data = await this.storage.read(
+      scope.organizationId,
+      scope.legalEntityId,
+      key
+    );
     return { file, data };
   }
 
   // Клон карточки: те же дескрипторы (те же ключи) — CAT-011.
-  async clone(tenantId: string, cardId: string) {
-    const card = await this.getOwnedCard(tenantId, cardId);
+  async clone(scope: LegalEntityScope, cardId: string) {
+    const card = await this.getOwnedCard(scope, cardId);
     const created = await this.prisma.productCard.create({
       data: {
-        tenantId,
+        tenantId: scope.organizationId,
+        legalEntityId: scope.legalEntityId,
         status: "DRAFT",
         gtin: null,
         attributes: card.attributes as unknown as Prisma.InputJsonValue,
@@ -147,16 +150,8 @@ export class FilesController {
     @Body() body: { label: string },
     @UploadedFile() file: UploadedMulterFile
   ) {
-    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
-    if (!tenantId) throw new ForbiddenException("tenant required");
     const scope = activeScopeOf(req);
-    return this.files.upload(
-      scope.organizationId,
-      scope.legalEntityId,
-      id,
-      body.label,
-      file
-    );
+    return this.files.upload(scope, id, body.label, file);
   }
 
   @Roles(...READ_ROLES)
@@ -167,12 +162,8 @@ export class FilesController {
     @Param("key") key: string,
     @Res() res: Response
   ) {
-    const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
-    if (!tenantId) throw new ForbiddenException("tenant required");
-    const scope = activeScopeOf(req);
     const { file, data } = await this.files.getFile(
-      scope.organizationId,
-      scope.legalEntityId,
+      activeScopeOf(req),
       id,
       key
     );
@@ -189,6 +180,6 @@ export class FilesController {
   async clone(@Req() req: Request, @Param("id") id: string) {
     const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
     if (!tenantId) throw new ForbiddenException("tenant required");
-    return this.files.clone(tenantId, id);
+    return this.files.clone(activeScopeOf(req), id);
   }
 }

@@ -51,13 +51,14 @@ describe("order create (W3, ORD-024..028)", () => {
     });
     tenantId = tenant.id;
     const account = await prisma.account.create({
-      data: { tenantId, balance: BigInt(0) },
+      data: { tenantId, legalEntityId: "le-" + tenantId, balance: BigInt(0) },
     });
     accountId = account.id;
     // топ-ап 500000 тенге (инвариант ledger==balance)
     await prisma.ledgerEntry.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         accountId,
         kind: "TOPUP",
         amount: BigInt(500000),
@@ -423,11 +424,12 @@ describe("order create (W3, ORD-024..028)", () => {
       data: { bin: "777000111444", name: "КонкОрд", status: "ACTIVE" },
     });
     const acc = await prisma.account.create({
-      data: { tenantId: t.id, balance: BigInt(0) },
+      data: { tenantId: t.id, legalEntityId: "le-" + t.id, balance: BigInt(0) },
     });
     await prisma.ledgerEntry.create({
       data: {
         tenantId: t.id,
+        legalEntityId: "le-" + t.id,
         accountId: acc.id,
         kind: "TOPUP",
         amount: BigInt(100000),

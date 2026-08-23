@@ -57,12 +57,13 @@ describe("mpt simulator + order poller (W3, ORD-029)", () => {
     });
     tenantId = tenant.id;
     const account = await prisma.account.create({
-      data: { tenantId, balance: BigInt(0) },
+      data: { tenantId, legalEntityId: "le-" + tenantId, balance: BigInt(0) },
     });
     accountId = account.id;
     await prisma.ledgerEntry.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         accountId,
         kind: "TOPUP",
         amount: BigInt(1000000),

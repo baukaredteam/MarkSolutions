@@ -102,6 +102,7 @@ describe("code lookup (UI-03)", () => {
     await prisma.codeEvent.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         codeId: code.id,
         event: "PRINTED",
         at: new Date(),
@@ -111,6 +112,7 @@ describe("code lookup (UI-03)", () => {
     await prisma.codeEvent.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         codeId: code.id,
         event: "APPLIED",
         at: new Date(),
@@ -121,6 +123,7 @@ describe("code lookup (UI-03)", () => {
     const card = await prisma.productCard.create({
       data: {
         tenantId,
+        legalEntityId: "le-" + tenantId,
         gtin: "04014835723399",
         status: "REGISTERED",
         attributes: { name: "Масло моторное MarkOil 5W-30" },
