@@ -116,6 +116,7 @@ export class BillingService {
       refOrderId?: string;
       ref1c?: string;
       reason?: string;
+      legalEntityId?: string;
       delta: bigint;
       checkAvailable?: (balance: bigint, reserved: bigint) => boolean;
     }
@@ -126,7 +127,8 @@ export class BillingService {
     if (!RESERVE_KINDS.includes(kind)) {
       throw new BadRequestException(`invalid ledger kind: ${kind}`);
     }
-    const account = await this.getAccount(db, tenantId);
+    // ADR-027: prefer account matching the specified legal entity
+    const account = await this.getAccount(db, tenantId, opts.legalEntityId);
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const current = await db.account.findUnique({
@@ -281,6 +283,7 @@ export class BillingService {
       refOrderId?: string;
       ref1c?: string;
       reason?: string;
+      legalEntityId?: string;
       delta: bigint;
       checkAvailable?: (balance: bigint, reserved: bigint) => boolean;
     }
@@ -295,6 +298,7 @@ export class BillingService {
   // TOPUP: пополнение файлом «из 1С», идемпотентно по ref1c (ADR-010)
   async topup(
     tenantId: string,
+    legalEntityId: string | undefined,
     ref1c: string,
     amount: bigint,
     reason?: string
@@ -318,6 +322,7 @@ export class BillingService {
     const result = await this.apply(tenantId, "TOPUP", amount, {
       ref1c,
       reason,
+      legalEntityId,
       delta: amount,
     });
     return { entry: result.entry, existing: false };

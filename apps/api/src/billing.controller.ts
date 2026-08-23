@@ -40,6 +40,7 @@ export class BillingController {
     const amount = BigInt(body.amount);
     const { entry, existing } = await this.billing.topup(
       tenantOf(req),
+      undefined,
       body.ref1c,
       amount,
       body.reason
