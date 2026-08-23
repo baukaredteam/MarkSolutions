@@ -182,9 +182,16 @@ export class AuthService {
         claims.sub,
         legalEntityId
       );
-      await this.prisma.usedSelectionToken
-        .create({ data: { jti: claims.jti } })
-        .catch(() => {});
+      try {
+        await this.prisma.usedSelectionToken.create({
+          data: { jti: claims.jti },
+        });
+      } catch (e) {
+        if ((e as { code?: string }).code === "P2002") {
+          throw new UnauthorizedException("selection token already used");
+        }
+        throw e;
+      }
       // ADR-027 defense-in-depth: пользователь обязан существовать и принадлежать tenant
       const user = await this.prisma.user.findFirst({
         where: { id: claims.sub, tenantId: claims.tenantId },
