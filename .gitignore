@@ -29,3 +29,10 @@ pgdata/
 .local/leadership-intake/
 .local/anydoc-output/
 .local/exports/
+
+
+# LoopX / OMO local state (W0-03a tooling, 2026-08-23)
+.loopx/
+.codex/goals/
+*.local-traces*
+.omo/plans/

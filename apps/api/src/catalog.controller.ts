@@ -548,6 +548,7 @@ export class DemoController {
           data: {
             id: orderId,
             tenantId,
+            legalEntityId, // ADR-027: NOT NULL на Order
             status: "COMPLETED",
             idempotencyKey: `w4-seed-order-${tenantId}`,
           },
@@ -594,6 +595,7 @@ export class DemoController {
       await this.prisma.importDocument.create({
         data: {
           tenantId,
+          legalEntityId,
           orderId: "demo-w4-order",
           customsDate: "",
           customsNumber: `EXPECTED-${tenantId.slice(0, 6)}`,
@@ -628,6 +630,7 @@ export class DemoController {
       await this.prisma.withdrawalDocument.create({
         data: {
           tenantId,
+          legalEntityId,
           codes: ["demo-code-1"],
           withdrawalType: "WRITE_OFF",
           withdrawalReason: "DEFECT",

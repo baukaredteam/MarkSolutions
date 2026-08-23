@@ -22,11 +22,20 @@ TEST_DATABASE_URL=… npx vitest run                                          �
 
 ## Full suite
 
-Latest run on this branch: **51 files passed / 4 failed → fixed iteratively; final state before
-commit is re-run and recorded in the commit message.** The suite includes the new invariant tests
-(`scope-fk.spec.ts`: cross-tenant composite-FK rejection, retention RESTRICT, zero-mismatch
-verification query across 15 protected tables) and the red-repro suite (`w0-03a-scope.red.spec.ts`,
-12/12 green after fixes).
+Final run on this branch (all slices complete):
+
+```
+TEST_DATABASE_URL=postgresql://…markflow_test npx vitest run
+  → Test Files  58 passed (58)
+  → Tests       355 passed | 1 skipped (356)
+```
+
+The single skip is the opt-in `RUN_MPT_STAGE_CONTRACT` live-MPT test (never run by default;
+it is a live business write and is intentionally gated off). The suite includes the invariant
+tests (`scope-fk.spec.ts`: cross-tenant composite-FK rejection, retention RESTRICT, zero-mismatch
+verification query across 15 protected tables), the red-repro suites (`w0-03a-scope.red.spec.ts`
+12/12 and `scope-completeness.red.spec.ts` 5/5 green after fixes), the auth selection-flow suite
+(`auth-selection.spec.ts` 5/5) and the DB-level catalog migration tests (3/3).
 
 ## Slices delivered
 

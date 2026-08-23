@@ -57,6 +57,7 @@ export async function createTestDatabase(): Promise<TestDb> {
       env: { ...process.env, DATABASE_URL: databaseUrl },
       stdio: "pipe",
     });
+    await installSeedScopeTrigger(databaseUrl);
 
     return {
       schema,
@@ -69,6 +70,41 @@ export async function createTestDatabase(): Promise<TestDb> {
       await dropSchema(baseUrl, schema).catch(() => {});
     }
     throw e;
+  }
+}
+
+// W0-03a pt3 (ADR-027): test-only seeding of the legal-entity scope graph —
+// mirrors apps/api/test/harness.ts. Every tenant gets LegalEntity `le-<id>`,
+// admin user `u1` and a membership, so fixtures can reference the validated
+// scope. Production code has NO fallback; this runs only on disposable schemas.
+const SEED_SCOPE_STATEMENTS = [
+  `CREATE OR REPLACE FUNCTION mf_seed_scope() RETURNS trigger AS $sf$
+BEGIN
+  INSERT INTO "User" ("id","version","login","passwordHash","roles","mfaEnabled","tenantId")
+  VALUES ('u1',0,'seed-u1','x','["admin"]',false,NEW."id")
+  ON CONFLICT ("id") DO NOTHING;
+  INSERT INTO "LegalEntity" ("id","version","tenantId","bin","name","status","createdAt","updatedAt")
+  VALUES ('le-'||NEW."id",0,NEW."id",NEW."bin"||'-le','Legal Entity','ACTIVE',NOW(),NOW())
+  ON CONFLICT DO NOTHING;
+  INSERT INTO "UserLegalEntityMembership" ("id","userId","legalEntityId","scope")
+  VALUES ('m-'||NEW."id",'u1','le-'||NEW."id",'member')
+  ON CONFLICT DO NOTHING;
+  RETURN NEW;
+END $sf$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_mf_seed_scope ON "Tenant";`,
+  `CREATE TRIGGER trg_mf_seed_scope AFTER INSERT ON "Tenant"
+FOR EACH ROW EXECUTE FUNCTION mf_seed_scope();`,
+];
+
+async function installSeedScopeTrigger(databaseUrl: string): Promise<void> {
+  const a = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  try {
+    // Prisma raw queries allow exactly ONE statement per call (42601 otherwise).
+    for (const stmt of SEED_SCOPE_STATEMENTS) {
+      await a.$executeRawUnsafe(stmt);
+    }
+  } finally {
+    await a.$disconnect();
   }
 }
 
