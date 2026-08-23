@@ -564,3 +564,10 @@ model AggregationMember {
   addedBy   String
   @@unique([unitId, codeKey])
 }
+
+// W0-03a (ADR-027): durable selection-token JTI store — replay protection
+// survives process restarts (was previously an in-memory Set).
+model UsedSelectionToken {
+  jti       String   @id
+  createdAt DateTime @default(now())
+}

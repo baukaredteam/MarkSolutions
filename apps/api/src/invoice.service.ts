@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -82,6 +83,10 @@ export class InvoiceService {
     invoiceId: string,
     paymentRef: string
   ) {
+    if (process.env.PAYMENTS_ENABLED !== "true")
+      throw new ForbiddenException(
+        "payments disabled (PAYMENTS_ENABLED=false)"
+      );
     if (!paymentRef?.trim())
       throw new BadRequestException("paymentRef required");
     const invoice = await this.prisma.invoice.findFirst({
@@ -89,6 +94,14 @@ export class InvoiceService {
     });
     if (!invoice) throw new NotFoundException("invoice not found");
     if (invoice.status === "PAID") return this.view(invoice);
+    // ADR-027 payment-boundary: verify account belongs to the invoice's legal entity
+    const account = await this.prisma.account.findFirst({
+      where: { tenantId, legalEntityId: invoice.legalEntityId },
+    });
+    if (!account)
+      throw new ForbiddenException(
+        "no account for this legal entity — payment boundary"
+      );
     const ref1c = invoiceNumber(invoice.number);
     const { existing } = await this.billing.topup(
       tenantId,

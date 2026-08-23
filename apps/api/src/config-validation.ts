@@ -62,6 +62,7 @@ export interface AppConfig {
     productGroup: string;
     businessPlaceId: string | null;
     writeEnabled: boolean;
+    paymentsEnabled: boolean;
   };
 }
 
@@ -275,6 +276,7 @@ export function buildAppConfig(
 
   if (errors.length > 0) throw new ConfigValidationError(errors);
 
+  const paymentsEnabled = bool(env.PAYMENTS_ENABLED, false);
   const writeEnabled = bool(env.MPT_WRITE_ENABLED, false);
   if (isProduction && writeEnabled) {
     throw new ConfigValidationError([
@@ -299,6 +301,7 @@ export function buildAppConfig(
       productGroup: env.MPT_PRODUCT_GROUP ?? "motor-oils",
       businessPlaceId: env.MPT_BUSINESS_PLACE_ID ?? null,
       writeEnabled,
+      paymentsEnabled,
     },
   };
 }

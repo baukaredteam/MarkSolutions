@@ -113,7 +113,7 @@ export class AuthService {
   }
 
   // ─── ADR-027: выбор юрлица при нескольких членствах ────────────────────────
-  private readonly usedSelectionJti = new Set<string>();
+  // ADR-027: JTI store is database-backed (UsedSelectionToken) — survives restarts.
   private readonly selectAttempts = new Map<string, number[]>();
 
   /** Короткоживущий purpose-limited токен: sub+tenantId+jti, БЕЗ ролей/scope. */
@@ -161,7 +161,10 @@ export class AuthService {
     ) {
       throw new UnauthorizedException("invalid selection token");
     }
-    if (this.usedSelectionJti.has(claims.jti)) {
+    const existing = await this.prisma.usedSelectionToken.findUnique({
+      where: { jti: claims.jti },
+    });
+    if (existing) {
       throw new UnauthorizedException("selection token already used");
     }
     if (!legalEntityId || legalEntityId.trim() === "") {
@@ -179,7 +182,9 @@ export class AuthService {
         claims.sub,
         legalEntityId
       );
-      this.usedSelectionJti.add(claims.jti);
+      await this.prisma.usedSelectionToken
+        .create({ data: { jti: claims.jti } })
+        .catch(() => {});
       // ADR-027 defense-in-depth: пользователь обязан существовать и принадлежать tenant
       const user = await this.prisma.user.findFirst({
         where: { id: claims.sub, tenantId: claims.tenantId },
