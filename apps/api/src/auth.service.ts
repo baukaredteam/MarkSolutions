@@ -180,9 +180,11 @@ export class AuthService {
         legalEntityId
       );
       this.usedSelectionJti.add(claims.jti);
-      const user = await this.prisma.user.findUnique({
-        where: { id: claims.sub },
+      // ADR-027 defense-in-depth: пользователь обязан существовать и принадлежать tenant
+      const user = await this.prisma.user.findFirst({
+        where: { id: claims.sub, tenantId: claims.tenantId },
       });
+      if (!user) throw new ForbiddenException("user not found");
       let roles: string[] = [];
       try {
         roles = JSON.parse(user?.roles ?? "[]") as string[];

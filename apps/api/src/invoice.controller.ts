@@ -1,10 +1,10 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   Injectable,
+  NotFoundException,
   Param,
   Post,
   Req,
@@ -17,12 +17,6 @@ import { Public } from "./public.decorator";
 import { Roles, READ_ROLES } from "./guards";
 import { activeScopeOf } from "./scoped-repository";
 import { formatTenge } from "@markflow/shared";
-
-function tenantOf(req: Request): string {
-  const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
-  if (!tenantId) throw new ForbiddenException("tenant required");
-  return tenantId;
-}
 
 @Injectable()
 @Controller("billing")
@@ -55,13 +49,17 @@ export class InvoiceController {
     @Res() res: Response,
     @Param("id") id: string
   ) {
-    const tenantId = tenantOf(req);
+    const scope = activeScopeOf(req);
     const inv = await this.prisma.invoice.findFirst({
-      where: { id, tenantId },
+      where: {
+        id,
+        tenantId: scope.organizationId,
+        legalEntityId: scope.legalEntityId,
+      },
     });
-    if (!inv) throw new ForbiddenException("invoice not found");
+    if (!inv) throw new NotFoundException("invoice not found");
     const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
+      where: { id: scope.organizationId },
     });
     const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Счёт ${invoiceNumber(inv.number)}</title></head>
 <body style="font-family:Arial,sans-serif;margin:40px;max-width:760px">
@@ -89,20 +87,34 @@ export class InvoiceController {
     @Param("id") id: string,
     @Body() body: { paymentRef: string }
   ) {
-    return this.invoices.confirm(tenantOf(req), id, body.paymentRef);
+    const scope = activeScopeOf(req);
+    return this.invoices.confirm(
+      scope.organizationId,
+      scope.legalEntityId,
+      id,
+      body.paymentRef
+    );
   }
 
   // Kaspi-вебхук: авто-PAID (мок-провайдер); без JWT (вызов со стороны провайдера)
   @Public()
   @HttpCode(200)
   @Post("providers/kaspi/webhook")
-  async kaspiWebhook(@Body() body: { invoiceId: string; paymentRef: string }) {
-    return this.invoices.kaspiWebhook(body);
+  async kaspiWebhook(
+    @Body()
+    body: {
+      invoiceId: string;
+      paymentRef: string;
+      signature?: string;
+    }
+  ) {
+    return this.invoices.kaspiWebhook(body, process.env.KASPI_WEBHOOK_SECRET);
   }
 
   @Roles(...READ_ROLES)
   @Get("invoices")
   async list(@Req() req: Request) {
-    return this.invoices.list(tenantOf(req));
+    const scope = activeScopeOf(req);
+    return this.invoices.list(scope.organizationId, scope.legalEntityId);
   }
 }

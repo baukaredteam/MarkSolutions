@@ -10,6 +10,10 @@ import { splitVat, vatRatePct } from "@markflow/shared";
 
 // Счета на оплату (W5-07): ISSUED → PAID (confirm/TOPUP по ref1c=номер) | CANCELLED.
 // number MF-2026-NNNN — глобальный счётчик (unique + retry P2002).
+//
+// W0-03a (ADR-027): все операции dual-scoped по (tenantId, legalEntityId).
+// kaspiWebhook — fail-closed: без настроенного KASPI_WEBHOOK_SECRET эндпоинт скрыт.
+
 export function invoiceNumber(n: number): string {
   return `MF-2026-${String(n).padStart(4, "0")}`;
 }
@@ -37,7 +41,6 @@ export class InvoiceService {
     const rate = vatRatePct();
     const { sumWithoutVat, vat } = splitVat(sumWithVat, rate);
 
-    // счётчик MF-2026-NNNN: global max+1, unique(number) + 1 retry
     let invoice;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -72,14 +75,20 @@ export class InvoiceService {
   }
 
   // confirm: TOPUP (ref1c=номер счёта) → PAID. Повторный confirm идемпотентен.
-  async confirm(tenantId: string, invoiceId: string, paymentRef: string) {
+  // ADR-027: dual-scope — только юрлицо активного скоупа.
+  async confirm(
+    tenantId: string,
+    legalEntityId: string,
+    invoiceId: string,
+    paymentRef: string
+  ) {
     if (!paymentRef?.trim())
       throw new BadRequestException("paymentRef required");
     const invoice = await this.prisma.invoice.findFirst({
-      where: { id: invoiceId, tenantId },
+      where: { id: invoiceId, tenantId, legalEntityId },
     });
     if (!invoice) throw new NotFoundException("invoice not found");
-    if (invoice.status === "PAID") return this.view(invoice); // идемпотентно
+    if (invoice.status === "PAID") return this.view(invoice);
     const ref1c = invoiceNumber(invoice.number);
     const { existing } = await this.billing.topup(
       tenantId,
@@ -87,7 +96,7 @@ export class InvoiceService {
       invoice.sumWithVat,
       `оплата счёта ${ref1c}`
     );
-    if (existing) return this.view(invoice); // TOPUP уже был — ничего не делаем
+    if (existing) return this.view(invoice);
     const updated = await this.prisma.invoice.update({
       where: { id: invoice.id },
       data: { status: "PAID", paymentRef, paidAt: new Date() },
@@ -95,10 +104,25 @@ export class InvoiceService {
     return this.view(updated);
   }
 
-  // Kaspi-вебхук: paymentRef=операция → авто-PAID (идемпотентен).
-  async kaspiWebhook(body: { invoiceId: string; paymentRef: string }) {
-    if (!body?.invoiceId || !body?.paymentRef)
-      throw new BadRequestException("invoiceId and paymentRef required");
+  // Kaspi-вебхук: paymentRef=операция → авто-PAID.
+  // ADR-027 payment-boundary: fail-closed — требует KASPI_WEBHOOK_SECRET.
+  // Без настроенного секрета эндпоинт всегда возвращает 404 (не раскрывает существование).
+  async kaspiWebhook(
+    body: { invoiceId: string; paymentRef: string; signature?: string },
+    secret: string | undefined
+  ): Promise<{ status: string }> {
+    // Fail-closed: без сконфигурированного секрета вебхук полностью отключён.
+    if (!secret || secret.trim() === "") {
+      throw new NotFoundException("webhook not configured");
+    }
+    if (
+      !body?.invoiceId ||
+      !body?.paymentRef ||
+      !body?.signature ||
+      body.signature !== secret
+    ) {
+      throw new NotFoundException("webhook not found");
+    }
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: body.invoiceId },
     });
@@ -118,9 +142,10 @@ export class InvoiceService {
     return { status: "PAID" };
   }
 
-  async list(tenantId: string) {
+  // ADR-027: dual-scope list
+  async list(tenantId: string, legalEntityId: string) {
     const rows = await this.prisma.invoice.findMany({
-      where: { tenantId },
+      where: { tenantId, legalEntityId },
       orderBy: { createdAt: "desc" },
     });
     return { items: rows.map((r) => this.view(r)) };

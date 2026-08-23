@@ -32,6 +32,8 @@ describe("W5-07: invoices (счета, НДС, оплата)", () => {
     process.env.MFA_ENABLED = "false";
     process.env.KMS_PROFILE = "file";
     process.env.KMS_FILE_DIR = join(dir, "keys");
+    // W0-03a: webhook secret for fail-closed payment boundary
+    process.env.KASPI_WEBHOOK_SECRET = "test-kaspi-secret";
     execSync(
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {
@@ -146,12 +148,20 @@ describe("W5-07: invoices (счета, НДС, оплата)", () => {
       .expect(201);
     const w1 = await request(app.getHttpServer())
       .post("/billing/providers/kaspi/webhook")
-      .send({ invoiceId: inv.body.id, paymentRef: "KASPI-1" })
+      .send({
+        invoiceId: inv.body.id,
+        paymentRef: "KASPI-1",
+        signature: "test-kaspi-secret",
+      })
       .expect(200);
     expect(w1.body.status).toBe("PAID");
     const w2 = await request(app.getHttpServer())
       .post("/billing/providers/kaspi/webhook")
-      .send({ invoiceId: inv.body.id, paymentRef: "KASPI-1" })
+      .send({
+        invoiceId: inv.body.id,
+        paymentRef: "KASPI-1",
+        signature: "test-kaspi-secret",
+      })
       .expect(200);
     expect(w2.body.status).toBe("PAID");
     const topups = await prisma.ledgerEntry.count({
