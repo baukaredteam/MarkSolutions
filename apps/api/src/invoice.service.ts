@@ -145,7 +145,7 @@ export class InvoiceService {
     const ref1c = invoiceNumber(invoice.number);
     await this.billing.topup(
       invoice.tenantId,
-      invoice.legalEntityId ?? undefined,
+      invoice.legalEntityId,
       ref1c,
       invoice.sumWithVat,
       `kaspi ${body.paymentRef}`

@@ -143,6 +143,7 @@ export class OrderService {
         await this.billing.reserveOn(
           tx,
           tenantId,
+          legalEntityId,
           created.id,
           totalPrice,
           `order ${created.id}`
@@ -243,7 +244,12 @@ export class OrderService {
     }
     if (order.status === "CANCELLED")
       return { id: orderId, status: "CANCELLED" };
-    await this.billing.release(tenantId, orderId, "cancel before emission");
+    await this.billing.release(
+      tenantId,
+      order.legalEntityId ?? "",
+      orderId,
+      "cancel before emission"
+    );
     await this.prisma.order.update({
       where: { id: orderId },
       data: { status: "CANCELLED" },

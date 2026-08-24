@@ -390,7 +390,12 @@ export class OutboxPoller implements OnModuleDestroy {
     if (age > this.mptTimeoutMs) {
       if (order.status !== "FAILED") {
         await this.billing
-          .release(order.tenantId, orderId, "mpt order timeout")
+          .release(
+            order.tenantId,
+            order.legalEntityId ?? "",
+            orderId,
+            "mpt order timeout"
+          )
           .catch(() => {});
         await this.prisma.order.update({
           where: { id: orderId },
@@ -451,7 +456,12 @@ export class OutboxPoller implements OnModuleDestroy {
     if (mpt.status === "REJECTED") {
       if (order.status !== "REJECTED") {
         await this.billing
-          .release(order.tenantId, orderId, "mpt order rejected")
+          .release(
+            order.tenantId,
+            order.legalEntityId ?? "",
+            orderId,
+            "mpt order rejected"
+          )
           .catch(() => {});
         await this.prisma.order.update({
           where: { id: orderId },

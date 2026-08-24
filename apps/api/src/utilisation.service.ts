@@ -162,6 +162,7 @@ export class UtilisationService {
         await this.billing.settleOn(
           tx,
           order.tenantId,
+          order.legalEntityId ?? "",
           order.id,
           totalPrice,
           `utilisation ${report.reportId}`

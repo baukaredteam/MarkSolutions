@@ -241,7 +241,7 @@ export class VaultService {
 
   async logExport(
     tenantId: string,
-    legalEntityId: string | null,
+    legalEntityId: string,
     orderId: string,
     actor: string,
     kind: "export" | "print",

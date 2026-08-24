@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   Injectable,
@@ -12,13 +11,8 @@ import {
 import type { Request, Response } from "express";
 import { BillingService } from "./billing.service";
 import { Roles } from "./guards";
+import { activeScopeOf } from "./scoped-repository";
 import { READ_ROLES } from "./guards";
-
-function tenantOf(req: Request): string {
-  const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
-  if (!tenantId) throw new ForbiddenException("tenant required");
-  return tenantId;
-}
 
 function toStr(v: bigint): string {
   return v.toString();
@@ -37,10 +31,12 @@ export class BillingController {
     @Body() body: { ref1c: string; amount: string | number; reason?: string }
   ) {
     // Служебный (W5-07): сверка с 1С. Счета оплачиваются через /billing/invoices/:id/confirm.
+    const scope = activeScopeOf(req);
+    // сверка с 1С. Счета оплачиваются через /billing/invoices/:id/confirm.
     const amount = BigInt(body.amount);
     const { entry, existing } = await this.billing.topup(
-      tenantOf(req),
-      undefined,
+      scope.organizationId,
+      scope.legalEntityId,
       body.ref1c,
       amount,
       body.reason
@@ -55,8 +51,10 @@ export class BillingController {
     @Req() req: Request,
     @Body() body: { orderId: string; amount: string | number; reason?: string }
   ) {
+    const scope = activeScopeOf(req);
     const entry = await this.billing.reserve(
-      tenantOf(req),
+      scope.organizationId,
+      scope.legalEntityId,
       body.orderId,
       BigInt(body.amount),
       body.reason
@@ -70,8 +68,10 @@ export class BillingController {
     @Req() req: Request,
     @Body() body: { orderId: string; reason?: string }
   ) {
+    const scope = activeScopeOf(req);
     const entry = await this.billing.release(
-      tenantOf(req),
+      scope.organizationId,
+      scope.legalEntityId,
       body.orderId,
       body.reason
     );
@@ -84,8 +84,10 @@ export class BillingController {
     @Req() req: Request,
     @Body() body: { orderId: string; amount: string | number; reason?: string }
   ) {
+    const scope = activeScopeOf(req);
     const entry = await this.billing.settle(
-      tenantOf(req),
+      scope.organizationId,
+      scope.legalEntityId,
       body.orderId,
       BigInt(body.amount),
       body.reason
@@ -96,7 +98,11 @@ export class BillingController {
   @Roles(...READ_ROLES)
   @Get("balance")
   async balance(@Req() req: Request) {
-    const b = await this.billing.getBalance(tenantOf(req));
+    const scope = activeScopeOf(req);
+    const b = await this.billing.getBalance(
+      scope.organizationId,
+      scope.legalEntityId
+    );
     return {
       balance: toStr(b.balance),
       reserved: toStr(b.reserved),
@@ -108,7 +114,8 @@ export class BillingController {
   @Roles(...READ_ROLES)
   @Get("ledger")
   async ledger(@Req() req: Request) {
-    return this.billing.ledger(tenantOf(req));
+    const scope = activeScopeOf(req);
+    return this.billing.ledger(scope.organizationId, scope.legalEntityId);
   }
 
   @Get("tariff/active")

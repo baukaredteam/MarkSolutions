@@ -29,24 +29,23 @@ export interface BalanceView {
 export class BillingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getAccount(db: Db, tenantId: string, legalEntityId?: string) {
-    // ADR-027: предпочтён счёт с заполненным юрлицом (NOT NULL для проводок)
-    const scoped = await db.account.findFirst({
-      where: legalEntityId
-        ? { tenantId, legalEntityId }
-        : { tenantId, legalEntityId: { not: null } },
-    });
-    if (scoped) return scoped;
+  private async getAccount(db: Db, tenantId: string, legalEntityId: string) {
+    // ADR-027: mandatory dual-scope — no tenant-account fallback
     const account = await db.account.findFirst({
-      where: { tenantId },
+      where: { tenantId, legalEntityId },
     });
-    if (!account) throw new NotFoundException("account not found");
+    if (!account)
+      throw new NotFoundException("account not found for legal entity");
     return account;
   }
 
-  private async activeReserve(db: Db, tenantId: string): Promise<bigint> {
+  private async activeReserve(
+    db: Db,
+    tenantId: string,
+    legalEntityId: string
+  ): Promise<bigint> {
     const rows = await db.ledgerEntry.findMany({
-      where: { tenantId, kind: { in: ["RESERVE", "RELEASE"] } },
+      where: { tenantId, legalEntityId, kind: { in: ["RESERVE", "RELEASE"] } },
       select: { kind: true, amount: true },
     });
     return rows.reduce((acc, r) => {
@@ -55,9 +54,13 @@ export class BillingService {
     }, BigInt(0));
   }
 
-  private async balanceOf(db: Db, tenantId: string): Promise<bigint> {
+  private async balanceOf(
+    db: Db,
+    tenantId: string,
+    legalEntityId: string
+  ): Promise<bigint> {
     const rows = await db.ledgerEntry.findMany({
-      where: { tenantId, kind: { in: ["TOPUP", "SETTLE"] } },
+      where: { tenantId, legalEntityId, kind: { in: ["TOPUP", "SETTLE"] } },
       select: { kind: true, amount: true },
     });
     return rows.reduce((acc, r) => {
@@ -66,18 +69,25 @@ export class BillingService {
     }, BigInt(0));
   }
 
-  async getBalance(tenantId: string): Promise<BalanceView> {
-    const reserved = await this.activeReserve(this.prisma, tenantId);
-    const balance = await this.balanceOf(this.prisma, tenantId);
+  async getBalance(
+    tenantId: string,
+    legalEntityId: string
+  ): Promise<BalanceView> {
+    const reserved = await this.activeReserve(
+      this.prisma,
+      tenantId,
+      legalEntityId
+    );
+    const balance = await this.balanceOf(this.prisma, tenantId, legalEntityId);
     return { balance, reserved, available: balance - reserved };
   }
 
   // UI-06c: журнал проводок (desc) с «балансом после операции».
   // Баланс считаем кумулятивно по хронологии (asc): TOPUP +, SETTLE −,
   // RESERVE/RELEASE баланс не меняют (влияют только на reserved).
-  async ledger(tenantId: string) {
+  async ledger(tenantId: string, legalEntityId: string) {
     const rows = await this.prisma.ledgerEntry.findMany({
-      where: { tenantId },
+      where: { tenantId, legalEntityId },
       orderBy: { createdAt: "asc" },
     });
     let running = BigInt(0);
@@ -116,7 +126,7 @@ export class BillingService {
       refOrderId?: string;
       ref1c?: string;
       reason?: string;
-      legalEntityId?: string;
+      legalEntityId: string;
       delta: bigint;
       checkAvailable?: (balance: bigint, reserved: bigint) => boolean;
     }
@@ -149,7 +159,7 @@ export class BillingService {
               kind: existing.kind,
               amount: BigInt(existing.amount),
             },
-            balance: await this.balanceOf(db, tenantId),
+            balance: await this.balanceOf(db, tenantId, opts.legalEntityId),
           };
         }
         // C-05: идемпотентность проводок с refOrderId — ровно одна (RESERVE/RELEASE/SETTLE)
@@ -167,11 +177,15 @@ export class BillingService {
               kind: existingByIdentity.kind,
               amount: BigInt(existingByIdentity.amount),
             },
-            balance: await this.balanceOf(db, tenantId),
+            balance: await this.balanceOf(db, tenantId, opts.legalEntityId),
           };
         }
         if (opts.checkAvailable) {
-          const reserved = await this.activeReserve(db, tenantId);
+          const reserved = await this.activeReserve(
+            db,
+            tenantId,
+            opts.legalEntityId
+          );
           const balance = current.balance;
           if (!opts.checkAvailable(balance, reserved)) {
             throw new HttpException(
@@ -246,7 +260,7 @@ export class BillingService {
                 kind: existing.kind,
                 amount: BigInt(existing.amount),
               },
-              balance: await this.balanceOf(db, tenantId),
+              balance: await this.balanceOf(db, tenantId, opts.legalEntityId),
             };
           }
         }
@@ -265,7 +279,7 @@ export class BillingService {
                 kind: existing.kind,
                 amount: BigInt(existing.amount),
               },
-              balance: await this.balanceOf(db, tenantId),
+              balance: await this.balanceOf(db, tenantId, opts.legalEntityId),
             };
           }
         }
@@ -283,7 +297,7 @@ export class BillingService {
       refOrderId?: string;
       ref1c?: string;
       reason?: string;
-      legalEntityId?: string;
+      legalEntityId: string;
       delta: bigint;
       checkAvailable?: (balance: bigint, reserved: bigint) => boolean;
     }
@@ -298,7 +312,7 @@ export class BillingService {
   // TOPUP: пополнение файлом «из 1С», идемпотентно по ref1c (ADR-010)
   async topup(
     tenantId: string,
-    legalEntityId: string | undefined,
+    legalEntityId: string,
     ref1c: string,
     amount: bigint,
     reason?: string
@@ -333,11 +347,19 @@ export class BillingService {
   // Проверка available — ВНУТРИ CAS-цикла (сериализация через version bump).
   async reserve(
     tenantId: string,
+    legalEntityId: string,
     orderId: string,
     amount: bigint,
     reason?: string
   ) {
-    return this.reserveOn(this.prisma, tenantId, orderId, amount, reason);
+    return this.reserveOn(
+      this.prisma,
+      tenantId,
+      legalEntityId,
+      orderId,
+      amount,
+      reason
+    );
   }
 
   // резерв внутри интерактивной транзакции (заказ + RESERVE + outbox одной транзакцией).
@@ -345,6 +367,7 @@ export class BillingService {
   async reserveOn(
     db: Db,
     tenantId: string,
+    legalEntityId: string,
     orderId: string,
     amount: bigint,
     reason?: string
@@ -354,6 +377,7 @@ export class BillingService {
     const result = await this.applyOn(db, tenantId, "RESERVE", amount, {
       refOrderId: orderId,
       reason,
+      legalEntityId,
       delta: BigInt(0),
       checkAvailable: (balance, reserved) => balance - reserved >= amount,
     });
@@ -363,12 +387,29 @@ export class BillingService {
   // RELEASE: компенсация резерва (BILL-019) — уменьшает активный резерв.
   // Идемпотентен: повторный RELEASE того же orderId возвращает существующую
   // проводку и НЕ создаёт вторую (иначе available инфлейтится).
-  async release(tenantId: string, orderId: string, reason?: string) {
-    return this.releaseOn(this.prisma, tenantId, orderId, reason);
+  async release(
+    tenantId: string,
+    legalEntityId: string,
+    orderId: string,
+    reason?: string
+  ) {
+    return this.releaseOn(
+      this.prisma,
+      tenantId,
+      legalEntityId,
+      orderId,
+      reason
+    );
   }
 
   // RELEASE внутри транзакции (C-05: атомарный финальный сеттлмент).
-  async releaseOn(db: Db, tenantId: string, orderId: string, reason?: string) {
+  async releaseOn(
+    db: Db,
+    tenantId: string,
+    legalEntityId: string,
+    orderId: string,
+    reason?: string
+  ) {
     const reserve = await db.ledgerEntry.findFirst({
       where: { tenantId, kind: "RESERVE", refOrderId: orderId },
     });
@@ -381,6 +422,7 @@ export class BillingService {
       {
         refOrderId: orderId,
         reason: reason ?? "release",
+        legalEntityId,
         delta: BigInt(0),
       }
     );
@@ -392,17 +434,26 @@ export class BillingService {
   // C-05: идемпотентен по (orderId, kind) — повтор возвращает ту же проводку.
   async settle(
     tenantId: string,
+    legalEntityId: string,
     orderId: string,
     amount: bigint,
     reason?: string
   ) {
-    return this.settleOn(this.prisma, tenantId, orderId, amount, reason);
+    return this.settleOn(
+      this.prisma,
+      tenantId,
+      legalEntityId,
+      orderId,
+      amount,
+      reason
+    );
   }
 
   // SETTLE внутри интерактивной транзакции (C-05: атомарный финальный сеттлмент).
   async settleOn(
     db: Db,
     tenantId: string,
+    legalEntityId: string,
     orderId: string,
     amount: bigint,
     reason?: string
@@ -412,6 +463,7 @@ export class BillingService {
     const result = await this.applyOn(db, tenantId, "SETTLE", amount, {
       refOrderId: orderId,
       reason: reason ?? "settle",
+      legalEntityId,
       delta: -amount,
       checkAvailable: (balance, reserved) => balance - reserved >= amount,
     });
