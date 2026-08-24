@@ -444,6 +444,7 @@ describe("utilisation (W3, п.26)", () => {
         await billing.settleOn(
           tx,
           tenantId,
+          "le-" + tenantId,
           orderId,
           BigInt(100),
           "atomic-test"
