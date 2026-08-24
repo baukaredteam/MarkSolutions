@@ -112,30 +112,35 @@ export class AuthService {
     };
   }
 
-  // ─── ADR-027: выбор юрлица при нескольких членствах ────────────────────────
-  // ADR-027: JTI store is database-backed (UsedSelectionToken) — survives restarts.
-  private readonly selectAttempts = new Map<string, number[]>();
+  // ─── ADR-027: выбор юрлица при нескольких членствах ───
+  // Token store: DB-backed (UsedSelectionToken), hashed, user/tenant-bound,
+  // atomic consumption via unique constraint. No process-local state.
 
-  /** Короткоживущий purpose-limited токен: sub+tenantId+jti, БЕЗ ролей/scope. */
+  /** Short-lived purpose-limited token: sub+tenantId+jti, NO roles/scope.
+   *  Explicit 5-minute TTL. */
   issueSelectionToken(userId: string, tenantId: string): string {
-    return this.jwt.sign({
-      sub: userId,
-      tenantId,
-      roles: [],
-      mfaCompleted: false,
-      purpose: "le-select",
-      jti: randomUUID(),
-    } as JwtClaims);
+    return this.jwt.sign(
+      {
+        sub: userId,
+        tenantId,
+        roles: [],
+        mfaCompleted: false,
+        purpose: "le-select",
+        jti: randomUUID(),
+      } as JwtClaims,
+      { expiresIn: "5m" }
+    );
   }
 
-  private rateLimited(userId: string): boolean {
-    const now = Date.now();
-    const window = (this.selectAttempts.get(userId) ?? []).filter(
-      (t) => now - t < 60_000
-    );
-    window.push(now);
-    this.selectAttempts.set(userId, window);
-    return window.length > 10;
+  /** Hash binds user + tenant + jti so tokens can't be replayed cross-context. */
+  private selectionTokenHash(
+    jti: string,
+    sub: string,
+    tenantId: string
+  ): string {
+    return createHash("sha256")
+      .update(`${jti}:${sub}:${tenantId}`)
+      .digest("hex");
   }
 
   async selectLegalEntity(
@@ -161,38 +166,52 @@ export class AuthService {
     ) {
       throw new UnauthorizedException("invalid selection token");
     }
-    const existing = await this.prisma.usedSelectionToken.findUnique({
-      where: { jti: claims.jti },
-    });
-    if (existing) {
-      throw new UnauthorizedException("selection token already used");
-    }
     if (!legalEntityId || legalEntityId.trim() === "") {
       throw new ForbiddenException("legal entity not available for user");
     }
-    if (this.rateLimited(claims.sub)) {
+
+    // Rate limit: DB-backed count of recent attempts per user (survives restarts)
+    const recentCount = await this.prisma.usedSelectionToken.count({
+      where: {
+        userId: claims.sub,
+        createdAt: { gte: new Date(Date.now() - 60_000) },
+      },
+    });
+    if (recentCount >= 10) {
       throw new HttpException(
         "too many selection attempts",
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
+
+    // Atomic consumption: hashed INSERT with unique constraint.
+    const tokenHash = createHash("sha256")
+      .update(`${claims.jti}:${claims.sub}:${claims.tenantId}`)
+      .digest("hex");
+    try {
+      await this.prisma.usedSelectionToken.create({
+        data: { tokenHash, userId: claims.sub, tenantId: claims.tenantId },
+      });
+    } catch (e) {
+      if ((e as { code?: string }).code === "P2002") {
+        throw new UnauthorizedException("selection token already used");
+      }
+      throw e;
+    }
+
     try {
       const le = await this.scopes.membershipForLogin(
         claims.tenantId,
         claims.sub,
         legalEntityId
       );
-      await this.prisma.usedSelectionToken
-        .create({ data: { jti: claims.jti } })
-        .catch(() => {});
-      // ADR-027 defense-in-depth: пользователь обязан существовать и принадлежать tenant
       const user = await this.prisma.user.findFirst({
         where: { id: claims.sub, tenantId: claims.tenantId },
       });
       if (!user) throw new ForbiddenException("user not found");
       let roles: string[] = [];
       try {
-        roles = JSON.parse(user?.roles ?? "[]") as string[];
+        roles = JSON.parse(user.roles ?? "[]") as string[];
       } catch {
         roles = [];
       }

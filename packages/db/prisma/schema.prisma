@@ -565,9 +565,14 @@ model AggregationMember {
   @@unique([unitId, codeKey])
 }
 
-// W0-03a (ADR-027): durable selection-token JTI store — replay protection
-// survives process restarts (was previously an in-memory Set).
+// W0-03a (ADR-027): durable selection-token store — hashed, user/tenant-bound,
+// atomically consumed via unique constraint. Replaces in-memory Set.
 model UsedSelectionToken {
-  jti       String   @id
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  tenantId  String
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
