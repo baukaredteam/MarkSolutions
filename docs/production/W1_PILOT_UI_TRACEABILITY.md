@@ -130,3 +130,9 @@
 | D-003       | Client Organization owns data scoped by LegalEntity — dual-scope boundary throughout |
 | D-006       | 8 default roles, deny-by-default, resource:action:scope primitive                    |
 | D-005       | Retention/legal-hold before export/deletion — RESTRICT on protected FKs              |
+
+## Token store
+
+| Model                | Classification  | Rationale                                                                            |
+| -------------------- | --------------- | ------------------------------------------------------------------------------------ |
+| `UsedSelectionToken` | global/platform | Selection-token replay guard; hashed (SHA-256), user/tenant-bound; no business data. |

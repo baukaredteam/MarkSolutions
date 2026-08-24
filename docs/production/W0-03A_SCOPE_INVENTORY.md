@@ -43,6 +43,7 @@
 | `MptCode`                   | parent-scoped with enforced parent predicate | Коды симулятора; принадлежат MptOrder (см. выше).                                                                                               |
 | `MptUtilisation`            | parent-scoped with enforced parent predicate | Отчёты симулятора; `reportId` коррелирует с dual-scoped UtilisationReport.                                                                      |
 | `MptDocument`               | parent-scoped with enforced parent predicate | Документы симулятора; коды ссылаются на dual-scoped CodeVault.                                                                                  |
+| `UsedSelectionToken`        | global/platform                              | Selection-token replay guard; hashed token hash + userId/tenantId binding; no business data; atomically consumed via unique constraint.         |
 | `Tariff`                    | global/platform                              | Политика цен платформы (ADR-024: тариф не привязан к юрлицу до появления требования).                                                           |
 | `GtinCache`                 | global/platform                              | Общий справочник GTIN (кэш резолвера).                                                                                                          |
 | `SsscCounter`               | parent-scoped with enforced parent predicate | Tenant-счётчик последовательностей SSCC; уникальность `(tenantId)`; генерация SSCC всегда в контексте dual-scoped AggregationUnit.              |
