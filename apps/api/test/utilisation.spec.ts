@@ -422,8 +422,20 @@ describe("utilisation (W3, п.26)", () => {
     const orderId = await completedOrder("k-u-idem", 1, 1); // 1 КМ × 100 = 100
     const before = (await prisma.account.findFirst({ where: { tenantId } }))!
       .balance;
-    const r1 = await billing.settle(tenantId, orderId, BigInt(100), "settle-1");
-    const r2 = await billing.settle(tenantId, orderId, BigInt(100), "settle-2");
+    const r1 = await billing.settle(
+      tenantId,
+      "le-" + tenantId,
+      orderId,
+      BigInt(100),
+      "settle-1"
+    );
+    const r2 = await billing.settle(
+      tenantId,
+      "le-" + tenantId,
+      orderId,
+      BigInt(100),
+      "settle-2"
+    );
     expect(r1.id).toBe(r2.id); // та же проводка, не вторая
     const after = (await prisma.account.findFirst({ where: { tenantId } }))!
       .balance;

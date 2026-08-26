@@ -188,6 +188,7 @@ export class UtilisationService {
           await this.billing.releaseOn(
             tx,
             order.tenantId,
+            order.legalEntityId ?? "",
             order.id,
             "settle on utilisation"
           );

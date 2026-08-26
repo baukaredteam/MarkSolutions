@@ -12,9 +12,9 @@ describe("W0-03a final boundary corrections (red)", () => {
   const authSrc = readFileSync(join(SRC, "auth.service.ts"), "utf8");
   const invoiceSvcSrc = readFileSync(join(SRC, "invoice.service.ts"), "utf8");
 
-  it("(1) BillingService.getAccount accepts optional legalEntityId for exact match", () => {
+  it("(1) BillingService.getAccount requires mandatory legalEntityId", () => {
     expect(billingSrc).toMatch(
-      /getAccount\(db:\s*Db,\s*tenantId:\s*string,\s*legalEntityId\?:\s*string\)/
+      /getAccount\(db:\s*Db,\s*tenantId:\s*string,\s*legalEntityId:\s*string\)/
     );
   });
 

@@ -34,6 +34,7 @@ describe("W5-07: invoices (счета, НДС, оплата)", () => {
     process.env.KMS_FILE_DIR = join(dir, "keys");
     // W0-03a: webhook secret for fail-closed payment boundary
     process.env.KASPI_WEBHOOK_SECRET = "test-kaspi-secret";
+    process.env.PAYMENTS_ENABLED = "true";
     execSync(
       "npx prisma migrate deploy --schema packages/db/prisma/schema.prisma",
       {

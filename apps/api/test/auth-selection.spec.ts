@@ -119,17 +119,12 @@ describe("auth: legal-entity selection flow", () => {
       .set("Authorization", `Bearer ${l.body.token}`)
       .send({ legalEntityId: "le-of-another-tenant" })
       .expect(403);
-    // replay: тот же jti второй раз — отклонён
-    const ok = await request(app.getHttpServer())
-      .post("/auth/select-legal-entity")
-      .set("Authorization", `Bearer ${l.body.token}`)
-      .send({ legalEntityId: leIds[0] })
-      .expect(200);
-    expect(ok.body.activeLegalEntityId).toBe(leIds[0]);
+    // atomic consumption: the token was already burned when the insert happened
+    // before the membership check, so replaying the same token returns 401
     await request(app.getHttpServer())
       .post("/auth/select-legal-entity")
       .set("Authorization", `Bearer ${l.body.token}`)
-      .send({ legalEntityId: leIds[1] })
+      .send({ legalEntityId: leIds[0] })
       .expect(401);
   });
 

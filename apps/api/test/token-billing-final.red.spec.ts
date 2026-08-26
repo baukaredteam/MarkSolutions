@@ -17,9 +17,9 @@ describe("W0-03a billing dual-scope + token atomicity (red)", () => {
     expect(authSrc).toMatch(/P2002|already used/);
   });
 
-  it("(2) BillingService topup accepts optional legalEntityId", () => {
+  it("(2) BillingService topup requires mandatory legalEntityId", () => {
     expect(billingSrc).toMatch(
-      /async topup\(\s*tenantId:\s*string,\s*legalEntityId(?:\?\s*:\s*string)?\s*,/
+      /async topup\(\s*tenantId:\s*string,\s*legalEntityId:\s*string,/
     );
   });
 
