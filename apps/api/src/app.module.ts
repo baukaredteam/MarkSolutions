@@ -51,6 +51,8 @@ import { DocumentController } from "./document.controller";
 import { DocumentService } from "./document.service";
 import { DashboardController } from "./dashboard.controller";
 import { DashboardService } from "./dashboard.service";
+import { TaskController } from "./task.controller";
+import { TaskService } from "./task.service";
 import { CodeLookupController } from "./code-lookup.controller";
 import { AuditController } from "./audit.controller";
 import { EcomProductsController } from "./ecom-products.controller";
@@ -187,6 +189,7 @@ export class AdminController {
     LabelController,
     DocumentController,
     DashboardController,
+    TaskController,
     CodeLookupController,
     AuditController,
     EcomProductsController,
@@ -207,6 +210,7 @@ export class AdminController {
     LabelService,
     DocumentService,
     DashboardService,
+    TaskService,
     CodeLookupService,
     {
       provide: KMS_ADAPTER,

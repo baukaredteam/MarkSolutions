@@ -37,6 +37,7 @@ model Tenant {
   users     User[]
   productCards ProductCard[]
   draftProposals DraftProposal[]
+  tasks     Task[]
   createdAt DateTime @default(now())
 }
 
@@ -486,4 +487,23 @@ model AggregationMember {
   addedAt   DateTime @default(now())
   addedBy   String
   @@unique([unitId, codeKey])
+}
+
+// TASK minimal: projection of Outbox FAILED + UtilisationAlert (ID-017).
+// Unique (tenantId, source, sourceRef) — same exception does not spawn a second OPEN task.
+model Task {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  source    String   // OUTBOX_FAILED | UTILISATION_ALERT
+  sourceRef String   // Outbox.id | UtilisationAlert.id
+  type      String   // ERROR | WARNING
+  title     String
+  status    String   @default("OPEN") // OPEN | DONE (ТЗ: Открыта / Завершённые)
+  severity  String   @default("HIGH") // CRITICAL | HIGH | MEDIUM
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, source, sourceRef])
+  @@index([tenantId, status])
 }

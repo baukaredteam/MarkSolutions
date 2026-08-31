@@ -2,6 +2,12 @@
 
 Цикл: после любой правки пользователя — одна запись сюда. Коротко: что сломалось / что поправили / как не повторять.
 
+## 2026-08-31 — TASK minimal: KPI source ≠ HOME-01 composite
+
+- HOME-01 KPI «Требуют внимания» был суммой exceptions+ДТ+дедлайн+карточки без GTIN. TASK slice меняет **только число KPI** на `openTasks` (проекция Outbox FAILED + UtilisationAlert). Коды без нанесения остаются на карточке «Кодов в работе».
+- Tenant AT для задач должен бить в HTTP list/create и `openTasks` другого tenant, не в отсутствие маршрута (404) и не в soft `toBeDefined()`. PR #5: false-green isolation недопустима.
+- Materialize на GET/POST `/tasks` и на `dashboard.summary` — иначе KPI=0, пока никто не открыл Центр задач.
+
 ## 2026-08-31 — UI canon is the 16-module MARK FLOW mockup
 
 - Visual contract = **manager 16-module MARK FLOW**, не старый v4-прототип (23 экрана, grouped nav).

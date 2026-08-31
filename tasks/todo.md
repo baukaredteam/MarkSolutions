@@ -5,7 +5,14 @@
 - [x] PR #3 Architect — `docs/agents/module-gap-matrix.md` — **squash-merged** into `chore/cursor-agent-factory`.
 - [x] PR #4 UI-Shell — `feature/ui-shell-16-modules` — **squash-merged** into `chore/cursor-agent-factory`.
 - [x] PR #5 Catalog-Orders — `feature/catalog-orders-skeleton` — **squash-merged** into `chore/cursor-agent-factory`.
-- [ ] PR #6 MS-Reviewer docs close-out — **open / remaining**. `tasks/*` + SUPERSEDED banner on `docs/UI-SPEC.md`. Harith merges.
+- [x] PR #6 MS-Reviewer docs close-out — **squash-merged** into `chore/cursor-agent-factory`.
+- [x] PR #7 HOME-01 + dark navy sidebar — **squash-merged** into `chore/cursor-agent-factory`.
+
+## TASK minimal (2026-08-31)
+
+- [x] Prisma `Task` + tenant isolation AT + list/create from Outbox FAILED / UtilisationAlert
+- [x] `/tasks` real page (not StubPage); HOME «Требуют внимания» = `openTasks`
+- [ ] PR `feature/tasks-minimal` → `chore/cursor-agent-factory` — **opened, not merged**
 
 ## Статус: done (2026-08-31)
 
