@@ -1,5 +1,12 @@
 # Factory setup — Cursor Ultra
 
+## Factory PRs (2026-08-31)
+
+- [x] PR #3 Architect — `docs/agents/module-gap-matrix.md` — **squash-merged** into `chore/cursor-agent-factory`.
+- [x] PR #4 UI-Shell — `feature/ui-shell-16-modules` — **squash-merged** into `chore/cursor-agent-factory`.
+- [x] PR #5 Catalog-Orders — `feature/catalog-orders-skeleton` — **squash-merged** into `chore/cursor-agent-factory`.
+- [ ] PR #6 MS-Reviewer docs close-out — **open / remaining**. `tasks/*` + SUPERSEDED banner on `docs/UI-SPEC.md`. Harith merges.
+
 ## Статус: done (2026-08-31)
 
 - [x] 1. Структура: `tasks/`, `.cursor/rules/`, `.cursor/skills/`, `docs/agents/`
