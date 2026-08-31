@@ -1,0 +1,13 @@
+---
+description: Plan Mode, subagents, verification, tasks/lessons cycle. Always on.
+alwaysApply: true
+---
+
+# Workflow
+
+- 3+ шага или неоднозначный скоуп → **Plan Mode** сначала. Не кодить вслепую.
+- Subagents **liberally**: `explore` для поиска, параллельные Task для независимых кусков. Родитель оркестрирует.
+- Перед «готово»: targeted tests + `npm run lint` + `npm run typecheck` (когда Node есть). Graph: UI/API → service → Prisma → outbox/job → adapter → audit/tests.
+- Gate красный → статус `needs-info` / `ready-for-human`, не «готово».
+- Живой трек: `tasks/todo.md`. После фичи / правки пользователя — урок в `tasks/lessons.md`.
+- Issues: `.scratch/<feature>/` (`docs/agents/issue-tracker.md`). Триаж: `docs/agents/triage-labels.md`.

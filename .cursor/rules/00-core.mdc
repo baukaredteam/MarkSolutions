@@ -1,0 +1,13 @@
+---
+description: Core stack, simplicity, minimal impact, no secrets. Always on.
+alwaysApply: true
+---
+
+# Core
+
+- Стек: NestJS+TS, Prisma, PostgreSQL16 (prod) / SQLite (dev), Valkey (не Redis), RabbitMQ, MinIO, OpenBao(prod)/file-KMS(dev), bwip-js, React+Vite, EntityList. Модульный монолит.
+- Источник истины: `CONTEXT.md` + `docs/{ROADMAP,DECISIONS,CONTRACT-IS-MPT,RULES-MM,CATALOG-MM,SOURCE-MANIFEST}.md`. Не выдумывать API.
+- Minimal impact: править только то, что нужно задаче. Не трогать domain-код «заодно».
+- Секреты: не коммитить `.env`, ключи, токены, полные КМ. Маска в логах/UI/APM.
+- Не запускать docker/prod без явной просьбы.
+- Чтение: не открывать `.docx`/`.pdf`; детали — `docs/source/*.md` и `docs/SOURCE-MANIFEST.md`.

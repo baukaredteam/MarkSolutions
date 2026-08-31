@@ -1,0 +1,18 @@
+---
+description: Model routing for Cursor Ultra — Composer/Grok default, Fable rare. Saves tokens.
+alwaysApply: true
+---
+
+# Models
+
+Default (этот репозиторий): **Composer** или **Grok 4.6**. Grok Bot = оркестратор (план, раздача субагентам, сверка).
+
+| Работа | Модель |
+|--------|--------|
+| Повседневный код, тесты, правила, мелкий UI | Composer / Grok 4.6 |
+| План, обзор, оркестрация | Grok 4.6 (Plan Mode) |
+| Исследование кода | explore subagent, не «ещё один огромный контекст» |
+| Тяжёлый кросс-модульный рефакторинг | **Fable** — только если пользователь явно сказал Fable |
+| OpenCode / GLM / Qwen / DeepSeek | не использовать |
+
+Не тащить в контекст: `node_modules`, `dist`, `*.db`, `storage/`, бинарники, полные КМ, огромные фикстуры. Читать один файл из `docs/source`, не всю папку.
