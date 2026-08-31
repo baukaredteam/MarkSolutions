@@ -147,23 +147,19 @@ export function Layout() {
   return (
     <ToastProvider>
       <div className="shell">
-        <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <aside className={`sidebar sidebar--dark ${sidebarOpen ? "open" : ""}`}>
           <div className="side-brand">
             <div className="brandmark">MF</div>
             <div>
-              <b style={{ fontSize: 19 }}>MarkFlow</b>
-              <small style={{ display: "block", color: "var(--muted)" }}>
-                Enterprise
-              </small>
+              <b className="side-brand-title">MARK FLOW</b>
+              <small className="side-brand-sub">Mark Solutions</small>
             </div>
           </div>
           <div className="tenant">
             <div className="tenant-logo">MS</div>
             <div>
               <b>Mark Solutions Demo</b>
-              <small style={{ display: "block", color: "var(--muted)" }}>
-                БИН 111111111111
-              </small>
+              <small className="side-tenant-sub">БИН 111111111111</small>
             </div>
           </div>
           {NAV_GROUPS.map((g) => (
