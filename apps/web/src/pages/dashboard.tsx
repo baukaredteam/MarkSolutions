@@ -10,6 +10,7 @@ interface Summary {
   openAggregates: number;
   docsPendingDt: number;
   exceptions: number;
+  openTasks: number;
 }
 
 interface IntegrationRow {
@@ -88,17 +89,13 @@ function homeRoleLabel(roles: string[] | undefined): string {
   return ROLE_LABELS[roles[0]] ?? roles[0];
 }
 
-function attentionKpiTotal(summary: Summary, cardsMissingGtin: number): number {
-  return (
-    summary.exceptions +
-    summary.docsPendingDt +
-    summary.deadlineSoon +
-    cardsMissingGtin
-  );
+function attentionKpiTotal(summary: Summary): number {
+  // HOME KPI «Требуют внимания» = OPEN Task count. codesNotApplied stays on its card.
+  return summary.openTasks;
 }
 
 function criticalCount(summary: Summary): number {
-  return summary.exceptions + summary.deadlineSoon;
+  return summary.openTasks;
 }
 
 function integrationStatus(
@@ -138,12 +135,12 @@ function buildAttentionItems(
 ): AttentionItem[] {
   if (!summary) return [];
   const items: AttentionItem[] = [];
-  if (summary.exceptions > 0) {
+  if (summary.openTasks > 0) {
     items.push({
       badge: "SLA",
       badgeClass: "b-red",
-      title: "Интеграционные исключения",
-      sub: `${summary.exceptions} записей (outbox FAILED, алерты нанесения)`,
+      title: "Открытые задачи",
+      sub: `${summary.openTasks} записей (outbox FAILED, алерты нанесения)`,
       route: "/tasks",
     });
   }
@@ -236,8 +233,7 @@ export function DashboardPage() {
     [summary, cardsMissingGtin]
   );
 
-  const attentionTotal =
-    summary == null ? 0 : attentionKpiTotal(summary, cardsMissingGtin);
+  const attentionTotal = summary == null ? 0 : attentionKpiTotal(summary);
 
   const critical = summary == null ? 0 : criticalCount(summary);
 

@@ -25,6 +25,7 @@ const EMPTY_SUMMARY = {
   openAggregates: 0,
   docsPendingDt: 0,
   exceptions: 0,
+  openTasks: 0,
 };
 
 const POPULATED_SUMMARY = {
@@ -33,6 +34,7 @@ const POPULATED_SUMMARY = {
   openAggregates: 1,
   docsPendingDt: 3,
   exceptions: 5,
+  openTasks: 5,
 };
 
 const INTEGRATIONS = {
@@ -130,10 +132,12 @@ describe("HOME-01 dashboard read-model", () => {
         <DashboardPage />
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.getByText("10")).toBeTruthy());
-    expect(screen.getByText("7 критичных")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getAllByText("5").length).toBeGreaterThanOrEqual(1)
+    );
+    expect(screen.getByText("5 критичных")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getByText("Интеграционные исключения")).toBeTruthy();
+    expect(screen.getByText("Открытые задачи")).toBeTruthy();
     expect(screen.getByText("ДТ ожидают оформления")).toBeTruthy();
     expect(screen.getByText("Заказы с дедлайном ≤ 7 дней")).toBeTruthy();
     expect(screen.queryByText("Открытые агрегаты")).toBeNull();
@@ -142,7 +146,7 @@ describe("HOME-01 dashboard read-model", () => {
   });
 
   it("исключения открывают /tasks, не legacy /exceptions", async () => {
-    mockApis({ ...EMPTY_SUMMARY, exceptions: 2 });
+    mockApis({ ...EMPTY_SUMMARY, exceptions: 2, openTasks: 2 });
     function Loc() {
       const loc = useLocation();
       return <div data-testid="path">{loc.pathname}</div>;
@@ -157,7 +161,7 @@ describe("HOME-01 dashboard read-model", () => {
       </MemoryRouter>
     );
     await waitFor(() =>
-      expect(screen.getByText("Интеграционные исключения")).toBeTruthy()
+      expect(screen.getByText("Открытые задачи")).toBeTruthy()
     );
     fireEvent.click(screen.getAllByRole("button", { name: "Открыть" })[0]);
     await waitFor(() =>

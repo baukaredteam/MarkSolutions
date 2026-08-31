@@ -1,11 +1,15 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import { PrismaService } from "./prisma.service";
+import { TaskService } from "./task.service";
 
 // Дашборд «Следующие действия» (W4-06, Q10, ADR-025): ОДИН снимок 5 счётчиков.
 // openAggregates и serviceActExport = 0 в MVP (тикеты 03/05 stretch после демо).
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tasks: TaskService
+  ) {}
 
   private get deadlineDays(): number {
     return Number(process.env.UTIL_DEADLINE_DAYS ?? 30);
@@ -78,12 +82,16 @@ export class DashboardService {
       const p = t.payload as { tenantId?: string };
       return p?.tenantId === tenantId;
     }).length;
+    // HOME KPI «Требуют внимания» = OPEN Task count (same sources: outbox FAILED + alerts).
+    // codesNotApplied stays on its own card — do not fold into openTasks.
+    const openTasks = await this.tasks.countOpen(tenantId);
     return {
       codesNotApplied,
       deadlineSoon,
       openAggregates,
       docsPendingDt,
       exceptions: failedForTenant + alertsOpen,
+      openTasks,
       hasCards: hasCards > 0,
       hasRegistered: hasRegistered > 0,
       hasOrders: hasOrders > 0,

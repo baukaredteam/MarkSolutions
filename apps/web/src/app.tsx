@@ -19,6 +19,7 @@ import { BalancePage } from "./pages/balance";
 import { OperatorPage } from "./pages/operator";
 import { AuditPage } from "./pages/audit";
 import { IntegrationsPage } from "./pages/integrations";
+import { TasksPage } from "./pages/tasks";
 import { PAGES, defaultRoute, type Role } from "./roles";
 import { sessionStore } from "./session";
 
@@ -67,7 +68,6 @@ function RequireAuth() {
 
 // 16 модулей без реализации (stub).
 const MODULE_STUB_IDS = [
-  "tasks",
   "search",
   "aggregation",
   "shipments",
@@ -109,6 +109,7 @@ export function AppRoutes() {
         <Route path="/operator" element={<OperatorPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
         <Route
           path="/operations"
           element={<Navigate to="/documents" replace />}

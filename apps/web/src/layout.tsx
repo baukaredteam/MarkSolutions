@@ -51,6 +51,7 @@ async function loadSummary() {
       openAggregates: number;
       docsPendingDt: number;
       exceptions: number;
+      openTasks: number;
     }>("/dashboard/summary");
     return s;
   } catch {
@@ -99,7 +100,7 @@ export function Layout() {
           products: Math.max(s.codesNotApplied, 0),
           orders: Math.max(s.deadlineSoon, 0),
           documents: Math.max(s.docsPendingDt, 0),
-          exceptions: Math.max(s.exceptions, 0),
+          exceptions: Math.max(s.openTasks ?? s.exceptions, 0),
         });
       }
     });
