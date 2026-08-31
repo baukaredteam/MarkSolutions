@@ -160,11 +160,33 @@ a {
   overflow: auto;
   z-index: 30;
 }
+.sidebar--dark {
+  background: #0f2744;
+  border-right: 1px solid #0a1c30;
+  color: #e8eef5;
+  display: flex;
+  flex-direction: column;
+}
 .side-brand {
   display: flex;
   align-items: center;
   gap: 11px;
   padding: 4px 8px 20px;
+}
+.side-brand-title {
+  display: block;
+  font-size: 19px;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.side-brand-sub,
+.side-tenant-sub {
+  display: block;
+  color: rgba(232, 238, 245, 0.62);
+}
+.sidebar--dark .side-brand-sub,
+.sidebar--dark .side-tenant-sub {
+  color: rgba(232, 238, 245, 0.62);
 }
 .brandmark {
   width: 46px;
@@ -176,6 +198,9 @@ a {
   place-items: center;
   font-weight: 900;
 }
+.sidebar--dark .brandmark {
+  background: linear-gradient(145deg, #1a4a72, var(--blue));
+}
 .tenant {
   margin: 2px 4px 18px;
   padding: 11px;
@@ -184,6 +209,13 @@ a {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+.sidebar--dark .tenant {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+.sidebar--dark .tenant b {
+  color: #fff;
 }
 .tenant-logo {
   width: 34px;
@@ -195,6 +227,10 @@ a {
   color: var(--navy);
   font-weight: 900;
 }
+.sidebar--dark .tenant-logo {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
 .nav-label {
   font-size: 10px;
   color: #9aa6b4;
@@ -202,6 +238,9 @@ a {
   letter-spacing: 0.11em;
   padding: 12px 12px 6px;
   font-weight: 800;
+}
+.sidebar--dark .nav-label {
+  color: rgba(232, 238, 245, 0.45);
 }
 .nav-item {
   display: flex;
@@ -219,14 +258,25 @@ a {
   text-align: left;
   font-size: 14px;
 }
+.sidebar--dark .nav-item {
+  color: rgba(232, 238, 245, 0.72);
+}
 .nav-item:hover {
   background: #f4f7fa;
   color: var(--navy);
+}
+.sidebar--dark .nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 .nav-item.active {
   background: #e9f3fc;
   color: var(--navy);
   font-weight: 800;
+}
+.sidebar--dark .nav-item.active {
+  background: var(--blue);
+  color: #fff;
 }
 .nav-icon {
   width: 20px;
@@ -235,6 +285,9 @@ a {
   place-items: center;
   font-size: 16px;
 }
+.sidebar--dark .nav-icon {
+  color: inherit;
+}
 .nav-count {
   margin-left: auto;
   background: #eef3f7;
@@ -242,10 +295,22 @@ a {
   padding: 2px 7px;
   font-size: 10px;
 }
+.sidebar--dark .nav-count {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.sidebar--dark .nav-item.active .nav-count {
+  background: rgba(255, 255, 255, 0.22);
+}
 .side-bottom {
   margin-top: 18px;
   border-top: 1px solid var(--line);
   padding-top: 10px;
+}
+.sidebar--dark .side-bottom {
+  border-top-color: rgba(255, 255, 255, 0.12);
+  padding-top: 12px;
+  margin-top: auto;
 }
 .main {
   margin-left: var(--side);

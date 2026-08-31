@@ -19,10 +19,16 @@ beforeEach(() => {
 
 describe("shell: Ctrl+K + role-switch + EntityList v2", () => {
   it("левое меню: 16 канонических модулей MARK FLOW", () => {
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={["/dashboard"]}>
         <AppRoutes />
       </MemoryRouter>
+    );
+    expect(container.querySelector(".sidebar.sidebar--dark")).toBeTruthy();
+    expect(screen.getByText("MARK FLOW")).toBeTruthy();
+    expect(screen.getByText("Mark Solutions")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Главная/ }).className).toMatch(
+      /active/
     );
     expect(screen.getByRole("link", { name: /Главная/ })).toBeTruthy();
     expect(
