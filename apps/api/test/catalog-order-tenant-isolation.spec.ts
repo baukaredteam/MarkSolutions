@@ -184,11 +184,26 @@ describe("catalog + order tenant isolation (CAT/ORD skeleton)", () => {
   });
 
   it("tenant B cannot mutate tenant A draft (fix-tnved)", async () => {
-    await request(app.getHttpServer())
+    const before = await prisma.draftProposal.findUnique({
+      where: { id: draftId },
+    });
+    expect(before).toBeTruthy();
+    const proposedBefore = before!.proposed as { tnved?: string };
+
+    // in-list ТНВЭД — must pass isInList before tenant lookup (not false-green on tnved gate)
+    const inListTnved = "2710198200";
+    const res = await request(app.getHttpServer())
       .post(`/products/drafts/${draftId}/fix-tnved`)
       .set("Authorization", `Bearer ${tokenOf(tenantB)}`)
-      .send({ tnved: "2710198100" })
-      .expect(400);
+      .send({ tnved: inListTnved });
+    expect([400, 404]).toContain(res.status);
+
+    const after = await prisma.draftProposal.findUnique({
+      where: { id: draftId },
+    });
+    const proposedAfter = after!.proposed as { tnved?: string };
+    expect(proposedAfter.tnved).toBe(proposedBefore.tnved);
+    expect(after!.status).toBe(before!.status);
   });
 
   it("tenant B cannot read tenant A order (GET → 404 IDOR)", async () => {
