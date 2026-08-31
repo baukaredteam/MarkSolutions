@@ -1072,6 +1072,35 @@ textarea:focus {
   background: var(--violet);
 }
 
+.home-role-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 11px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-weight: 750;
+  font-size: 13px;
+}
+.home-empty-state {
+  margin-bottom: 15px;
+  text-align: center;
+  padding: 28px 24px;
+}
+.home-empty-state h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+.home-empty-state p {
+  max-width: 520px;
+  margin: 0 auto 18px;
+}
+.home-empty-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
 /* ---------- Stub ---------- */
 .stub {
   padding: 48px;

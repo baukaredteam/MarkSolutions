@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { DashboardPage } from "./dashboard";
 import { sessionStore } from "../session";
 
@@ -45,10 +45,19 @@ const INTEGRATIONS = {
   ],
 };
 
-function mockApis(summary: typeof EMPTY_SUMMARY) {
+const EMPTY_CATALOG = { items: [] as { gtin?: string | null }[] };
+const EMPTY_DRAFTS = { items: [] as { proposed?: { gtin?: string } }[] };
+
+function mockApis(
+  summary: typeof EMPTY_SUMMARY,
+  catalog = EMPTY_CATALOG,
+  drafts = EMPTY_DRAFTS
+) {
   get.mockImplementation((path: string) => {
     if (path === "/dashboard/summary") return Promise.resolve(summary);
     if (path === "/integrations/status") return Promise.resolve(INTEGRATIONS);
+    if (path === "/products/cards") return Promise.resolve(catalog);
+    if (path === "/products/drafts") return Promise.resolve(drafts);
     return Promise.reject(new Error(`unexpected ${path}`));
   });
 }
@@ -67,7 +76,7 @@ beforeEach(() => {
 });
 
 describe("HOME-01 dashboard read-model", () => {
-  it("рендерит заголовок, подзаголовок и 4 KPI-карточки", async () => {
+  it("рендерит заголовок, подзаголовок, роль и 4 KPI-карточки", async () => {
     mockApis(EMPTY_SUMMARY);
     render(
       <MemoryRouter>
@@ -82,6 +91,7 @@ describe("HOME-01 dashboard read-model", () => {
         /Единая точка контроля маркировки: процессы, риски, задачи и состояние интеграций/
       )
     ).toBeTruthy();
+    expect(screen.getByText("Роль: Руководитель")).toBeTruthy();
     expect(screen.getByText("Операции сегодня")).toBeTruthy();
     expect(
       screen.getAllByText("Требуют внимания").length
@@ -90,7 +100,7 @@ describe("HOME-01 dashboard read-model", () => {
     expect(screen.getByText("Кодов в работе")).toBeTruthy();
   });
 
-  it("показывает честные пустые состояния без demo-чисел", async () => {
+  it("HOME-06: пустое состояние без demo-чисел и с CTA", async () => {
     mockApis(EMPTY_SUMMARY);
     render(
       <MemoryRouter>
@@ -98,31 +108,78 @@ describe("HOME-01 dashboard read-model", () => {
       </MemoryRouter>
     );
     await waitFor(() =>
-      expect(screen.getAllByText("нет данных").length).toBeGreaterThan(0)
+      expect(screen.getByText("Данных пока недостаточно")).toBeTruthy()
     );
+    expect(
+      screen.getByText(/После начала работы здесь появятся ключевые показатели/)
+    ).toBeTruthy();
+    expect(screen.getByText("Создать первый заказ кодов")).toBeTruthy();
+    expect(screen.getByText("Открыть Глобальный поиск")).toBeTruthy();
+    expect(screen.getAllByText("нет данных").length).toBeGreaterThan(0);
     expect(screen.getByText("модуль поставок — нет")).toBeTruthy();
     expect(screen.queryByText("1 284")).toBeNull();
     expect(screen.queryByText("1284")).toBeNull();
     expect(screen.queryByText("42 800")).toBeNull();
-    await waitFor(() =>
-      expect(screen.getByText(/Нет задач, требующих внимания/)).toBeTruthy()
-    );
   });
 
-  it("мапит summary на KPI и список внимания", async () => {
+  it("мапит summary на KPI (сумма счётчиков) и список внимания", async () => {
     mockApis(POPULATED_SUMMARY);
     render(
       <MemoryRouter>
         <DashboardPage />
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.getByText("42")).toBeTruthy());
-    expect(screen.getByText("5")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("53")).toBeTruthy());
+    expect(screen.getByText("7 критичных")).toBeTruthy();
+    expect(screen.getByText("42")).toBeTruthy();
     expect(screen.getByText("Интеграционные исключения")).toBeTruthy();
     expect(screen.getByText("ДТ ожидают оформления")).toBeTruthy();
     expect(screen.getByText("Заказы с дедлайном ≤ 7 дней")).toBeTruthy();
     expect(screen.getByText("Открытые агрегаты")).toBeTruthy();
     expect(screen.getByText("Коды без нанесения")).toBeTruthy();
+    expect(screen.getAllByText("SLA").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("исключения открывают /tasks, не legacy /exceptions", async () => {
+    mockApis({ ...EMPTY_SUMMARY, exceptions: 2 });
+    function Loc() {
+      const loc = useLocation();
+      return <div data-testid="path">{loc.pathname}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <Loc />
+        <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/tasks" element={<div>tasks-page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Интеграционные исключения")).toBeTruthy()
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Открыть" })[0]);
+    await waitFor(() =>
+      expect(screen.getByTestId("path").textContent).toBe("/tasks")
+    );
+  });
+
+  it("ТОВАР из каталога: карточки без GTIN", async () => {
+    mockApis(
+      EMPTY_SUMMARY,
+      { items: [{ gtin: null }, { gtin: "04014835723399" }] },
+      { items: [{ proposed: {} }] }
+    );
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Карточка без GTIN")).toBeTruthy()
+    );
+    expect(screen.getByText("2 карточек")).toBeTruthy();
+    expect(screen.getByText("ТОВАР")).toBeTruthy();
   });
 
   it("интеграции: статус из API, без выдуманного «Работает»", async () => {

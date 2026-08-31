@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
+import { sessionStore } from "../session";
 import { useToast } from "../toast";
 
 interface Summary {
@@ -66,8 +67,39 @@ const QUICK_LINKS = [
   },
 ] as const;
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Руководитель",
+  manager: "Руководитель",
+  accountant: "Бухгалтер",
+  marking: "Специалист по маркировке",
+  warehouse: "Складской оператор",
+  viewer: "Наблюдатель",
+  operator: "Оператор платформы",
+};
+
 function fmtCount(v: number | undefined): string {
   return typeof v === "number" ? v.toLocaleString("ru-RU") : "—";
+}
+
+function homeRoleLabel(roles: string[] | undefined): string {
+  if (!roles?.length) return "—";
+  if (roles.includes("manager") || roles.includes("admin"))
+    return "Руководитель";
+  return ROLE_LABELS[roles[0]] ?? roles[0];
+}
+
+function attentionCounterSum(summary: Summary): number {
+  return (
+    summary.exceptions +
+    summary.docsPendingDt +
+    summary.deadlineSoon +
+    summary.openAggregates +
+    summary.codesNotApplied
+  );
+}
+
+function criticalCount(summary: Summary): number {
+  return summary.exceptions + summary.deadlineSoon;
 }
 
 function integrationStatus(
@@ -101,22 +133,25 @@ function integrationStatus(
   return { id: row.id, name: row.name, status: "нет данных", tone: "unknown" };
 }
 
-function buildAttentionItems(summary: Summary | null): AttentionItem[] {
+function buildAttentionItems(
+  summary: Summary | null,
+  cardsMissingGtin: number
+): AttentionItem[] {
   if (!summary) return [];
   const items: AttentionItem[] = [];
   if (summary.exceptions > 0) {
     items.push({
-      badge: "ИСКЛ",
+      badge: "SLA",
       badgeClass: "b-red",
       title: "Интеграционные исключения",
       sub: `${summary.exceptions} записей (outbox FAILED, алерты нанесения)`,
-      route: "/exceptions",
+      route: "/tasks",
     });
   }
   if (summary.docsPendingDt > 0) {
     items.push({
-      badge: "ДТ",
-      badgeClass: "b-yellow",
+      badge: "SLA",
+      badgeClass: "b-red",
       title: "ДТ ожидают оформления",
       sub: `${summary.docsPendingDt} документов`,
       route: "/documents",
@@ -149,11 +184,29 @@ function buildAttentionItems(summary: Summary | null): AttentionItem[] {
       route: "/vault",
     });
   }
+  if (cardsMissingGtin > 0) {
+    items.push({
+      badge: "ТОВАР",
+      badgeClass: "b-yellow",
+      title: "Карточка без GTIN",
+      sub: `${cardsMissingGtin} карточек`,
+      route: "/products",
+    });
+  }
   return items;
 }
 
+function countMissingGtin(
+  cards: { gtin?: string | null }[],
+  drafts: { proposed?: { gtin?: string } }[]
+): number {
+  const cardCount = cards.filter((c) => !c.gtin?.trim()).length;
+  const draftCount = drafts.filter((d) => !d.proposed?.gtin?.trim()).length;
+  return cardCount + draftCount;
+}
+
 // HOME-01: read-model дашборда «Главная» (роль Руководитель) — GET /dashboard/summary
-// + GET /integrations/status. Без выдуманных метрик и demo-чисел.
+// + GET /integrations/status (+ опционально GET /products/cards|drafts для ТОВАР).
 export function DashboardPage() {
   const toast = useToast();
   const nav = useNavigate();
@@ -161,17 +214,28 @@ export function DashboardPage() {
   const [integrations, setIntegrations] = useState<IntegrationRow[] | null>(
     null
   );
+  const [cardsMissingGtin, setCardsMissingGtin] = useState(0);
   const [loading, setLoading] = useState(false);
+  const roleLabel = homeRoleLabel(sessionStore.get()?.roles);
 
   async function load() {
     setLoading(true);
     try {
-      const [s, i] = await Promise.all([
+      const [s, i, cardsRes, draftsRes] = await Promise.all([
         api.get<Summary>("/dashboard/summary"),
         api.get<{ items: IntegrationRow[] }>("/integrations/status"),
+        api
+          .get<{ items: { gtin?: string | null }[] }>("/products/cards")
+          .catch(() => ({ items: [] as { gtin?: string | null }[] })),
+        api
+          .get<{ items: { proposed?: { gtin?: string } }[] }>(
+            "/products/drafts"
+          )
+          .catch(() => ({ items: [] as { proposed?: { gtin?: string } }[] })),
       ]);
       setSummary(s);
       setIntegrations(i.items);
+      setCardsMissingGtin(countMissingGtin(cardsRes.items, draftsRes.items));
     } catch (e) {
       if (e instanceof ApiErrorResponse)
         toast.push(`${e.error.code}: ${e.error.message}`, "error");
@@ -186,7 +250,18 @@ export function DashboardPage() {
     load();
   }, []);
 
-  const attentionItems = useMemo(() => buildAttentionItems(summary), [summary]);
+  const attentionItems = useMemo(
+    () => buildAttentionItems(summary, cardsMissingGtin),
+    [summary, cardsMissingGtin]
+  );
+
+  const attentionTotal =
+    summary == null ? 0 : attentionCounterSum(summary) + cardsMissingGtin;
+
+  const critical = summary == null ? 0 : criticalCount(summary);
+
+  const isHomeEmpty =
+    summary != null && attentionTotal === 0 && attentionItems.length === 0;
 
   const integrationById = useMemo(() => {
     const map = new Map<string, IntegrationRow>();
@@ -200,11 +275,6 @@ export function DashboardPage() {
     return { id, name, status, tone };
   });
 
-  const criticalCount =
-    summary == null
-      ? 0
-      : (summary.exceptions > 0 ? 1 : 0) + (summary.deadlineSoon > 0 ? 1 : 0);
-
   return (
     <section className="home-dashboard">
       <div className="page-head">
@@ -216,11 +286,30 @@ export function DashboardPage() {
           </div>
         </div>
         <div className="page-actions">
+          <span className="home-role-chip">Роль: {roleLabel}</span>
           <button className="btn btn-light" onClick={load} disabled={loading}>
             ↻ Обновить
           </button>
         </div>
       </div>
+
+      {isHomeEmpty && (
+        <div className="card home-empty-state">
+          <h2>Данных пока недостаточно</h2>
+          <p className="sub">
+            После начала работы здесь появятся ключевые показатели, рабочая
+            динамика и задачи, требующие внимания.
+          </p>
+          <div className="home-empty-actions">
+            <button className="btn btn-primary" onClick={() => nav("/orders")}>
+              Создать первый заказ кодов
+            </button>
+            <button className="btn btn-light" onClick={() => nav("/search")}>
+              Открыть Глобальный поиск
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid four home-kpis">
         <div className="card home-kpi home-kpi--green">
@@ -230,15 +319,15 @@ export function DashboardPage() {
         </div>
         <div className="card home-kpi home-kpi--red">
           <div className="home-kpi-title">Требуют внимания</div>
-          <div className="home-kpi-num">{fmtCount(summary?.exceptions)}</div>
+          <div className="home-kpi-num">{fmtCount(attentionTotal)}</div>
           <div className="home-kpi-sub">
             {summary == null
               ? "загрузка…"
-              : summary.exceptions === 0
-                ? "нет активных исключений"
-                : criticalCount > 0
-                  ? `${criticalCount} критичных`
-                  : "есть задачи"}
+              : critical > 0
+                ? `${critical} критичных`
+                : attentionTotal > 0
+                  ? "без критичных SLA"
+                  : "нет задач, требующих внимания"}
           </div>
         </div>
         <div className="card home-kpi home-kpi--orange">
@@ -271,7 +360,7 @@ export function DashboardPage() {
             Приоритетные задачи текущей роли
           </div>
           {!summary && <p className="sub">Загрузка…</p>}
-          {summary && attentionItems.length === 0 && (
+          {summary && attentionItems.length === 0 && !isHomeEmpty && (
             <div className="success-box notice">
               ✓ Нет задач, требующих внимания
             </div>
