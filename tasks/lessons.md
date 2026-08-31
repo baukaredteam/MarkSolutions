@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-08-31 — MPT auth healthcheck is human-on-VPS, not agent-on-STAGE
+
+- Script may target STAGE when a human sources `~/.config/marksolutions/mpt.env`. Agents/CI must not HTTP-call markirovka; tests bind `127.0.0.1` and fail if a test URL hostname is `markirovka.kz`.
+- Stdout is one line (`status=200|401|network` or `missing env`). Never print body, tokens, password, or which env key is missing.
+- Do not wire `mpt:auth-healthcheck` into `npm test` / `verify` — CI has no credentials. Auth-only: no GET codes, utilisation, refresh, doc/*.
+
 Цикл: после любой правки пользователя — одна запись сюда. Коротко: что сломалось / что поправили / как не повторять.
 
 ## 2026-08-31 — OPS journal already existed under /documents

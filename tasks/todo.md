@@ -1,5 +1,13 @@
 # Factory setup — Cursor Ultra
 
+## MPT auth healthcheck (2026-08-31)
+
+- [x] `scripts/mpt-auth-healthcheck.mjs` + `npm run mpt:auth-healthcheck` (auth-only; не в `npm test`/`verify`)
+- [x] Mock tests on `127.0.0.1` (`scripts/mpt-auth-healthcheck.spec.ts`)
+- [x] Docs: `docs/STAGE-MPT-HEALTHCHECK.md` + pointer in `.env.example`
+- [ ] Human on VPS: source `~/.config/marksolutions/mpt.env` → run script → report ok/fail + HTTP status
+- [ ] Mutating STAGE (createOrder / utilisation / doc) — **запрещено** до отдельного «да»
+
 ## Factory PRs (2026-08-31)
 
 - [x] PR #3 Architect — `docs/agents/module-gap-matrix.md` — **squash-merged** into `chore/cursor-agent-factory`.
