@@ -76,7 +76,7 @@ beforeEach(() => {
 });
 
 describe("HOME-01 dashboard read-model", () => {
-  it("рендерит заголовок, подзаголовок, роль и 4 KPI-карточки", async () => {
+  it("рендерит breadcrumb, заголовок, роль и 4 KPI-карточки", async () => {
     mockApis(EMPTY_SUMMARY);
     render(
       <MemoryRouter>
@@ -86,12 +86,13 @@ describe("HOME-01 dashboard read-model", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Главная" })).toBeTruthy()
     );
+    expect(screen.getByText("Главная / HOME-01")).toBeTruthy();
     expect(
       screen.getByText(
         /Единая точка контроля маркировки: процессы, риски, задачи и состояние интеграций/
       )
     ).toBeTruthy();
-    expect(screen.getByText("Роль: Руководитель")).toBeTruthy();
+    expect(screen.getByText(/Роль: Руководитель/)).toBeTruthy();
     expect(screen.getByText("Операции сегодня")).toBeTruthy();
     expect(
       screen.getAllByText("Требуют внимания").length
@@ -122,21 +123,21 @@ describe("HOME-01 dashboard read-model", () => {
     expect(screen.queryByText("42 800")).toBeNull();
   });
 
-  it("мапит summary на KPI (сумма счётчиков) и список внимания", async () => {
+  it("attention KPI не включает codesNotApplied; коды только на отдельной карточке", async () => {
     mockApis(POPULATED_SUMMARY);
     render(
       <MemoryRouter>
         <DashboardPage />
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.getByText("53")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("10")).toBeTruthy());
     expect(screen.getByText("7 критичных")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
     expect(screen.getByText("Интеграционные исключения")).toBeTruthy();
     expect(screen.getByText("ДТ ожидают оформления")).toBeTruthy();
     expect(screen.getByText("Заказы с дедлайном ≤ 7 дней")).toBeTruthy();
-    expect(screen.getByText("Открытые агрегаты")).toBeTruthy();
-    expect(screen.getByText("Коды без нанесения")).toBeTruthy();
+    expect(screen.queryByText("Открытые агрегаты")).toBeNull();
+    expect(screen.queryByText("Коды без нанесения")).toBeNull();
     expect(screen.getAllByText("SLA").length).toBeGreaterThanOrEqual(3);
   });
 
@@ -197,6 +198,17 @@ describe("HOME-01 dashboard read-model", () => {
     expect(screen.getAllByText("Мок (dev)").length).toBeGreaterThan(0);
     expect(screen.getByText("Ошибки: 1")).toBeTruthy();
     expect(screen.getByText("Подключено")).toBeTruthy();
+  });
+
+  it("рабочая динамика: chart-grid placeholder «Нет данных»", async () => {
+    mockApis(EMPTY_SUMMARY);
+    const { container } = render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText("Нет данных")).toBeTruthy());
+    expect(container.querySelector(".chart")).toBeTruthy();
   });
 
   it("быстрые переходы HOME-01", async () => {

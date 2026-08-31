@@ -933,6 +933,41 @@ textarea:focus {
 }
 
 /* ---------- HOME-01 dashboard ---------- */
+.home-crumb {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.home-panel {
+  background: #f7f9fc;
+  border: 1px solid #edf1f5;
+  border-radius: var(--r);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.chart {
+  height: 230px;
+  background:
+    linear-gradient(to top, #f1f5f8 1px, transparent 1px),
+    linear-gradient(to right, #f1f5f8 1px, transparent 1px);
+  background-size: 44px 44px;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.home-dynamics-chart {
+  display: grid;
+  place-items: center;
+}
+.home-dynamics-empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 8px 14px;
+  border-radius: 999px;
+}
 .home-kpis {
   margin-top: 0;
 }
@@ -978,17 +1013,6 @@ textarea:focus {
   font-size: 12px;
   margin-top: 8px;
 }
-.home-dynamics-placeholder {
-  min-height: 220px;
-  border: 1px dashed var(--line);
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  padding: 24px;
-  color: var(--muted);
-  background: #fbfdff;
-}
 .home-attention-item {
   display: flex;
   align-items: center;
@@ -1011,7 +1035,7 @@ textarea:focus {
 }
 .home-integration-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -1080,6 +1104,9 @@ textarea:focus {
   color: var(--text);
   font-weight: 750;
   font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .home-empty-state {
   margin-bottom: 15px;
@@ -1168,6 +1195,12 @@ textarea:focus {
   .kpis {
     grid-template-columns: repeat(3, 1fr);
   }
+  .home-integration-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .home-quick-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .process {
     grid-template-columns: repeat(4, 1fr);
   }
@@ -1208,6 +1241,12 @@ textarea:focus {
   .four,
   .two {
     grid-template-columns: 1fr 1fr;
+  }
+  .home-integration-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .home-quick-links {
+    grid-template-columns: 1fr;
   }
   .process {
     grid-template-columns: repeat(2, 1fr);
