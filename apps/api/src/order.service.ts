@@ -8,21 +8,10 @@ import {
 import { PrismaService } from "./prisma.service";
 import { BillingService } from "./billing.service";
 import { productGroupOf } from "@markflow/shared";
+import type { CreateOrderDto } from "./order/order.dto";
 
 // ORD-026: машина заказа до Queued в этом тикете.
-// Draft → Validating → Funds Reserved → Queued (Sent/Processing/Completed — тикет 03).
 const QUEUEABLE = ["DRAFT", "VALIDATING", "FUNDS_RESERVED", "QUEUED"] as const;
-
-interface CreateOrderInput {
-  cardId: string;
-  gtin: string;
-  places: number;
-  unitsPerPlace: number;
-  quantity?: number;
-  cisType?: string;
-  serialNumberType?: string;
-  businessPlaceId?: number; // C-04: площадка нанесения (int32), источник для utilisation
-}
 
 @Injectable()
 export class OrderService {
@@ -42,11 +31,7 @@ export class OrderService {
     return order;
   }
 
-  async create(
-    tenantId: string,
-    idempotencyKey: string,
-    body: CreateOrderInput
-  ) {
+  async create(tenantId: string, idempotencyKey: string, body: CreateOrderDto) {
     if (!idempotencyKey)
       throw new BadRequestException("Idempotency-Key header required");
     // контрактные ограничения (ADR-024): cisType=UNIT, serialNumberType=OPERATOR, isPaid=true
@@ -151,6 +136,7 @@ export class OrderService {
         });
         await tx.orderLine.create({
           data: {
+            tenantId,
             orderId: created.id,
             cardId: card.id,
             gtin: body.gtin,

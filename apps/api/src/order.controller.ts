@@ -14,6 +14,7 @@ import type { Request } from "express";
 import { OrderService } from "./order.service";
 import { Roles } from "./guards";
 import { READ_ROLES } from "./guards";
+import type { CreateOrderDto } from "./order/order.dto";
 
 function tenantOf(req: Request): string {
   const tenantId = (req as unknown as { tenantId: string | null }).tenantId;
@@ -32,17 +33,7 @@ export class OrderController {
   async create(
     @Req() req: Request,
     @Headers("idempotency-key") idempotencyKey: string | undefined,
-    @Body()
-    body: {
-      cardId: string;
-      gtin: string;
-      places: number;
-      unitsPerPlace: number;
-      quantity?: number;
-      cisType?: string;
-      serialNumberType?: string;
-      businessPlaceId?: number; // C-04: площадка нанесения (int32)
-    }
+    @Body() body: CreateOrderDto
   ) {
     return this.orders.create(tenantOf(req), idempotencyKey ?? "", body);
   }
