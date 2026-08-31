@@ -16,7 +16,7 @@
 - [x] `utilisation-form.tsx` routed at `/operations/utilisation`; link from journal
 - [x] Honest tenant-isolation AT: `apps/api/test/ops-journal-tenant-isolation.spec.ts`
 - [ ] Full OPS-01…29 (create wizard, DT, act of acceptance AT-14, bulk, aggregation-from-journal) — out of slice
-- [ ] Draft PR `feature/ops-journal-slice` → `chore/cursor-agent-factory` — do not merge
+- [x] Draft PR `feature/ops-journal-slice` → `chore/cursor-agent-factory` — https://github.com/baukaredteam/MarkSolutions/pull/9 opened, **do not merge**
 
 ## Статус: done (2026-08-31)
 
