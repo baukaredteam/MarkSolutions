@@ -2,6 +2,13 @@
 
 Цикл: после любой правки пользователя — одна запись сюда. Коротко: что сломалось / что поправили / как не повторять.
 
+## 2026-08-31 — UI canon is the 16-module MARK FLOW mockup
+
+- Visual contract = **manager 16-module MARK FLOW**, не старый v4-прототип (23 экрана, grouped nav).
+- Канон: `docs/source/MARK_FLOW_16_modules_exact_layout_v2.html` (`openM(0)`…`openM(15)`, HOME-01), `docs/source/MarkSolutions_Detailed_Mockups_Final (1).md`, `docs/source/MarkSolutions_Detailed_Mockups_v2.html`, `docs/source/MARK_FLOW_Главная_финальная_v3.md`.
+- Архив (не вести новый UI): `docs/ui-reference.html` + `docs/UI-SPEC.md` (v4, 2026-08-11).
+- PR #4 уже выровнял `apps/web` nav на 16-модульный канон.
+
 ## 2026-08-31 — Factory review round (A → B+C → D)
 
 - Оркестрация: **A** (Architect, docs-only gap matrix) → **B+C** параллельно (UI-Shell vs Catalog-Orders, без пересечения `apps/`) → **D** (MS-Reviewer: комментарии, без merge). Harith мержит, не ревьюер.

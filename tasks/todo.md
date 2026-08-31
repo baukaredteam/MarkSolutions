@@ -1,10 +1,11 @@
 # Factory setup — Cursor Ultra
 
-## Open factory PRs (2026-08-31, not merged)
+## Factory PRs (2026-08-31)
 
-- [ ] PR #3 Architect — `docs/agents/module-gap-matrix.md` — **open / not merged**. MS-Reviewer: ready to merge (docs-only). Harith merges.
-- [ ] PR #4 UI-Shell — `feature/ui-shell-16-modules` — **open / not merged**. MS-Reviewer: ready to merge (web-only, no fake API). Harith merges.
-- [ ] PR #5 Catalog-Orders — `feature/catalog-orders-skeleton` — **open / not merged**. MS-Reviewer: **not ready** — fix-tnved mutate AT is false-green (out-of-list ТНВЭД). Harith merges after AT fix.
+- [x] PR #3 Architect — `docs/agents/module-gap-matrix.md` — **squash-merged** into `chore/cursor-agent-factory`.
+- [x] PR #4 UI-Shell — `feature/ui-shell-16-modules` — **squash-merged** into `chore/cursor-agent-factory`.
+- [x] PR #5 Catalog-Orders — `feature/catalog-orders-skeleton` — **squash-merged** into `chore/cursor-agent-factory`.
+- [ ] PR #6 MS-Reviewer docs close-out — **open / remaining**. `tasks/*` + SUPERSEDED banner on `docs/UI-SPEC.md`. Harith merges.
 
 ## Статус: done (2026-08-31)
 
