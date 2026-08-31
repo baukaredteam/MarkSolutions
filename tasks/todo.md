@@ -7,12 +7,16 @@
 - [x] PR #5 Catalog-Orders — `feature/catalog-orders-skeleton` — **squash-merged** into `chore/cursor-agent-factory`.
 - [x] PR #6 MS-Reviewer docs close-out — **squash-merged** into `chore/cursor-agent-factory`.
 - [x] PR #7 HOME-01 + dark navy sidebar — **squash-merged** into `chore/cursor-agent-factory`.
+- [x] PR #8 TASK minimal — **squash-merged** into `chore/cursor-agent-factory` (sha 754970f).
 
-## TASK minimal (2026-08-31)
+## OPS journal slice (2026-08-31)
 
-- [x] Prisma `Task` + tenant isolation AT + list/create from Outbox FAILED / UtilisationAlert
-- [x] `/tasks` real page (not StubPage); HOME «Требуют внимания» = `openTasks`
-- [x] PR `feature/tasks-minimal` → `chore/cursor-agent-factory` — **https://github.com/baukaredteam/MarkSolutions/pull/8 opened, not merged**
+- [x] `/operations` — real journal (reuse `docs.tsx`), not StubPage; `/documents` same page (no second journal)
+- [x] `GET /operations` alias of tenant-scoped `GET /documents` (import + withdrawal + utilisation)
+- [x] `utilisation-form.tsx` routed at `/operations/utilisation`; link from journal
+- [x] Honest tenant-isolation AT: `apps/api/test/ops-journal-tenant-isolation.spec.ts`
+- [ ] Full OPS-01…29 (create wizard, DT, act of acceptance AT-14, bulk, aggregation-from-journal) — out of slice
+- [ ] Draft PR `feature/ops-journal-slice` → `chore/cursor-agent-factory` — do not merge
 
 ## Статус: done (2026-08-31)
 

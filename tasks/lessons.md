@@ -2,6 +2,12 @@
 
 Цикл: после любой правки пользователя — одна запись сюда. Коротко: что сломалось / что поправили / как не повторять.
 
+## 2026-08-31 — OPS journal already existed under /documents
+
+- Gap matrix row 8 said `/operations` = StubPage. On factory after UI-shell/HOME it was a **redirect** to `/documents`; `docs.tsx` already listed import + withdrawal + utilisation via `GET /documents`. Fold into `/operations` (same component), do not duplicate two journals.
+- Isolation AT must seed Prisma rows for **all three** types and assert tenant B list does not contain tenant A ids. Existing `documents.spec.ts` GET only checks types for one tenant.
+- Do not add mutating ИС МПТ/STAGE for a journal slice: reuse `document.service.list` + existing utilisation POST. Wire `utilisation-form.tsx` as a route wrapper, do not rebuild the form.
+
 ## 2026-08-31 — TASK minimal: KPI source ≠ HOME-01 composite
 
 - HOME-01 KPI «Требуют внимания» был суммой exceptions+ДТ+дедлайн+карточки без GTIN. TASK slice меняет **только число KPI** на `openTasks` (проекция Outbox FAILED + UtilisationAlert). Коды без нанесения остаются на карточке «Кодов в работе».

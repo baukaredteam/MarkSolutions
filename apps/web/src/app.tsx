@@ -15,6 +15,7 @@ import { OrdersPage } from "./pages/orders";
 import { VaultPage } from "./pages/vault";
 import { LabelsPage } from "./pages/labels";
 import { DocumentsPage } from "./pages/docs";
+import { UtilisationFormPage } from "./pages/utilisation-form";
 import { BalancePage } from "./pages/balance";
 import { OperatorPage } from "./pages/operator";
 import { AuditPage } from "./pages/audit";
@@ -110,9 +111,10 @@ export function AppRoutes() {
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/operations" element={<DocumentsPage />} />
         <Route
-          path="/operations"
-          element={<Navigate to="/documents" replace />}
+          path="/operations/utilisation"
+          element={<UtilisationFormPage />}
         />
         {MODULE_STUB_IDS.map((id) => (
           <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />

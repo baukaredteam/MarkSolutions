@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { useToast } from "../toast";
 
@@ -129,5 +130,31 @@ export function UtilisationForm({ onSettled }: { onSettled?: () => void }) {
         Зарегистрировать нанесение
       </button>
     </fieldset>
+  );
+}
+
+// Тонкая страница-обёртка: существующая форма в 16-module shell, без новых STAGE-вызовов.
+export function UtilisationFormPage() {
+  const nav = useNavigate();
+  return (
+    <section>
+      <div className="page-head">
+        <div>
+          <h1>Отчёт о нанесении</h1>
+          <div className="sub">
+            Сведения о нанесении кодов. Повторный POST с тем же ключом — статус,
+            не новый вызов ИС МПТ.
+          </div>
+        </div>
+        <div className="page-actions">
+          <button className="btn btn-light" onClick={() => nav("/operations")}>
+            К журналу
+          </button>
+        </div>
+      </div>
+      <div className="card">
+        <UtilisationForm onSettled={() => nav("/operations")} />
+      </div>
+    </section>
   );
 }
