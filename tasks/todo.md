@@ -12,7 +12,7 @@
 
 - [x] Prisma `Task` + tenant isolation AT + list/create from Outbox FAILED / UtilisationAlert
 - [x] `/tasks` real page (not StubPage); HOME «Требуют внимания» = `openTasks`
-- [ ] PR `feature/tasks-minimal` → `chore/cursor-agent-factory` — **opened, not merged**
+- [x] PR `feature/tasks-minimal` → `chore/cursor-agent-factory` — **https://github.com/baukaredteam/MarkSolutions/pull/8 opened, not merged**
 
 ## Статус: done (2026-08-31)
 
