@@ -4,7 +4,15 @@ import { ToastProvider } from "./toast";
 import { sessionStore } from "./session";
 import { CommandPalette } from "./command-palette";
 import { TourTip } from "./tour";
-import { PAGES, NAV_GROUPS, SIDE_BOTTOM, type Role } from "./roles";
+import {
+  MODULE_ICONS,
+  MODULE_NAV_IDS,
+  PAGES,
+  NAV_GROUPS,
+  SIDE_BOTTOM,
+  type ModuleNavId,
+  type Role,
+} from "./roles";
 import { api } from "./api";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -132,7 +140,7 @@ export function Layout() {
     if (id === "products") return counts.products;
     if (id === "orders") return counts.orders;
     if (id === "documents") return counts.documents;
-    if (id === "exceptions") return counts.exceptions;
+    if (id === "tasks") return counts.exceptions;
     return null;
   };
 
@@ -159,11 +167,14 @@ export function Layout() {
             </div>
           </div>
           {NAV_GROUPS.map((g) => (
-            <div key={g.label}>
-              <div className="nav-label">{g.label}</div>
+            <div key={g.label || "modules"}>
+              {g.label ? <div className="nav-label">{g.label}</div> : null}
               {g.ids.filter(navId).map((id) => {
                 const meta = PAGES.find((p) => p.id === id)!;
                 const c = countFor(id);
+                const icon = MODULE_NAV_IDS.includes(id as ModuleNavId)
+                  ? MODULE_ICONS[id as ModuleNavId]
+                  : "•";
                 return (
                   <NavLink
                     key={id}
@@ -173,31 +184,7 @@ export function Layout() {
                     }
                     onClick={() => setSidebarOpen(false)}
                   >
-                    <span className="nav-icon">
-                      {[
-                        "dashboard",
-                        "codecheck",
-                        "products",
-                        "orders",
-                        "vault",
-                        "labels",
-                        "operations",
-                        "warehouse",
-                        "documents",
-                        "reports",
-                        "billing",
-                        "integrations",
-                        "support",
-                        "tasks",
-                        "production",
-                        "partners",
-                        "processes",
-                        "exceptions",
-                        "health",
-                      ].includes(id)
-                        ? (NAV_ICONS[id] ?? "•")
-                        : "•"}
-                    </span>
+                    <span className="nav-icon">{icon}</span>
                     {meta.title}
                     {c !== null && c > 0 && (
                       <span className="nav-count">{c}</span>
@@ -243,7 +230,7 @@ export function Layout() {
                 placeholder="Поиск товара, GTIN, кода, документа или операции…"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    nav("/codecheck");
+                    nav("/search");
                   }
                 }}
               />
@@ -267,10 +254,11 @@ export function Layout() {
               >
                 ⌘
               </button>
-              <button className="icon-btn" onClick={() => nav("/exceptions")}>
-                ⚠
-              </button>
-              <button className="icon-btn" onClick={() => nav("/tasks")}>
+              <button
+                className="icon-btn"
+                title="Центр задач и уведомлений"
+                onClick={() => nav("/tasks")}
+              >
                 🔔
               </button>
               <div className="profile">
@@ -300,25 +288,3 @@ export function Layout() {
     </ToastProvider>
   );
 }
-
-const NAV_ICONS: Record<string, string> = {
-  dashboard: "⌂",
-  codecheck: "⌗",
-  products: "▦",
-  orders: "◫",
-  vault: "▣",
-  labels: "▤",
-  operations: "⇄",
-  warehouse: "▥",
-  documents: "▧",
-  reports: "◩",
-  billing: "₸",
-  integrations: "⌁",
-  support: "?",
-  tasks: "✓",
-  production: "⚙",
-  partners: "♢",
-  processes: "⤧",
-  exceptions: "⚠",
-  health: "♥",
-};

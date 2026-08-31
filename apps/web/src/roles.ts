@@ -1,4 +1,4 @@
-// T0-RBAC: матрица ролей × страниц (CONTEXT.md, UI-SPEC §7).
+// T0-RBAC: матрица ролей × страниц (CONTEXT.md).
 // operator — глобальная модерация (платформа), клиентские роли из JWT roles[].
 export type Role =
   | "admin"
@@ -15,42 +15,107 @@ export interface PageMeta {
   roles: Role[];
 }
 
-// Все 23 страницы UI-SPEC §4. Роли: какой роли доступен пункт меню.
+const CLIENT: Role[] = [
+  "admin",
+  "manager",
+  "accountant",
+  "marking",
+  "warehouse",
+  "viewer",
+];
+
+// 16 канонических модулей MARK FLOW (Developer Quick Start + layout openM(0)…openM(15)).
+export const MODULE_NAV_IDS = [
+  "dashboard",
+  "tasks",
+  "search",
+  "products",
+  "orders",
+  "labels",
+  "aggregation",
+  "documents",
+  "shipments",
+  "production",
+  "warehouse",
+  "billing",
+  "reports",
+  "ai",
+  "knowledge",
+  "settings",
+] as const;
+
+export type ModuleNavId = (typeof MODULE_NAV_IDS)[number];
+
+export const MODULE_ICONS: Record<ModuleNavId, string> = {
+  dashboard: "⌂",
+  tasks: "✓",
+  search: "⌕",
+  products: "▦",
+  orders: "▤",
+  labels: "▧",
+  aggregation: "▥",
+  documents: "▣",
+  shipments: "⇄",
+  production: "⚙",
+  warehouse: "▱",
+  billing: "₸",
+  reports: "▥",
+  ai: "✦",
+  knowledge: "?",
+  settings: "⚙",
+};
+
+// Все страницы приложения: 16 модулей + вторичные маршруты (vault, codecheck, …).
 export const PAGES: PageMeta[] = [
   {
     id: "dashboard",
     title: "Главная",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
+    roles: CLIENT,
   },
   {
-    id: "codecheck",
-    title: "Информация о коде",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
+    id: "tasks",
+    title: "Центр задач и уведомлений",
+    roles: CLIENT,
+  },
+  {
+    id: "search",
+    title: "Глобальный поиск",
+    roles: CLIENT,
   },
   {
     id: "products",
-    title: "Товары",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
+    title: "Каталог товаров",
+    roles: CLIENT,
   },
   {
     id: "orders",
-    title: "Заказы кодов",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
-  },
-  {
-    id: "vault",
-    title: "Code Vault",
-    roles: ["admin", "manager", "accountant", "marking"],
+    title: "Заказ кодов",
+    roles: CLIENT,
   },
   {
     id: "labels",
-    title: "Этикетки",
+    title: "Печать и этикетки",
     roles: ["admin", "manager", "marking"],
   },
   {
-    id: "operations",
-    title: "Операции",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse"],
+    id: "aggregation",
+    title: "Агрегация",
+    roles: ["admin", "manager", "marking", "warehouse"],
+  },
+  {
+    id: "documents",
+    title: "Операции и документы",
+    roles: CLIENT,
+  },
+  {
+    id: "shipments",
+    title: "Поставки",
+    roles: ["admin", "manager", "marking", "warehouse"],
+  },
+  {
+    id: "production",
+    title: "Производство",
+    roles: ["admin", "manager", "marking", "warehouse"],
   },
   {
     id: "warehouse",
@@ -58,19 +123,40 @@ export const PAGES: PageMeta[] = [
     roles: ["admin", "manager", "marking", "warehouse"],
   },
   {
-    id: "documents",
-    title: "Документы",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
-  },
-  {
-    id: "reports",
-    title: "Отчёты",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
-  },
-  {
     id: "billing",
     title: "Биллинг",
     roles: ["admin", "manager", "accountant"],
+  },
+  {
+    id: "reports",
+    title: "Отчёты и аналитика",
+    roles: CLIENT,
+  },
+  {
+    id: "ai",
+    title: "ИИ помощник",
+    roles: CLIENT,
+  },
+  {
+    id: "knowledge",
+    title: "База знаний",
+    roles: CLIENT,
+  },
+  {
+    id: "settings",
+    title: "Настройки",
+    roles: ["admin", "manager"],
+  },
+  // Вторичные маршруты (не в левом меню 16 модулей).
+  {
+    id: "codecheck",
+    title: "Информация о коде",
+    roles: CLIENT,
+  },
+  {
+    id: "vault",
+    title: "Code Vault",
+    roles: ["admin", "manager", "accountant", "marking"],
   },
   {
     id: "integrations",
@@ -78,30 +164,35 @@ export const PAGES: PageMeta[] = [
     roles: ["admin", "manager", "marking"],
   },
   {
-    id: "support",
-    title: "Поддержка",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
+    id: "operator",
+    title: "Кабинет оператора",
+    roles: ["operator"],
   },
-  {
-    id: "organization",
-    title: "Организация и доступ",
-    roles: ["admin", "manager"],
-  },
-  { id: "operator", title: "Кабинет оператора", roles: ["operator"] },
   {
     id: "audit",
     title: "Журнал аудита",
     roles: ["admin", "manager", "accountant", "marking"],
   },
   {
-    id: "tasks",
-    title: "Центр задач",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
+    id: "productDetail",
+    title: "Карточка товара",
+    roles: CLIENT,
+  },
+  // Legacy UI-SPEC v4 (маршруты сохранены, не в каноническом меню).
+  {
+    id: "operations",
+    title: "Операции",
+    roles: ["admin", "manager", "accountant", "marking", "warehouse"],
   },
   {
-    id: "production",
-    title: "Производство",
-    roles: ["admin", "manager", "marking", "warehouse"],
+    id: "support",
+    title: "Поддержка",
+    roles: CLIENT,
+  },
+  {
+    id: "organization",
+    title: "Организация и доступ",
+    roles: ["admin", "manager"],
   },
   {
     id: "partners",
@@ -116,55 +207,23 @@ export const PAGES: PageMeta[] = [
   {
     id: "exceptions",
     title: "Центр исключений",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
+    roles: CLIENT,
   },
   {
     id: "health",
     title: "Состояние платформы",
     roles: ["admin", "manager", "marking"],
   },
-  {
-    id: "productDetail",
-    title: "Карточка товара",
-    roles: ["admin", "manager", "accountant", "marking", "warehouse", "viewer"],
-  },
 ];
 
-// Группы sidebar (UI-SPEC §3.1) — порядок и label
+// Левое меню: плоский список 16 модулей (MARK_FLOW_16_modules_exact_layout_v2).
 export const NAV_GROUPS: { label: string; ids: string[] }[] = [
-  { label: "Рабочее пространство", ids: ["dashboard", "codecheck"] },
-  {
-    label: "Основные процессы",
-    ids: [
-      "products",
-      "orders",
-      "vault",
-      "labels",
-      "operations",
-      "warehouse",
-      "documents",
-    ],
-  },
-  {
-    label: "Управление работой",
-    ids: ["tasks", "production", "partners", "processes"],
-  },
-  {
-    label: "Контроль и сервис",
-    ids: [
-      "exceptions",
-      "health",
-      "reports",
-      "billing",
-      "integrations",
-      "support",
-    ],
-  },
+  { label: "", ids: [...MODULE_NAV_IDS] },
 ];
 
-export const SIDE_BOTTOM = ["organization", "operator", "audit"];
+export const SIDE_BOTTOM = ["vault", "integrations", "audit", "operator"];
 
-// Default-route по роли (UI-SPEC §3.2). admin всегда → dashboard;
+// Default-route по роли. admin всегда → dashboard;
 // operator → оператор-кабинет только если нет admin (глобальная роль).
 export function defaultRoute(roles: Role[]): string {
   if (roles.includes("admin")) return "/dashboard";
@@ -179,7 +238,6 @@ export function defaultRoute(roles: Role[]): string {
 export function canAccess(roles: Role[], pageId: string): boolean {
   const meta = PAGES.find((p) => p.id === pageId);
   if (!meta) return false;
-  // admin/operator имеют полный доступ (все клиентские + платформа)
   if (roles.includes("admin")) return true;
   return meta.roles.some((r) => roles.includes(r));
 }

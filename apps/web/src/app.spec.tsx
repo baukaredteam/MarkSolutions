@@ -11,20 +11,24 @@ beforeEach(() => {
   sessionStore.clear();
 });
 
-// Заглушенные страницы рендерят h1 (требуют сессию — RequireAuth)
 const stubRoutes = [
   ["/codecheck", "Информация о коде"],
-  ["/operations", "Операции"],
+  ["/search", "Глобальный поиск"],
+  ["/aggregation", "Агрегация"],
+  ["/shipments", "Поставки"],
   ["/warehouse", "Склад и ТСД"],
-  ["/reports", "Отчёты"],
+  ["/reports", "Отчёты и аналитика"],
   ["/support", "Поддержка"],
   ["/organization", "Организация и доступ"],
-  ["/tasks", "Центр задач"],
+  ["/tasks", "Центр задач и уведомлений"],
   ["/production", "Производство"],
   ["/partners", "Контрагенты"],
   ["/processes", "Конструктор процессов"],
   ["/exceptions", "Центр исключений"],
   ["/health", "Состояние платформы"],
+  ["/ai", "ИИ помощник"],
+  ["/knowledge", "База знаний"],
+  ["/settings", "Настройки"],
 ];
 
 describe("routing: LoginGate + RequireAuth", () => {
@@ -66,8 +70,25 @@ describe("routing: LoginGate + RequireAuth", () => {
     expect(screen.getByRole("heading", { name: "Главная" })).toBeTruthy();
   });
 
+  it("/operations → редирект на /documents", () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    render(
+      <MemoryRouter initialEntries={["/operations"]}>
+        <AppRoutes />
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByRole("heading", { name: "Операции и документы" })
+    ).toBeTruthy();
+  });
+
   stubRoutes.forEach(([path, heading]) => {
-    it(`renders stub ${path} (авторизован)`, () => {
+    it(`renders ${path} (авторизован)`, () => {
       sessionStore.set({
         tenantId: "t",
         token: "j",

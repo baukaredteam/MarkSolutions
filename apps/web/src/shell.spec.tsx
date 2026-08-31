@@ -18,6 +18,38 @@ beforeEach(() => {
 });
 
 describe("shell: Ctrl+K + role-switch + EntityList v2", () => {
+  it("левое меню: 16 канонических модулей MARK FLOW", () => {
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <AppRoutes />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole("link", { name: /Главная/ })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Центр задач и уведомлений/ })
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Глобальный поиск/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Каталог товаров/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Заказ кодов/ })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Печать и этикетки/ })
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Агрегация/ })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Операции и документы/ })
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Поставки/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Производство/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Склад и ТСД/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Биллинг/ })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Отчёты и аналитика/ })
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /ИИ помощник/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /База знаний/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Настройки/ })).toBeTruthy();
+  });
+
   it("Ctrl+K открывает command palette; клик по команде навигирует", async () => {
     render(
       <MemoryRouter initialEntries={["/dashboard"]}>
@@ -28,7 +60,7 @@ describe("shell: Ctrl+K + role-switch + EntityList v2", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Перейти к разделу/)).toBeTruthy();
     });
-    fireEvent.click(screen.getByText("Каталог товаров"));
+    fireEvent.click(screen.getByRole("button", { name: /Каталог товаров/ }));
     // после навигации палитра закрыта
     await waitFor(() => {
       expect(screen.queryByPlaceholderText(/Перейти к разделу/)).toBeNull();
