@@ -29,20 +29,15 @@ function StubPage({ id }: { id: string }) {
       <div className="page-head">
         <div>
           <h1>{meta?.title ?? id}</h1>
-          <div className="sub">
-            Экран из UI-SPEC v4 (docs/ui-reference.html).
-          </div>
+          <div className="sub">MARK FLOW · UI shell (16 модулей)</div>
         </div>
       </div>
       <div className="stub">
-        <h2>Экран «{meta?.title ?? id}» ещё не пересобран</h2>
+        <h2>Модуль «{meta?.title ?? id}» — заглушка</h2>
         <p>
-          Реализуется в рамках тикета фронт-пересборки. На данном этапе это
-          заглушка.
-          <span className="badge b-violet">Эволюция</span>
-        </p>
-        <p className="sub">
-          Данные будут подключаться из реального API после ревью спеки.
+          Экран собран в навигационном shell по ТЗ. Бизнес-логика и данные
+          подключатся отдельным тикетом; здесь нет имитации backend или ИС МПТ.
+          <span className="badge b-violet">Stub</span>
         </p>
       </div>
     </section>
@@ -70,14 +65,24 @@ function RequireAuth() {
   return <Layout />;
 }
 
-const STUB_IDS = [
-  "operations",
+// 16 модулей без реализации (stub).
+const MODULE_STUB_IDS = [
+  "tasks",
+  "search",
+  "aggregation",
+  "shipments",
+  "production",
   "warehouse",
   "reports",
+  "ai",
+  "knowledge",
+  "settings",
+];
+
+// Legacy UI-SPEC v4 stubs (маршруты сохранены, не в каноническом меню).
+const LEGACY_STUB_IDS = [
   "support",
   "organization",
-  "tasks",
-  "production",
   "partners",
   "processes",
   "exceptions",
@@ -104,7 +109,14 @@ export function AppRoutes() {
         <Route path="/operator" element={<OperatorPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
-        {STUB_IDS.map((id) => (
+        <Route
+          path="/operations"
+          element={<Navigate to="/documents" replace />}
+        />
+        {MODULE_STUB_IDS.map((id) => (
+          <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />
+        ))}
+        {LEGACY_STUB_IDS.map((id) => (
           <Route key={id} path={`/${id}`} element={<StubPage id={id} />} />
         ))}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

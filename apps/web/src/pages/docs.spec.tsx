@@ -71,7 +71,11 @@ describe("documents page (UI-06b)", () => {
       return { items: [] };
     });
     render(<DocumentsPage />);
-    await waitFor(() => expect(screen.getByText("Документы")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
     // KPI-4: SUCCESS×2, IN_PROCESS×1, ERROR×1, SUBMITTED×0
     expect(screen.getAllByText("1")).toHaveLength(2);
     expect(screen.getAllByText("2")).toHaveLength(1);
@@ -101,7 +105,11 @@ describe("documents page (UI-06b)", () => {
     });
     const post = vi.spyOn(api, "post").mockResolvedValue({ status: "SUCCESS" });
     render(<DocumentsPage />);
-    await waitFor(() => expect(screen.getByText("Документы")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Оформить ввоз" }));
     await waitFor(() =>
       expect(screen.getByText("Оформление ввоза (Импорт)")).toBeTruthy()
@@ -140,7 +148,11 @@ describe("documents page (UI-06b)", () => {
     });
     const post = vi.spyOn(api, "post").mockResolvedValue({ status: "SUCCESS" });
     render(<DocumentsPage />);
-    await waitFor(() => expect(screen.getByText("Документы")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Оформить ввоз" }));
     await waitFor(() =>
       expect(screen.getByText("Оформление ввоза (Импорт)")).toBeTruthy()
@@ -165,7 +177,11 @@ describe("documents page (UI-06b)", () => {
     });
     const post = vi.spyOn(api, "post").mockResolvedValue({ status: "SUCCESS" });
     render(<DocumentsPage />);
-    await waitFor(() => expect(screen.getByText("Документы")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
     fireEvent.click(screen.getByRole("button", { name: "Вывод/списание" }));
     await waitFor(() =>
       expect(screen.getByText("Вывод из оборота / списание")).toBeTruthy()
@@ -209,7 +225,11 @@ describe("documents page (UI-06b)", () => {
       return { items: [] };
     });
     render(<DocumentsPage />);
-    await waitFor(() => expect(screen.getByText("Документы")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
     expect(screen.queryByRole("button", { name: "Оформить ввоз" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Вывод/списание" })).toBeNull();
   });

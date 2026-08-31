@@ -255,7 +255,7 @@ export function DocumentsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1>Документы</h1>
+          <h1>Операции и документы</h1>
           <div className="sub">
             Документы движения, подтверждения и сверка внешних статусов
           </div>
