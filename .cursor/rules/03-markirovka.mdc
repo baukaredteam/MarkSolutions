@@ -1,0 +1,17 @@
+---
+description: ИС МПТ / маркировка РК — CONTRACT-IS-MPT, tenant_id, маска КМ, BigInt. Attach when touching MPT, codes, orders, billing, documents.
+alwaysApply: false
+---
+
+# Маркировка / ИС МПТ
+
+- API только из `docs/CONTRACT-IS-MPT.md` и ТЗ (`docs/source/`). Расхождение → в пользу ТЗ. Не выдумывать лимиты/поля.
+- STAGE = `test.markirovka.kz`. Изменяющие вызовы (заказ, документ, печать, резерв, списание) — только утверждённый кейс + явное человеческое подтверждение.
+- `tenant_id` во всех бизнес-таблицах; запрос без tenant = throw; негативный тест в модуле.
+- Деньги: decimal/BigInt минорные; float запрещён; баланс = сумма проводок.
+- Полные КМ не в логах/UI/APM — маска. Хранение envelope-шифрованием.
+- `documentBody` doc/* = base64(JSON, ключи A–Z); Accept обязателен (ловушка 406); идемпотентность mutating ops.
+- Статусы — машины ТЗ §8; внешний статус = `external_status`. Дедлайны Правил = `docs/RULES-MM.md`, не хардкод.
+- Timeout после mutating ИС МПТ = `UNKNOWN_RESULT → RECONCILIATION`. Повторный POST до сверки запрещён.
+- Внешние команды = command + outbox; только Gateway/worker зовёт ИС МПТ и вендоров.
+- Детали: skill `markirovka-integration`.
