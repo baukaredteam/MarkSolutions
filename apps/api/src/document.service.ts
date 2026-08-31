@@ -312,8 +312,10 @@ export class DocumentService {
     return { status: "SUBMITTED", documentId: doc.id };
   }
 
-  // GET /documents — EntityList (ADR-008) по всем типам (без SERVICE_ACT_EXPORT: тикет 05)
+  // GET /documents и GET /operations — EntityList (ADR-008) по всем типам
+  // (без SERVICE_ACT_EXPORT: тикет 05). Тот же агрегатор, tenant-scoped.
   async list(tenantId: string) {
+    if (!tenantId) throw new Error("tenant required");
     const [imports, withdrawals, utilisations] = await Promise.all([
       this.prisma.importDocument.findMany({
         where: { tenantId },

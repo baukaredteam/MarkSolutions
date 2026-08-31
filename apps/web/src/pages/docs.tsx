@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
@@ -30,7 +31,7 @@ interface CodeItem {
 const TYPE_LABEL: Record<string, string> = {
   IMPORT: "Ввод в оборот",
   WITHDRAWAL: "Вывод из оборота",
-  UTILISATION: "Списание",
+  UTILISATION: "Нанесение",
 };
 
 const WITHDRAWAL_REASONS: [string, string][] = [
@@ -49,7 +50,7 @@ const WRITE_ROLES = ["admin", "manager", "marking"];
 // «Вывод/списание». Статусы — русские (UI-i18n).
 export function DocumentsPage() {
   const toast = useToast();
-  const [docs, setDocs] = useState<DocRow[]>([]);
+  const [docs, setDocs] = useState<DocRow[] | null>(null);
   const [orders, setOrders] = useState<OrderOption[]>([]);
   const [codes, setCodes] = useState<CodeItem[]>([]);
   const [showImport, setShowImport] = useState(false);
@@ -83,6 +84,7 @@ export function DocumentsPage() {
       if (!importOrderId && o.items.length > 0) setImportOrderId(o.items[0].id);
       if (!withOrderId && o.items.length > 0) setWithOrderId(o.items[0].id);
     } catch (e) {
+      setDocs([]);
       if (e instanceof ApiErrorResponse)
         toast.push(`${e.error.code}: ${e.error.message}`, "error");
       else if (e instanceof ApiUnavailable)
@@ -109,24 +111,26 @@ export function DocumentsPage() {
     loadCodes(withOrderId);
   }, [withOrderId]);
 
+  const rows = docs ?? [];
+  const isEmpty = docs !== null && docs.length === 0;
   const kpis = [
     {
       label: "Черновики",
-      value: docs.filter((d) => d.status === "SUBMITTED").length,
+      value: rows.filter((d) => d.status === "SUBMITTED").length,
     },
     {
       label: "Ожидают обработки",
-      value: docs.filter((d) =>
+      value: rows.filter((d) =>
         ["IN_PROCESS", "PARTIALLY_PROCESSED"].includes(d.status)
       ).length,
     },
     {
       label: "Ошибки",
-      value: docs.filter((d) => d.status === "ERROR").length,
+      value: rows.filter((d) => d.status === "ERROR").length,
     },
     {
       label: "Завершено",
-      value: docs.filter((d) => d.status === "SUCCESS").length,
+      value: rows.filter((d) => d.status === "SUCCESS").length,
     },
   ];
 
@@ -262,6 +266,9 @@ export function DocumentsPage() {
         </div>
         {canWrite && (
           <div className="page-actions">
+            <Link className="btn btn-light" to="/operations/utilisation">
+              Отчёт о нанесении
+            </Link>
             <button
               className="btn btn-light"
               onClick={() => setShowImport(true)}
@@ -278,28 +285,42 @@ export function DocumentsPage() {
         )}
       </div>
 
-      <div className="grid four">
-        {kpis.map((k) => (
-          <div className="card" key={k.label}>
-            <b>{k.value}</b>
-            <p className="sub">{k.label}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="card" style={{ marginTop: 15 }}>
-        <div className="toolbar">
-          <button className="btn btn-light" onClick={load}>
-            ↻ Обновить
-          </button>
+      {docs === null ? (
+        <p className="sub">Загрузка…</p>
+      ) : isEmpty ? (
+        <div className="card home-empty-state">
+          <h2>Операций пока нет</h2>
+          <p className="sub">
+            Создайте операцию вручную, импортируйте файл или перейдите из
+            производства, поставки, склада либо агрегации.
+          </p>
         </div>
-        <EntityList
-          columns={columns}
-          rows={docs}
-          rowKey={(r) => r.id}
-          emptyText="Нет документов"
-        />
-      </div>
+      ) : (
+        <>
+          <div className="grid four">
+            {kpis.map((k) => (
+              <div className="card" key={k.label}>
+                <b>{k.value}</b>
+                <p className="sub">{k.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="card" style={{ marginTop: 15 }}>
+            <div className="toolbar">
+              <button className="btn btn-light" onClick={load}>
+                ↻ Обновить
+              </button>
+            </div>
+            <EntityList
+              columns={columns}
+              rows={rows}
+              rowKey={(r) => r.id}
+              emptyText="Операций пока нет"
+            />
+          </div>
+        </>
+      )}
 
       {/* Мастер «Оформить ввоз» */}
       <div

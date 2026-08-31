@@ -70,7 +70,7 @@ describe("routing: LoginGate + RequireAuth", () => {
     expect(screen.getByRole("heading", { name: "Главная" })).toBeTruthy();
   });
 
-  it("/operations → редирект на /documents", () => {
+  it("/operations — журнал, не StubPage", () => {
     sessionStore.set({
       tenantId: "t",
       token: "j",
@@ -85,6 +85,25 @@ describe("routing: LoginGate + RequireAuth", () => {
     expect(
       screen.getByRole("heading", { name: "Операции и документы" })
     ).toBeTruthy();
+    expect(screen.queryByText(/заглушка/i)).toBeNull();
+  });
+
+  it("/operations/utilisation — существующая форма нанесения", () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    render(
+      <MemoryRouter initialEntries={["/operations/utilisation"]}>
+        <AppRoutes />
+      </MemoryRouter>
+    );
+    expect(
+      screen.getByRole("heading", { name: "Отчёт о нанесении" })
+    ).toBeTruthy();
+    expect(screen.queryByText(/заглушка/i)).toBeNull();
   });
 
   stubRoutes.forEach(([path, heading]) => {

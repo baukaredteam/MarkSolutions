@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { DocumentsPage } from "./docs";
 import { sessionStore } from "../session";
 import { api } from "../api";
@@ -56,6 +57,14 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+function renderDocs() {
+  return render(
+    <MemoryRouter>
+      <DocumentsPage />
+    </MemoryRouter>
+  );
+}
+
 describe("documents page (UI-06b)", () => {
   it("рендерит KPI-4 и таблицу документов (тип/статус/причина/дата)", async () => {
     sessionStore.set({
@@ -70,24 +79,23 @@ describe("documents page (UI-06b)", () => {
       if (path === "/codes/o1/codes") return CODES;
       return { items: [] };
     });
-    render(<DocumentsPage />);
+    renderDocs();
     await waitFor(() =>
-      expect(
-        screen.getByRole("heading", { name: "Операции и документы" })
-      ).toBeTruthy()
+      expect(screen.getAllByText("Ввод в оборот").length).toBeGreaterThan(0)
     );
+    expect(
+      screen.getByRole("heading", { name: "Операции и документы" })
+    ).toBeTruthy();
     // KPI-4: SUCCESS×2, IN_PROCESS×1, ERROR×1, SUBMITTED×0
     expect(screen.getAllByText("1")).toHaveLength(2);
     expect(screen.getAllByText("2")).toHaveLength(1);
     expect(screen.getByText("Ошибки")).toBeTruthy();
     expect(screen.getByText("Завершено")).toBeTruthy();
-    // тип-подписи + русские статусы
-    await waitFor(() => {
-      expect(screen.getAllByText("Ввод в оборот").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Завершён").length).toBeGreaterThan(0);
-      expect(screen.getByText("Ошибка")).toBeTruthy();
-      expect(screen.getByText("rejected")).toBeTruthy();
-    });
+    expect(screen.getAllByText("Нанесение").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Завершён").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ошибка")).toBeTruthy();
+    expect(screen.getByText("rejected")).toBeTruthy();
+    expect(screen.queryByText(/заглушка/i)).toBeNull();
   });
 
   it("мастер «Оформить ввоз»: ДТ {date,number} → POST /import → тост", async () => {
@@ -104,7 +112,7 @@ describe("documents page (UI-06b)", () => {
       return { items: [] };
     });
     const post = vi.spyOn(api, "post").mockResolvedValue({ status: "SUCCESS" });
-    render(<DocumentsPage />);
+    renderDocs();
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Операции и документы" })
@@ -147,7 +155,7 @@ describe("documents page (UI-06b)", () => {
       return { items: [] };
     });
     const post = vi.spyOn(api, "post").mockResolvedValue({ status: "SUCCESS" });
-    render(<DocumentsPage />);
+    renderDocs();
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Операции и документы" })
@@ -176,7 +184,7 @@ describe("documents page (UI-06b)", () => {
       return { items: [] };
     });
     const post = vi.spyOn(api, "post").mockResolvedValue({ status: "SUCCESS" });
-    render(<DocumentsPage />);
+    renderDocs();
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Операции и документы" })
@@ -224,7 +232,7 @@ describe("documents page (UI-06b)", () => {
       if (path === "/codes/o1/codes") return CODES;
       return { items: [] };
     });
-    render(<DocumentsPage />);
+    renderDocs();
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { name: "Операции и документы" })
@@ -232,5 +240,53 @@ describe("documents page (UI-06b)", () => {
     );
     expect(screen.queryByRole("button", { name: "Оформить ввоз" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Вывод/списание" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Отчёт о нанесении" })
+    ).toBeNull();
+  });
+
+  it("пустое состояние OPS-28: текст ТЗ, не StubPage, переход к нанесению", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    vi.spyOn(api, "get").mockImplementation(async (path: string) => {
+      if (path === "/documents") return { items: [] };
+      if (path === "/orders") return ORDERS;
+      return { items: [] };
+    });
+    function Loc() {
+      const loc = useLocation();
+      return <div data-testid="path">{loc.pathname}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/operations"]}>
+        <Loc />
+        <Routes>
+          <Route path="/operations" element={<DocumentsPage />} />
+          <Route
+            path="/operations/utilisation"
+            element={<div>форма нанесения</div>}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Операций пока нет")).toBeTruthy()
+    );
+    expect(
+      screen.getByText(
+        /Создайте операцию вручную, импортируйте файл или перейдите из производства/
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/заглушка/i)).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Отчёт о нанесении" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("path").textContent).toBe(
+        "/operations/utilisation"
+      )
+    );
   });
 });
