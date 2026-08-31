@@ -21,6 +21,7 @@ model Tenant {
   accounts Account[]
   ledgerEntries LedgerEntry[]
   orders Order[]
+  orderLines OrderLine[]
   mptOrders MptOrder[]
   codeVaults CodeVault[]
   vaultExports VaultExport[]
@@ -237,6 +238,8 @@ model Order {
 model OrderLine {
   id            String   @id @default(cuid())
   version       Int      @default(0)
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id])
   cardId        String
@@ -249,6 +252,7 @@ model OrderLine {
   serialNumberType String @default("OPERATOR")
   tariffId      String
   pricePerCodeKZT BigInt  // снимок тарифа, тиыны (смена тарифа заказ не меняет)
+  @@index([tenantId])
 }
 
 // Симулятор ИС МПТ (W3, ADR-005/024): state в БД, статус = f(now, createdAt, SIM_MPT_EMISSION_MS).

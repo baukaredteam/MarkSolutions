@@ -16,11 +16,11 @@ import {
 } from "./onboarding.controller";
 import { MockEcomAdapter, ECOM_ADAPTER } from "./ecom.adapter";
 import { TemplatesController } from "./templates.module";
-import {
-  CatalogController,
-  DemoController,
-  CatalogService,
-} from "./catalog.controller";
+import { CatalogModule } from "./catalog/catalog.module";
+import { OrderModule } from "./order/order.module";
+import { DatabaseModule } from "./database.module";
+import { BillingModule } from "./billing/billing.module";
+import { DemoController } from "./catalog.controller";
 import { ModerationController } from "./moderation.controller";
 import { ModerationService } from "./moderation.service";
 import { GtinResolver } from "./gtin-resolver";
@@ -40,9 +40,6 @@ import {
   STORAGE_ADAPTER,
 } from "./files.controller";
 import { BillingController } from "./billing.controller";
-import { BillingService } from "./billing.service";
-import { OrderController } from "./order.controller";
-import { OrderService } from "./order.service";
 import { VaultController } from "./vault.controller";
 import { VaultService } from "./vault.service";
 import { UtilisationController } from "./utilisation.controller";
@@ -168,6 +165,10 @@ export class AdminController {
       secret: process.env.JWT_SECRET ?? "dev-secret",
       signOptions: { expiresIn: "1h" },
     }),
+    CatalogModule,
+    OrderModule,
+    DatabaseModule,
+    BillingModule,
   ],
   controllers: [
     HealthController,
@@ -177,12 +178,10 @@ export class AdminController {
     OnboardingController,
     OperatorApprovalsController,
     TemplatesController,
-    CatalogController,
     DemoController,
     ModerationController,
     FilesController,
     BillingController,
-    OrderController,
     VaultController,
     UtilisationController,
     LabelController,
@@ -195,17 +194,13 @@ export class AdminController {
     InvoiceController,
   ],
   providers: [
-    PrismaService,
     AuthService,
-    CatalogService,
     ModerationService,
     InvoiceService,
     GtinResolver,
     OutboxPoller,
     SeedService,
     FilesService,
-    BillingService,
-    OrderService,
     VaultService,
     UtilisationService,
     CodeEventService,
