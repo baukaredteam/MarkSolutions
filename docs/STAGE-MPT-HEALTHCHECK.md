@@ -17,7 +17,8 @@ ADAPTERS_MPT=http
 MPT_BASE_URL=https://test.markirovka.kz
 MPT_LOGIN=
 MPT_PASSWORD=
-MPT_PRODUCT_GROUP=motor-oils
+MPT_PRODUCT_GROUP=autofluids
+# KZ STAGE: autofluids is the product group code (not category_autofluids_motor; motor-oils is legacy)
 MPT_BUSINESS_PLACE_ID=36
 MPT_MAX_RETRIES=2
 MPT_REQUEST_TIMEOUT_MS=15000

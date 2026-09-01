@@ -1,11 +1,20 @@
 # Factory setup — Cursor Ultra
 
+## MPT GET /api/orders safe error (2026-09-01)
+
+- [x] Script default `productGroup=autofluids` (KZ STAGE UI; not `category_autofluids_motor`; `motor-oils` is legacy)
+- [x] Non-200 GET prints `path=` (path+query only) and `error=` (sanitized; tokens/KM → `redacted`)
+- [x] Mock 400 `{ message: "productGroup required" }` → status/path/error, no secrets
+- [ ] Harith on VPS: pull this branch, re-run `npm run mpt:get-orders-healthcheck`, send back only `status=` / `path=` / `error=`
+- [ ] `HttpMptAdapter` untouched this PR
+- [ ] Mutating STAGE — **запрещено** до отдельного «да»
+
 ## MPT GET /api/orders productGroup (2026-09-01)
 
-- [x] Script always sends `productGroup` (`MPT_PRODUCT_GROUP` / default `motor-oils`); optional `orderId`
+- [x] Script always sends `productGroup` (`MPT_PRODUCT_GROUP` / default now `autofluids`); optional `orderId`
 - [x] Docs: empty `orderInfos` is 200; bare GET 400 on STAGE is the productGroup hunch
-- [x] Mock tests: list `?productGroup=motor-oils`; probe includes both; empty list `orders_count=0`
-- [ ] Human on VPS re-check: `npm run mpt:get-orders-healthcheck` → expect `status=200` (and `orders_count=0` if cabinet empty). Report only `status=` / `orders_count=`
+- [x] Mock tests: list `?productGroup=autofluids`; probe includes both; empty list `orders_count=0`
+- [ ] Human on VPS re-check: `npm run mpt:get-orders-healthcheck` → report `status=` / `path=` / `error=` (and `orders_count=` if 200)
 - [ ] `HttpMptAdapter.getOrder` still `?orderId=` only — out of this PR
 - [ ] Mutating STAGE — **запрещено** до отдельного «да»
 

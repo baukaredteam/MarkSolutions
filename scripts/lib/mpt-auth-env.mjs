@@ -52,6 +52,93 @@ export function writeStatus(status) {
   process.stdout.write(`status=${status}\n`);
 }
 
+/** Path + query only. Never host, never Authorization. */
+export function writeSafePath(pathAndQuery) {
+  process.stdout.write(`path=${pathAndQuery}\n`);
+}
+
+const ERROR_MAX = 160;
+
+function looksLikeSecret(text) {
+  if (/eyJ/.test(text)) return true;
+  if (/accessToken/i.test(text)) return true;
+  if (/refreshToken/i.test(text)) return true;
+  if (/Bearer /i.test(text)) return true;
+  if (/\x1d/.test(text)) return true;
+  if (/01\d{14}21[A-Za-z0-9]{6,}/.test(text)) return true;
+  if (/[0-9A-Za-z]{28,}/.test(text) && /\d{10,}/.test(text)) return true;
+  return false;
+}
+
+function asShortString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formatFieldErrors(arr) {
+  const parts = [];
+  for (const item of arr) {
+    if (typeof item === "string") {
+      const s = item.trim();
+      if (s) parts.push(s);
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const field = asShortString(item.field);
+    const msg =
+      asShortString(item.errorMessage) || asShortString(item.message);
+    if (field && msg) parts.push(`${field}:${msg}`);
+    else if (msg) parts.push(msg);
+    else if (field) parts.push(field);
+  }
+  return parts.join("; ");
+}
+
+/**
+ * One-line STAGE/xTrace error excerpt. Never raw JSON, tokens, Bearer, or KM.
+ * @returns {string | null} sanitized text, "redacted", or null if nothing to print
+ */
+export function sanitizeMptError(json) {
+  if (!json || typeof json !== "object") return null;
+
+  let extracted = "";
+
+  if (Array.isArray(json.globalErrors) && json.globalErrors.length) {
+    extracted = formatFieldErrors(json.globalErrors);
+  }
+
+  if (!extracted) {
+    for (const key of ["error", "message", "error_message", "description"]) {
+      const v = json[key];
+      if (typeof v === "string" && v.trim()) {
+        extracted = v.trim();
+        break;
+      }
+      if (Array.isArray(v) && v.length) {
+        extracted = formatFieldErrors(v);
+        if (extracted) break;
+      }
+    }
+  }
+
+  if (!extracted && Array.isArray(json)) {
+    extracted = formatFieldErrors(json);
+  }
+
+  if (!extracted) return null;
+
+  extracted = extracted.replace(/[\r\n]+/g, " ").trim();
+  if (extracted.length > ERROR_MAX) extracted = extracted.slice(0, ERROR_MAX);
+
+  if (looksLikeSecret(extracted)) return "redacted";
+  return extracted;
+}
+
+export function writeSafeError(json) {
+  const sanitized = sanitizeMptError(json);
+  if (sanitized == null) return;
+  process.stdout.write(`error=${sanitized}\n`);
+}
+
 export async function fetchWithTimeout(url, init, timeoutMs = TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

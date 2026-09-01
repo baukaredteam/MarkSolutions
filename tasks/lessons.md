@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-01 — STAGE GET /api/orders 400: show sanitized error, use autofluids
+
+- After PR #12 (`productGroup` on GET) Harith still got `status=400` on empty cabinet. Script discarded the STAGE body, so we could not see why.
+- Print `path=` (path+query only) on non-200 GET and one `error=` line from JSON (`globalErrors`/`error`/`message`/…). Never raw JSON, tokens (`eyJ`, `accessToken`, `refreshToken`, `Bearer `), or full KM — then `error=redacted`.
+- KZ STAGE UI: product group code is `autofluids`, category is `category_autofluids_motor`. Do not send the category as `productGroup`. Script default `motor-oils` (and adapter `.env.example` default) is legacy/wrong for KZ motor oils. Adapter left unchanged this PR.
+- Agents still do not call STAGE. Harith: pull, re-run get-orders, return only `status=` / `path=` / `error=`.
+
 ## 2026-09-01 — STAGE GET /api/orders 400 on empty cabinet: send productGroup
 
 - Harith: auth healthcheck `200`, get-orders `400`, кабинет без заказов. Ожидание — `200` + `{ orderInfos: [] }`.

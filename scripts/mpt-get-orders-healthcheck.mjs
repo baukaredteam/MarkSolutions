@@ -8,23 +8,29 @@
  * ~/.config/marksolutions/mpt.env (see docs/STAGE-MPT-READONLY-GET.md).
  *
  * Auth then one GET. Always sends documented query productGroup
- * (MPT_PRODUCT_GROUP after loading mpt.env; default motor-oils).
+ * (MPT_PRODUCT_GROUP after loading mpt.env; default autofluids).
  * If MPT_PROBE_ORDER_ID is set → also orderId= (official list filter).
  * No invented cursor/limit. No POST orders / utilisation / doc/*.
  *
  * Stdout: status=<http> | status=network | missing env.
- * Optional second line if HTTP 200 and JSON has an orderInfos array:
- *   orders_count=<n>
- * Never prints order bodies, tokens, password, or full KM.
+ * On any non-200 GET: path=/api/orders?... (path+query only, no host).
+ * On HTTP >= 400 with JSON: one extra line error=<sanitized excerpt>.
+ * Optional orders_count=<n> if HTTP 200 and JSON has an orderInfos array.
+ * Never prints order bodies, tokens, password, Authorization, or full KM.
  */
 import {
   authThenGet,
   loadOptionalEnvFile,
+  writeSafeError,
+  writeSafePath,
   writeStatus,
 } from "./lib/mpt-auth-env.mjs";
 
-/** Same default as HttpMptAdapter / .env.example. */
-const DEFAULT_PRODUCT_GROUP = "motor-oils";
+/**
+ * KZ STAGE UI product group code for motor oils is autofluids
+ * (not category_autofluids_motor). Adapter default motor-oils is legacy.
+ */
+const DEFAULT_PRODUCT_GROUP = "autofluids";
 
 loadOptionalEnvFile();
 const productGroup =
@@ -36,6 +42,12 @@ const path = `/api/orders?${params.toString()}`;
 
 const result = await authThenGet(path);
 writeStatus(result.status);
+if (result.status !== 200) {
+  writeSafePath(path);
+}
+if (typeof result.status === "number" && result.status >= 400) {
+  writeSafeError(result.json);
+}
 if (
   result.status === 200 &&
   result.json &&

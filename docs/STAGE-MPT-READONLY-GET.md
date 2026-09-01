@@ -20,7 +20,7 @@ ADAPTERS_MPT=http
 MPT_BASE_URL=https://test.markirovka.kz
 MPT_LOGIN=
 MPT_PASSWORD=
-MPT_PRODUCT_GROUP=motor-oils
+MPT_PRODUCT_GROUP=autofluids
 MPT_BUSINESS_PLACE_ID=36
 MPT_MAX_RETRIES=2
 MPT_REQUEST_TIMEOUT_MS=15000
@@ -54,7 +54,9 @@ npm run mpt:auth-healthcheck
 npm run mpt:get-orders-healthcheck
 ```
 
-Всегда шлёт документированный query `productGroup` (официальная таблица: параметр есть; обязательность в таблице — «Нет»). Значение: `MPT_PRODUCT_GROUP` из `mpt.env` / окружения; если не задан — `motor-oils` (как `.env.example` и `HttpMptAdapter`).
+Всегда шлёт документированный query `productGroup` (официальная таблица: параметр есть; обязательность в таблице — «Нет»). Значение: `MPT_PRODUCT_GROUP` из `mpt.env` / окружения; если не задан — `autofluids`.
+
+**KZ STAGE UI (Harith):** код товарной группы для моторных масел — `autofluids`. Категория `category_autofluids_motor` — **не** `productGroup`. Default `motor-oils` в `HttpMptAdapter` / старом `.env.example` — legacy и **неверный** для KZ; этот скрипт больше его не использует. Адаптер в этом PR не трогаем.
 
 - Без `MPT_PROBE_ORDER_ID` → `GET /api/orders?productGroup=<pg>`.
 - Если задан `MPT_PROBE_ORDER_ID` → `GET /api/orders?productGroup=<pg>&orderId=...` (оба фильтра из официальной таблицы; `orderId` в таблице тоже «Нет»).
@@ -62,9 +64,9 @@ npm run mpt:get-orders-healthcheck
 
 **Почему голый `GET /api/orders` дал 400 на пустом кабинете (VPS, после PR #11).** Auth был `status=200` (токен ок). Кабинет без заказов. Ожидание по спеке: `200` и `{ "orderInfos": [] }` — пустой массив валиден. Получили `400`. **Hunch (не доказано вызовом STAGE из агента):** STAGE / xTrace часто требует `productGroup` на списке, даже если в таблице «Нет». Скрипт больше не ходит без `productGroup`. Это не «изобретённый» параметр — он есть в `docs/source/Описание API ИС МПТ Роль Пользователь.md`.
 
-Рекомендуется явно задать `MPT_PRODUCT_GROUP` в `~/.config/marksolutions/mpt.env` (для масел — `motor-oils`). Пустой `orderInfos` при HTTP 200 — **ok** (нет заказов в группе), не ошибка.
+Рекомендуется явно задать `MPT_PRODUCT_GROUP=autofluids` в `~/.config/marksolutions/mpt.env` (для масел KZ). Пустой `orderInfos` при HTTP 200 — **ok** (нет заказов в группе), не ошибка.
 
-Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `orderInfos` — вторая строка `orders_count=<n>`. Тела заказов **не** печатать.
+Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `orderInfos` — `orders_count=<n>`. На любом GET не-200 — строка `path=/api/orders?productGroup=...` (только path+query, без host и без Authorization). На HTTP ≥ 400 с JSON — одна строка `error=<sanitized>` (короткий excerpt: `globalErrors` / `error` / `message` / `error_message` / `description`; токен/Bearer/КМ → `error=redacted`). Тела заказов, raw JSON, пароль, токен **не** печатать.
 
 **Caveat (адаптер, не этот PR):** `HttpMptAdapter.getOrder` по-прежнему шлёт только `?orderId=` без `productGroup`. Не меняем адаптер здесь. Форма ответа адаптера (`status` + `quantity`) на STAGE **не доказана**. Человеку достаточно HTTP-статуса (+ опционально `orders_count`).
 
@@ -98,10 +100,10 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть поле `status`
 
 ## Что сообщить обратно
 
-Только **ok/fail** и HTTP-статус (плюс опциональные `orders_count` / `codes_count` / `report_status` выше).
+Только строки `status=` / `path=` / `error=` (и опционально `orders_count` / `codes_count` / `report_status`). Не копировать тело ответа.
 
 - `status=200` + exit 0 — ok (в т.ч. пустой список: `orders_count=0`)
-- `status=401` / `400` / `404` / иное + exit 1 — fail (статус достаточнен)
+- `status=401` / `400` / `404` / иное + exit 1 — fail; пришлите также `path=` и `error=` если скрипт их напечатал
 - `status=network` + exit 1 — сеть / таймаут ~15 с
 - `missing env` + exit 1 — нет обязательных имён (`MPT_BASE_URL` / `MPT_LOGIN` / `MPT_PASSWORD`; для C ещё `MPT_PROBE_ORDER_ID`; для D ещё `MPT_PROBE_REPORT_ID`). Скрипт **не** говорит, какого ключа не хватает.
 
