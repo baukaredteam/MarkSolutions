@@ -78,6 +78,8 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `ord
 
 **Caveat (адаптер, не этот PR):** `HttpMptAdapter.getOrder` по-прежнему шлёт только `?orderId=` без `productGroup`. Не меняем адаптер здесь. Форма ответа адаптера (`status` + `quantity`) на STAGE **не доказана**. Человеку достаточно HTTP-статуса (+ опционально `orders_count`).
 
+Таблица GET-only: адаптер vs официальный путь/query/заголовки — `docs/MPT-GET-CONTRACT-AUDIT.md` (Phase A3). A4 — узкие GET-фиксы по P0/P1 из того файла, не mutating.
+
 ### Если `status=400` и `error=` про permission / errorCode 201
 
 Это **не** missing/invalid `productGroup`. Auth (`status=200`) ок; STAGE запрещает `GET /api/orders` (официально нужны `MARKING-CODE-ORDER.READ` и/или `MARKING-CODE-CONTRACTOR-ORDER.READ`).
@@ -135,7 +137,7 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть поле `status`
 
 ## Известные блокеры (фаза 0) — задокументировать, не чинить вызовом STAGE
 
-1. **`getOrder` / `getCodes` и `?orderId=`.** В CONTRACT список заказов описан как `GET /api/orders` (`cursor`/`limit`), без явного `?orderId=`. Адаптер шлёт `?orderId=`. Форма ответа на STAGE не доказана. Возможен 400/404, пока адаптер и CONTRACT не выровняют отдельным PR.
+1. **`getOrder` / `getCodes` и `?orderId=`.** В CONTRACT список заказов описан как `GET /api/orders` (`cursor`/`limit`), без явного `?orderId=`. Официальная таблица помечает `orderId`/`productGroup`/`cursor`/`limit` как необязательные — не выдумывать обязательность. Адаптер `getOrder` шлёт только `?orderId=`; `getCodes` — только `?orderId=` (официально ещё `gtin`+`quantity`). Сводка: `docs/MPT-GET-CONTRACT-AUDIT.md`. Форма ответа `getOrder` (`status` + `quantity`) на STAGE не доказана. Возможен 400/404, пока адаптер не выровняют отдельным A4 PR.
 2. **Utilisation / import на http-пути** отдали бы serial / codeKey, не полный КМ. Это **mutating** и **вне фазы 1**. Не слать КМ и не POST utilisation/import.
 3. **`NODE_ENV=stage` fail-closed** для OpenBao и прочей прод-инфры — **не этот PR**.
 
