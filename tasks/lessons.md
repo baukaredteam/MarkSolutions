@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-01 — STAGE GET /api/orders 400 on empty cabinet: send productGroup
+
+- Harith: auth healthcheck `200`, get-orders `400`, кабинет без заказов. Ожидание — `200` + `{ orderInfos: [] }`.
+- Официальная таблица помечает `productGroup` как необязательный («Нет»). **Hunch:** STAGE/xTrace всё равно 400 без него (как Accept). Не выдумывать другие query; слать только `productGroup` из `MPT_PRODUCT_GROUP` (default `motor-oils`) и опционально `orderId`.
+- Пустой `orderInfos` — валидный 200, не баг. Адаптер `getOrder` в этом PR не трогали.
+- Агенты STAGE не вызывают; перепроверка только человеком на VPS (`status=` / `orders_count=`).
+
 ## 2026-09-01 — MPT Phase 1 is docs + mock GET probes, not STAGE
 
 - Harith: фаза 1 = read-only GET docs/план, агент STAGE не вызывает. Mutating (createOrder, POST utilisation, doc/*) ждёт отдельное «да».

@@ -175,7 +175,7 @@ describe("mpt read-only GET healthchecks", () => {
     }
   });
 
-  it("orders mock 200 list → exit 0, GET /api/orders, no secrets", async () => {
+  it("orders mock 200 list → exit 0, GET /api/orders?productGroup=motor-oils, no secrets", async () => {
     const mock = await startMock({
       authStatus: 200,
       getStatus: 200,
@@ -192,7 +192,7 @@ describe("mpt read-only GET healthchecks", () => {
     const result = await runScript(ORDERS, authEnv(home, baseUrl));
 
     expect(result.code).toBe(0);
-    expect(result.stdout).toMatch(/^status=200\n?$/);
+    expect(result.stdout).toBe("status=200\norders_count=1\n");
     expect(result.stderr).toBe("");
     assertSafeStdout(result.stdout);
     expect(mock.captured).toHaveLength(2);
@@ -204,14 +204,59 @@ describe("mpt read-only GET healthchecks", () => {
       password: TEST_PASS,
     });
     expect(mock.captured[1]?.method).toBe("GET");
-    expect(mock.captured[1]?.url).toBe("/api/orders");
+    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=motor-oils");
     expect(mock.captured[1]?.headers.authorization).toBe(
       `Bearer ${MOCK_ACCESS_TOKEN}`
     );
     expect(mock.captured[1]?.headers.accept).toBe("*/*");
   });
 
-  it("orders with MPT_PROBE_ORDER_ID → GET ?orderId=", async () => {
+  it("orders empty orderInfos → 200 and orders_count=0, never bodies", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 200,
+      getBody: JSON.stringify({
+        orderInfos: [],
+        accessToken: MOCK_ACCESS_TOKEN,
+      }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("status=200\norders_count=0\n");
+    assertSafeStdout(result.stdout);
+    expect(result.stdout).not.toContain("orderInfos");
+    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=motor-oils");
+  });
+
+  it("orders uses MPT_PRODUCT_GROUP from env", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 200,
+      getBody: JSON.stringify({ orderInfos: [] }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(
+      ORDERS,
+      authEnv(home, baseUrl, { MPT_PRODUCT_GROUP: "from-env" })
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("status=200\norders_count=0\n");
+    assertSafeStdout(result.stdout);
+    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=from-env");
+  });
+
+  it("orders with MPT_PROBE_ORDER_ID → productGroup and orderId", async () => {
     const mock = await startMock({
       authStatus: 200,
       getStatus: 200,
@@ -229,8 +274,11 @@ describe("mpt read-only GET healthchecks", () => {
 
     expect(result.code).toBe(0);
     expect(result.stdout).toMatch(/^status=200\n?$/);
+    expect(result.stdout).not.toContain("orders_count");
     assertSafeStdout(result.stdout);
-    expect(mock.captured[1]?.url).toBe("/api/orders?orderId=stage-order-1");
+    expect(mock.captured[1]?.url).toBe(
+      "/api/orders?productGroup=motor-oils&orderId=stage-order-1"
+    );
   });
 
   it("orders mock GET 401 → exit 1 and status=401", async () => {

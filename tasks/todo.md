@@ -1,12 +1,21 @@
 # Factory setup — Cursor Ultra
 
+## MPT GET /api/orders productGroup (2026-09-01)
+
+- [x] Script always sends `productGroup` (`MPT_PRODUCT_GROUP` / default `motor-oils`); optional `orderId`
+- [x] Docs: empty `orderInfos` is 200; bare GET 400 on STAGE is the productGroup hunch
+- [x] Mock tests: list `?productGroup=motor-oils`; probe includes both; empty list `orders_count=0`
+- [ ] Human on VPS re-check: `npm run mpt:get-orders-healthcheck` → expect `status=200` (and `orders_count=0` if cabinet empty). Report only `status=` / `orders_count=`
+- [ ] `HttpMptAdapter.getOrder` still `?orderId=` only — out of this PR
+- [ ] Mutating STAGE — **запрещено** до отдельного «да»
+
 ## MPT Phase 1 — read-only GET (2026-09-01)
 
 - [x] Docs: `docs/STAGE-MPT-READONLY-GET.md` + pointers from healthcheck / `.env.example`
 - [x] Scripts: `mpt:get-orders-healthcheck`, `mpt:get-codes-healthcheck`, `mpt:get-utilisation-healthcheck` (не в `npm test`/`verify`)
 - [x] Shared helper `scripts/lib/mpt-auth-env.mjs` (reuse auth; no secret logs)
 - [x] Mock tests on `127.0.0.1` (`scripts/mpt-readonly-get-healthcheck.spec.ts`)
-- [ ] Human on VPS: A auth (уже `status=200`) → B `GET /api/orders` → C codes (`MPT_PROBE_ORDER_ID` READY/CLOSED) → D utilisation GET (`MPT_PROBE_REPORT_ID` existing). Report ok/fail + HTTP status only
+- [ ] Human on VPS: A auth (`status=200`) → B `GET /api/orders?productGroup=` (был 400 на голом пути; ждать повтор) → C codes (`MPT_PROBE_ORDER_ID` READY/CLOSED) → D utilisation GET (`MPT_PROBE_REPORT_ID` existing). Report ok/fail + HTTP status only
 - [ ] `?orderId=` vs CONTRACT — next fix-PR after human STAGE report; not this PR
 - [ ] Mutating STAGE (createOrder / utilisation / doc) — **запрещено** до отдельного «да»
 - [ ] `NODE_ENV=stage` fail-closed (OpenBao/etc) — не этот PR
