@@ -52,6 +52,184 @@ export function writeStatus(status) {
   process.stdout.write(`status=${status}\n`);
 }
 
+/** Path + query only. Never host, never Authorization. */
+export function writeSafePath(pathAndQuery) {
+  process.stdout.write(`path=${pathAndQuery}\n`);
+}
+
+const ERROR_MAX = 160;
+
+function looksLikeSecret(text) {
+  if (/eyJ/.test(text)) return true;
+  if (/accessToken/i.test(text)) return true;
+  if (/refreshToken/i.test(text)) return true;
+  if (/Bearer /i.test(text)) return true;
+  if (/\x1d/.test(text)) return true;
+  if (/01\d{14}21[A-Za-z0-9]{6,}/.test(text)) return true;
+  if (/[0-9A-Za-z]{28,}/.test(text) && /\d{10,}/.test(text)) return true;
+  return false;
+}
+
+function asShortString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asCode(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return asShortString(value);
+}
+
+function formatFieldErrors(arr) {
+  const parts = [];
+  for (const item of arr) {
+    if (typeof item === "string") {
+      const s = item.trim();
+      if (s) parts.push(s);
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const field = asShortString(item.field);
+    const msg =
+      asShortString(item.errorMessage) ||
+      asShortString(item.message) ||
+      asShortString(item.error);
+    const code = asCode(item.errorCode);
+    let text = "";
+    if (field && msg) text = `${field}:${msg}`;
+    else if (msg) text = msg;
+    else if (field) text = field;
+    if (text && code) text = `${text} (${code})`;
+    else if (!text && code) text = code;
+    if (text) parts.push(text);
+  }
+  return parts.join("; ");
+}
+
+function extractFromErrorObject(err) {
+  if (!err || typeof err !== "object") return "";
+  if (Array.isArray(err)) return formatFieldErrors(err);
+  return (
+    asShortString(err.message) ||
+    asShortString(err.errorMessage) ||
+    asShortString(err.description)
+  );
+}
+
+/**
+ * One-line STAGE/xTrace error excerpt. Never raw JSON, tokens, Bearer, or KM.
+ * Digs string fields and common nested shapes (error object, errors[], RFC7807).
+ * @returns {string | null} sanitized text, "redacted", or null if nothing to print
+ */
+export function sanitizeMptError(json) {
+  if (!json || typeof json !== "object") return null;
+
+  let extracted = "";
+
+  if (Array.isArray(json)) {
+    extracted = formatFieldErrors(json);
+  }
+
+  if (!extracted && Array.isArray(json.globalErrors) && json.globalErrors.length) {
+    extracted = formatFieldErrors(json.globalErrors);
+  }
+
+  if (!extracted && "error" in json) {
+    const v = json.error;
+    if (typeof v === "string" && v.trim()) extracted = v.trim();
+    else if (v && typeof v === "object") extracted = extractFromErrorObject(v);
+  }
+
+  if (!extracted) {
+    for (const key of ["message", "error_message", "description"]) {
+      const v = json[key];
+      if (typeof v === "string" && v.trim()) {
+        extracted = v.trim();
+        break;
+      }
+      if (Array.isArray(v) && v.length) {
+        extracted = formatFieldErrors(v);
+        if (extracted) break;
+      }
+    }
+  }
+
+  if (!extracted && Array.isArray(json.errors) && json.errors.length) {
+    extracted = formatFieldErrors(json.errors);
+  }
+
+  if (!extracted) {
+    const code = asShortString(json.errorCode);
+    const msg = asShortString(json.errorMessage);
+    if (code && msg) extracted = `${code}:${msg}`;
+    else extracted = msg || code;
+  }
+
+  if (!extracted) {
+    const title = asShortString(json.title);
+    const detail = asShortString(json.detail);
+    if (title && detail) extracted = `${title}: ${detail}`;
+    else extracted = detail || title;
+  }
+
+  if (!extracted) return null;
+
+  extracted = extracted.replace(/[\r\n]+/g, " ").trim();
+  if (extracted.length > ERROR_MAX) extracted = extracted.slice(0, ERROR_MAX);
+
+  if (looksLikeSecret(extracted)) return "redacted";
+  return extracted;
+}
+
+export function writeSafeError(json) {
+  const sanitized = sanitizeMptError(json);
+  if (sanitized == null) return;
+  process.stdout.write(`error=${sanitized}\n`);
+}
+
+/** Response Content-Type type only (no charset/params), or `none`. */
+export function mimeFromContentType(header) {
+  if (!header || typeof header !== "string") return "none";
+  const mime = header.split(";")[0].trim();
+  return mime || "none";
+}
+
+/**
+ * Read GET body once. Never returns the raw text to callers (so scripts
+ * cannot accidentally print it).
+ * @returns {Promise<{ json: unknown, bodyLen: number, contentType: string, parse: "empty" | "json" | "non_json" }>}
+ */
+export async function readGetBody(res) {
+  const text = await res.text().catch(() => "");
+  const bodyLen = Buffer.byteLength(text);
+  const contentType = mimeFromContentType(res.headers.get("content-type"));
+  if (!text) {
+    return { json: null, bodyLen, contentType, parse: "empty" };
+  }
+  try {
+    return { json: JSON.parse(text), bodyLen, contentType, parse: "json" };
+  } catch {
+    return { json: null, bodyLen, contentType, parse: "non_json" };
+  }
+}
+
+/**
+ * Safe 400+ diagnostics: body_len, content_type, and one error= line.
+ * Never dumps the body.
+ */
+export function writeSafeHttpError(result) {
+  process.stdout.write(`body_len=${result.bodyLen}\n`);
+  process.stdout.write(`content_type=${result.contentType}\n`);
+  if (result.parse === "empty") {
+    process.stdout.write("error=empty_body\n");
+    return;
+  }
+  if (result.parse === "non_json") {
+    process.stdout.write("error=non_json\n");
+    return;
+  }
+  writeSafeError(result.json);
+}
+
 export async function fetchWithTimeout(url, init, timeoutMs = TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -102,7 +280,8 @@ export async function authenticate(auth) {
 
 /**
  * Authenticate then one GET. Prints status= from the last HTTP (or network).
- * @returns {Promise<{ status: number, json: unknown } | null>} null if already exited via process
+ * GET sends Accept * /* and Content-Type application/json (official table).
+ * @returns {Promise<{ status: number, json: unknown, bodyLen: number, contentType: string, parse: "empty" | "json" | "non_json" } | null>}
  */
 export async function authThenGet(path) {
   loadOptionalEnvFile();
@@ -122,7 +301,10 @@ export async function authThenGet(path) {
     process.exit(1);
   }
 
-  const headers = { Accept: "*/*" };
+  const headers = {
+    Accept: "*/*",
+    "Content-Type": "application/json",
+  };
   if (authResult.accessToken) {
     headers.Authorization = `Bearer ${authResult.accessToken}`;
   }
@@ -132,8 +314,8 @@ export async function authThenGet(path) {
       method: "GET",
       headers,
     });
-    const json = await readJsonQuiet(res);
-    return { status: res.status, json };
+    const body = await readGetBody(res);
+    return { status: res.status, ...body };
   } catch {
     writeStatus("network");
     process.exit(1);

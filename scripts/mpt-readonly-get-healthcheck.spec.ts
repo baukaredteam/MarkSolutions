@@ -49,6 +49,7 @@ function isolatedEnv(
   delete env.MPT_BUSINESS_PLACE_ID;
   delete env.MPT_PROBE_ORDER_ID;
   delete env.MPT_PROBE_REPORT_ID;
+  delete env.MPT_ORDERS_BARE;
   for (const [key, value] of Object.entries(extra)) {
     if (value === undefined) delete env[key];
     else env[key] = value;
@@ -87,6 +88,8 @@ function startMock(handler: {
   authStatus: number;
   getStatus: number;
   getBody: string;
+  /** GET response Content-Type. null = omit header. default application/json */
+  getContentType?: string | null;
 }): Promise<{
   port: number;
   close: () => Promise<void>;
@@ -115,9 +118,12 @@ function startMock(handler: {
           );
           return;
         }
-        res.writeHead(handler.getStatus, {
-          "Content-Type": "application/json",
-        });
+        const getHeaders: Record<string, string> = {};
+        if (handler.getContentType !== null) {
+          getHeaders["Content-Type"] =
+            handler.getContentType ?? "application/json";
+        }
+        res.writeHead(handler.getStatus, getHeaders);
         res.end(handler.getBody);
       });
     });
@@ -175,7 +181,7 @@ describe("mpt read-only GET healthchecks", () => {
     }
   });
 
-  it("orders mock 200 list → exit 0, GET /api/orders?productGroup=motor-oils, no secrets", async () => {
+  it("orders mock 200 list → exit 0, GET /api/orders?productGroup=autofluids, no secrets", async () => {
     const mock = await startMock({
       authStatus: 200,
       getStatus: 200,
@@ -204,11 +210,12 @@ describe("mpt read-only GET healthchecks", () => {
       password: TEST_PASS,
     });
     expect(mock.captured[1]?.method).toBe("GET");
-    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=motor-oils");
+    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=autofluids");
     expect(mock.captured[1]?.headers.authorization).toBe(
       `Bearer ${MOCK_ACCESS_TOKEN}`
     );
     expect(mock.captured[1]?.headers.accept).toBe("*/*");
+    expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
   });
 
   it("orders empty orderInfos → 200 and orders_count=0, never bodies", async () => {
@@ -231,7 +238,7 @@ describe("mpt read-only GET healthchecks", () => {
     expect(result.stdout).toBe("status=200\norders_count=0\n");
     assertSafeStdout(result.stdout);
     expect(result.stdout).not.toContain("orderInfos");
-    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=motor-oils");
+    expect(mock.captured[1]?.url).toBe("/api/orders?productGroup=autofluids");
   });
 
   it("orders uses MPT_PRODUCT_GROUP from env", async () => {
@@ -277,7 +284,7 @@ describe("mpt read-only GET healthchecks", () => {
     expect(result.stdout).not.toContain("orders_count");
     assertSafeStdout(result.stdout);
     expect(mock.captured[1]?.url).toBe(
-      "/api/orders?productGroup=motor-oils&orderId=stage-order-1"
+      "/api/orders?productGroup=autofluids&orderId=stage-order-1"
     );
   });
 
@@ -295,8 +302,263 @@ describe("mpt read-only GET healthchecks", () => {
     const result = await runScript(ORDERS, authEnv(home, baseUrl));
 
     expect(result.code).toBe(1);
-    expect(result.stdout).toMatch(/^status=401\n?$/);
+    expect(result.stdout).toContain("status=401");
+    expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
+    expect(result.stdout).toContain("error=unauthorized");
+    expect(result.stdout).toMatch(/body_len=\d+/);
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
     assertSafeStdout(result.stdout);
+  });
+
+  it("orders mock GET 400 → status/path/error, no secrets or raw JSON", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody: JSON.stringify({
+        message: "productGroup required",
+        accessToken: MOCK_ACCESS_TOKEN,
+        sampleKm: SAMPLE_KM,
+      }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
+    expect(result.stdout).toContain("productGroup");
+    expect(result.stdout).toContain("error=productGroup required");
+    expect(result.stdout).toMatch(/body_len=\d+/);
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 with token-like message → error=redacted", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody: JSON.stringify({
+        message: `Bearer ${MOCK_ACCESS_TOKEN} eyJhbGciOiJIUzI1NiJ9.payload`,
+      }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
+    expect(result.stdout).toContain("error=redacted");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain("eyJ");
+    expect(result.stdout).not.toContain("Bearer ");
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 STAGE permission globalErrors error+errorCode 201", async () => {
+    const getBody =
+      '{"globalErrors":[{"error":"No permission for operation","errorCode":201}]}';
+    expect(Buffer.byteLength(getBody)).toBe(74);
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain("body_len=74");
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).toContain("error=No permission for operation (201)");
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain("globalErrors");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 with nested error.message object → excerpt, body_len, no dump", async () => {
+    const getBody = JSON.stringify({
+      error: { code: 400, message: "nested object message" },
+    });
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(getBody)}`);
+    expect(result.stdout).toContain("error=nested object message");
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 RFC7807 title/detail → error excerpt, no raw JSON", async () => {
+    const getBody = JSON.stringify({
+      title: "Bad Request",
+      detail: "rfc7807 detail text",
+    });
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(getBody)}`);
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).toMatch(/error=.*rfc7807 detail text/);
+    expect(result.stdout).not.toContain("{");
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 errors[] + errorCode combo → field:msg excerpt", async () => {
+    const getBody = JSON.stringify({
+      errorCode: "ORD-400",
+      errorMessage: "combo message",
+      errors: [{ field: "productGroup", errorMessage: "unknown group" }],
+    });
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(getBody)}`);
+    expect(result.stdout).toMatch(/error=/);
+    expect(result.stdout).toMatch(
+      /productGroup:unknown group|ORD-400:combo message|combo message/
+    );
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 empty body → error=empty_body, body_len=0, content_type=none", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody: "",
+      getContentType: null,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
+    expect(result.stdout).toContain("body_len=0");
+    expect(result.stdout).toContain("content_type=none");
+    expect(result.stdout).toContain("error=empty_body");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 non-JSON → error=non_json, never dumps body", async () => {
+    const html = `<html>oops ${SAMPLE_KM} ${MOCK_ACCESS_TOKEN}</html>`;
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody: html,
+      getContentType: "text/html; charset=utf-8",
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(html)}`);
+    expect(result.stdout).toContain("content_type=text/html");
+    expect(result.stdout).toContain("error=non_json");
+    expect(result.stdout).not.toContain("<html>");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders MPT_ORDERS_BARE=1 → GET /api/orders with no query", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 200,
+      getBody: JSON.stringify({ orderInfos: [] }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(
+      ORDERS,
+      authEnv(home, baseUrl, { MPT_ORDERS_BARE: "1" })
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("status=200\norders_count=0\n");
+    assertSafeStdout(result.stdout);
+    expect(mock.captured[1]?.method).toBe("GET");
+    expect(mock.captured[1]?.url).toBe("/api/orders");
+    expect(mock.captured[1]?.headers.accept).toBe("*/*");
+    expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
   });
 
   it("auth 401 → exit 1, no GET", async () => {
@@ -334,7 +596,11 @@ describe("mpt read-only GET healthchecks", () => {
       getStatus: 200,
       getBody: JSON.stringify({
         codes: [
-          { gtin: "04870023002153", serial: "SAMPLEKMHIDDEN99", raw: SAMPLE_KM },
+          {
+            gtin: "04870023002153",
+            serial: "SAMPLEKMHIDDEN99",
+            raw: SAMPLE_KM,
+          },
           { gtin: "04870023002153", serial: "XX" },
         ],
         accessToken: MOCK_ACCESS_TOKEN,
@@ -355,6 +621,8 @@ describe("mpt read-only GET healthchecks", () => {
     assertSafeStdout(result.stdout);
     expect(mock.captured[1]?.url).toBe("/api/codes?orderId=ready-order");
     expect(mock.captured[1]?.method).toBe("GET");
+    expect(mock.captured[1]?.headers.accept).toBe("*/*");
+    expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
   });
 
   it("codes missing probe order id → missing env, no HTTP", async () => {

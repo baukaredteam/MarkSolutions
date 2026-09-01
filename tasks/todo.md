@@ -1,11 +1,26 @@
 # Factory setup — Cursor Ultra
 
+## MPT GET /api/orders safe error (2026-09-01)
+
+- [x] Script default `productGroup=autofluids` (KZ STAGE UI; not `category_autofluids_motor`; `motor-oils` is legacy)
+- [x] Non-200 GET prints `path=` (path+query only) and `error=` (sanitized; tokens/KM → `redacted`)
+- [x] Mock 400 `{ message: "productGroup required" }` → status/path/error, no secrets
+- [x] GET sends `Content-Type: application/json` + `Accept: */*` (shared helper)
+- [x] status≥400: `body_len=` `content_type=` `error=empty_body|non_json|<sanitized>`
+- [x] `MPT_ORDERS_BARE=1` → official curl path `/api/orders` (no query)
+- [x] sanitize also digs nested `error` object, `errors[]`, `errorCode`+`errorMessage`, RFC7807 title/detail
+- [x] `globalErrors[].error` + `errorCode` → `error=No permission for operation (201)` (STAGE 74-byte body)
+- [ ] Harith: pull, re-run get-orders — expect `error=No permission for operation (201)`. Real fix = STAGE ЛК permissions (`MARKING-CODE-ORDER.READ`), not query
+- [x] Default path stays `?productGroup=autofluids` (bare vs pg irrelevant for this 400)
+- [ ] `HttpMptAdapter` untouched this PR
+- [ ] Mutating STAGE — **запрещено** до отдельного «да»
+
 ## MPT GET /api/orders productGroup (2026-09-01)
 
-- [x] Script always sends `productGroup` (`MPT_PRODUCT_GROUP` / default `motor-oils`); optional `orderId`
+- [x] Script always sends `productGroup` (`MPT_PRODUCT_GROUP` / default now `autofluids`); optional `orderId`
 - [x] Docs: empty `orderInfos` is 200; bare GET 400 on STAGE is the productGroup hunch
-- [x] Mock tests: list `?productGroup=motor-oils`; probe includes both; empty list `orders_count=0`
-- [ ] Human on VPS re-check: `npm run mpt:get-orders-healthcheck` → expect `status=200` (and `orders_count=0` if cabinet empty). Report only `status=` / `orders_count=`
+- [x] Mock tests: list `?productGroup=autofluids`; probe includes both; empty list `orders_count=0`
+- [ ] Human on VPS re-check: `npm run mpt:get-orders-healthcheck` → report `status=` / `path=` / `error=` (and `orders_count=` if 200)
 - [ ] `HttpMptAdapter.getOrder` still `?orderId=` only — out of this PR
 - [ ] Mutating STAGE — **запрещено** до отдельного «да»
 

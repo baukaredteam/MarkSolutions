@@ -1,5 +1,30 @@
 # Lessons
 
+## 2026-09-01 — GET /api/orders 400 globalErrors errorCode 201 is permission
+
+- Harith body (74 bytes): `{"globalErrors":[{"error":"No permission for operation","errorCode":201}]}`. Auth 200; same 400 on bare and with productGroup. Not a query bug.
+- Official API needs `MARKING-CODE-ORDER.READ` and/or `MARKING-CODE-CONTRACTOR-ORDER.READ`. Fix STAGE ЛК permissions + ТГ connected. Do not keep changing query params.
+- Sanitizer missed `globalErrors[].error` (looked for errorMessage/message/field). Print `error=No permission for operation (201)`. Agents still do not call STAGE.
+
+## 2026-09-01 — STAGE 400 is ~74-byte JSON; nested error object likely
+
+- Harith matrix: A/B with productGroup and C/D bare (with/without Content-Type) all `status=400` `content_type=application/json` `body_len=74`. Query and Content-Type do not change outcome.
+- Earlier missing `error=` was not empty body — JSON parsed but `sanitizeMptError` returned null (top-level `error` as object, or other nested shape). Dig `error.message` / `error.errorMessage` / `errors[]` / `errorCode`+`errorMessage` / RFC7807 `title`/`detail`.
+- Do not flip default path to bare until Harith pastes keys=/body= of that 74-byte JSON. Agents still do not call STAGE.
+
+## 2026-09-01 — STAGE GET /api/orders 400 had empty/non-JSON body
+
+- Harith after safe-error PR: `status=400` + `path=/api/orders?productGroup=autofluids`, **no** `error=`. That means `result.json` was null (empty body or parse fail) — sanitize correctly stayed silent.
+- Official table: all GET /api/orders query params optional; example curl is bare `/api/orders`; request lists `Content-Type: application/json` on this GET. 400 = missing/invalid param; 406 empty = Accept (we already send `*/*`).
+- Next probe: send `Content-Type: application/json` on shared GET helper; on ≥400 always print `body_len=` / `content_type=` / `error=empty_body|non_json|<excerpt>`. Optional `MPT_ORDERS_BARE=1` matches official curl. Never dump body. Adapter still untouched.
+
+## 2026-09-01 — STAGE GET /api/orders 400: show sanitized error, use autofluids
+
+- After PR #12 (`productGroup` on GET) Harith still got `status=400` on empty cabinet. Script discarded the STAGE body, so we could not see why.
+- Print `path=` (path+query only) on non-200 GET and one `error=` line from JSON (`globalErrors`/`error`/`message`/…). Never raw JSON, tokens (`eyJ`, `accessToken`, `refreshToken`, `Bearer `), or full KM — then `error=redacted`.
+- KZ STAGE UI: product group code is `autofluids`, category is `category_autofluids_motor`. Do not send the category as `productGroup`. Script default `motor-oils` (and adapter `.env.example` default) is legacy/wrong for KZ motor oils. Adapter left unchanged this PR.
+- Agents still do not call STAGE. Harith: pull, re-run get-orders, return only `status=` / `path=` / `error=`.
+
 ## 2026-09-01 — STAGE GET /api/orders 400 on empty cabinet: send productGroup
 
 - Harith: auth healthcheck `200`, get-orders `400`, кабинет без заказов. Ожидание — `200` + `{ orderInfos: [] }`.
