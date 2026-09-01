@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-01 — A6 Phase B prep is docs, not the first POST
+
+- Phase A ended on empty cabinet (GET orders 200, `orders_count=0`). First mutating after Harith «да» is almost certainly `createOrder` qty=1, not utilisation.
+- As-is already sends `Idempotency-Key=orderId` on HTTP createOrder, but `request()` retries 5xx/timeout on POST and `sendToMpt` leaves outbox PENDING → another POST. Gate is UNKNOWN_RESULT → GET reconcile; do not implement that in a docs PR.
+- `reconcileOrder` RELEASE on `MPT_ORDER_TIMEOUT_MS` default 60s *before* treating READY — too short for STAGE. Raise env on VPS before «да»; do not RELEASE while GET is CREATED/PENDING.
+- `createOrder` drops STAGE `orderId`; poller does not pass `productGroup`/`businessPlaceId` (adapter default `motor-oils`). Document only. No A4 P1, no sim expand, no STAGE call.
+
 ## 2026-09-01 — A4 P0: parse official GET bodies, do not invent quantity on list
 
 - `getOrder` status from `orderInfos[].orderStatus` (match orderId or single entry); Http `quantity` is always 0 — poller already sums OrderLine. `getCodes` port is `{orderId,gtin,quantity,lastPackId?}` → `{codes:string[],packId?}`; parse ADR-006 before `vault.ingest`. `getUtilisation` prefers `reportStatus`, one fallback to `status`. No STAGE, no POST, no sim emission change.

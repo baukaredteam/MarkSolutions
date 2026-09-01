@@ -39,6 +39,10 @@ import type {
 // - getCodes: official query orderId+gtin+quantity (+ lastPackId); codes string[] + packId.
 //   GET-аудит: docs/MPT-GET-CONTRACT-AUDIT.md. A4 P0 landed.
 // - requestId генерируется локально (трассировка в outbox), на провод не уходит.
+//
+// Phase B readiness (docs only): docs/MPT-PHASE-B-READINESS.md
+// createOrder already sends Idempotency-Key = orderId. In-adapter 5xx/timeout
+// retry of POST is a known gap vs UNKNOWN_RESULT→RECONCILIATION — no change here.
 
 export function toInt32(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -326,6 +330,7 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request("/api/orders", "POST", {
       json: body,
       operationId: input.orderId,
+      // Phase B: key = MarkFlow orderId (ADR-024). Do not add retries here.
       headers: { "Idempotency-Key": input.orderId },
     });
     const d = data as { status?: string; orderId?: string };

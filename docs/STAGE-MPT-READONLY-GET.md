@@ -135,6 +135,8 @@ Stdout: `status=<http>`. Если HTTP 200 — вторая строка `report
 
 Не вызывать: `POST /api/orders`, `POST /api/utilisation`, `POST /api/order/close`, любые `doc/*`, refresh ради пробы, печать, резерв, списание.
 
+**Phase B (первый реальный POST)** ещё не открыта. Чеклист и gaps: `docs/MPT-PHASE-B-READINESS.md`. Пока Harith не скажет «да» — только этот read-only документ и GET-скрипты.
+
 Не менять и не «проверять» mutating-методы `HttpMptAdapter` (`createOrder`, `submitUtilisation`, `submitImport`, `submitWithdrawal`) этим PR.
 
 ## Известные блокеры (фаза 0) — задокументировать, не чинить вызовом STAGE

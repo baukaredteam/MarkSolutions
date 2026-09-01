@@ -1,5 +1,13 @@
 # Factory setup — Cursor Ultra
 
+## MPT Phase B readiness A6 (2026-09-01)
+
+- [x] `docs/MPT-PHASE-B-READINESS.md` — goal, hard rules, as-is vs to-be, Harith checklist, proposal only
+- [x] Pointers: `tasks/lessons.md`, `docs/STAGE-MPT-READONLY-GET.md`, `docs/CONTRACT-IS-MPT.md`, comment-only in adapter/outbox
+- [ ] A4 P1 — **не** этот PR
+- [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
+- [ ] Не реализовывать POST-фиксы (Idempotency retry / UNKNOWN_RESULT) в этом PR
+
 ## MPT GET contract audit A3 (2026-09-01)
 
 - [x] `docs/MPT-GET-CONTRACT-AUDIT.md` — official GET vs `HttpMptAdapter` (no STAGE call, no mutating change)

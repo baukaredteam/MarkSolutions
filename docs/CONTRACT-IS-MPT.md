@@ -48,3 +48,5 @@ Auth: POST /api/users/authenticate (JSON login/password) → accessToken (BEARER
 - storage docs/search (статусы CREATED|VALIDATING|IN_PROCESS|PARTIALLY_PROCESSED|SUCCESS|ERROR), docs/:id, json/:id, errors/:id (propertyName, index, errorCode).
 
 Ошибки: 200/400/401/403/404/405/500/503/504. Retry только идемпотентные+временные, backoff+jitter.
+
+Phase B (первый mutating на STAGE) — не из этого файла: `docs/MPT-PHASE-B-READINESS.md`. POST orders/utilisation/doc/* с агента/CI запрещены до «да» человека. Timeout после mutating → UNKNOWN_RESULT → GET-сверка, не повторный POST.

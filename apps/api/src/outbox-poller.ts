@@ -19,6 +19,8 @@ import { CodeEventService } from "./code-event.service";
 // 2) send-order-to-mpt (W3, тикет 02): Queued → Sent (POST /api/orders в симулятор ИС МПТ),
 //    затем поллинг статусов (ORD-029, поллер=сверка): READY → Completed; REJECTED →
 //    Rejected + RELEASE + задача; PENDING дольше MPT_ORDER_TIMEOUT_MS → Failed + RELEASE + задача.
+//    Phase B (docs/MPT-PHASE-B-READINESS.md): temp error leaves PENDING → next tick
+//    retries POST. Gate is UNKNOWN_RESULT → GET reconcile first. No change here.
 // 3) инджест кодов в Code Vault (W3, тикет 04): COMPLETED/PARTIALLY → GET /api/codes из симулятора → Vault.
 @Injectable()
 export class OutboxPoller implements OnModuleDestroy {
@@ -319,6 +321,7 @@ export class OutboxPoller implements OnModuleDestroy {
       // постоянная ошибка внешнего API (4xx/конфиг): ретрай бесполезен →
       // outbox FAILED + задача оператору (ID-017). Временные (5xx/network)
       // бросаем дальше: поллер оставит PENDING для reconciliation.
+      // Phase B gap: PENDING + createOrder = another POST, not GET-first.
       if ((e as { permanent?: boolean }).permanent) {
         await this.prisma.outbox.update({
           where: { id: outboxId },
