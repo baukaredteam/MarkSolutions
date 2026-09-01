@@ -3,13 +3,21 @@
 ## 2026-09-03 — Real-contour roadmap is a new file, not a rewrite of W1–W4
 
 - Canon for the live contour is `docs/ROADMAP-REAL.md` (A read-only → B mutating after Harith «да» → C NKT → D 1С). `docs/ROADMAP.md` stays archive (OpenCode W1–W4 + sim). Do not keep adding sprint weeks or «к 01.02.2027 сдаём» as product dates; 01.02.2026 / 01.02.2027 are regulatory anchors in RULES-MM, not MarkFlow delivery.
-- Horizons (GS1 api11.gs1.kz, NKT, 1С, Markmobile, ЭДО, РФ) are sequenced, not parallel, and never instead of MPT. Sim/StubPage are debt to displace with Http MPT / real modules — do not expand them as the goal. PR #17 P0 safety is pending; a docs PR does not merge it.
+- Horizons (GS1 api11.gs1.kz, NKT, 1С, Markmobile, ЭДО, РФ) are sequenced, not parallel, and never instead of MPT. Sim/StubPage are debt to displace with Http MPT / real modules — do not expand them as the goal. P0 safety is PR #17 (code, rebased after #18+#19); a docs PR does not merge it.
+
+## 2026-09-01 — P0 before Phase B: UNKNOWN_RESULT, not re-POST
+
+- Mutating POST (orders/utilisation/import/withdrawal) must not retry on 5xx/timeout/network. GET still may. 401 refresh replay of the same request is not a retry loop.
+- Outbox `send-order-to-mpt` after first createOrder attempt: PROCESSED or FAILED, never PENDING. Unknown → SENT + GET `reconcileOrder`.
+- Do not RELEASE because age>timeout while STAGE status is CREATED/PENDING. Default `MPT_ORDER_TIMEOUT_MS` = 30 min. RELEASE on REJECTED, or aged + proven absent (`found===false` and stored STAGE id).
+- Persist STAGE `orderId` on `Order.externalOrderId`. Adapter default `MPT_PRODUCT_GROUP=autofluids`. Catalog tariff group `motor-oils` is not the STAGE ТГ.
+- Still no STAGE call and no Harith «да» for Phase B mutating. `releaseMethodType` and utilisation Idempotency-Key are follow-ups. Prep-only rebase/merge of #17 is not authorization for STAGE POST.
 
 ## 2026-09-01 — A6 Phase B prep is docs, not the first POST
 
 - Phase A ended on empty cabinet (GET orders 200, `orders_count=0`). First mutating after Harith «да» is almost certainly `createOrder` qty=1, not utilisation.
 - As-is already sends `Idempotency-Key=orderId` on HTTP createOrder, but `request()` retries 5xx/timeout on POST and `sendToMpt` leaves outbox PENDING → another POST. Gate is UNKNOWN_RESULT → GET reconcile; do not implement that in a docs PR.
-- `reconcileOrder` RELEASE on `MPT_ORDER_TIMEOUT_MS` default 60s *before* treating READY — too short for STAGE. Raise env on VPS before «да»; do not RELEASE while GET is CREATED/PENDING.
+- `reconcileOrder` RELEASE on `MPT_ORDER_TIMEOUT_MS` default 60s _before_ treating READY — too short for STAGE. Raise env on VPS before «да»; do not RELEASE while GET is CREATED/PENDING.
 - `createOrder` drops STAGE `orderId`; poller does not pass `productGroup`/`businessPlaceId` (adapter default `motor-oils`). Document only. No A4 P1, no sim expand, no STAGE call.
 
 ## 2026-09-01 — A4 P0: parse official GET bodies, do not invent quantity on list

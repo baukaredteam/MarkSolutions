@@ -10,4 +10,6 @@ export interface CreateOrderDto {
   serialNumberType?: string;
   /** C-04: площадка нанесения (int32) */
   businessPlaceId?: number;
+  /** MPT productGroup on the wire when set (STAGE oils = autofluids) */
+  productGroup?: string;
 }

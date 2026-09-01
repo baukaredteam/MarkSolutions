@@ -45,7 +45,7 @@ Phase A (read-only): человек на VPS получил **auth 200** и **GE
 - **`getCodes` сейчас (A4 P0):** `?orderId=&gtin=&quantity=` (+ `lastPackId`); `codes` как `string[]` + `packId`.
 - **`getUtilisation` сейчас (A4 P0):** path как в спеке; читает `reportStatus`, fallback `status`.
 - **`getDocument` сейчас:** path как в CONTRACT (`storage/docs/:id`); `rejectReason` в официальном ответе этого GET нет.
-- **Default `MPT_PRODUCT_GROUP` в адаптере** = `motor-oils` (legacy). На GET `getOrder` не уходит. Для KZ oils код ТГ — `autofluids` (не `category_autofluids_motor`). Менять default — отдельное решение, не этот PR.
+- **Default `MPT_PRODUCT_GROUP` в адаптере** = `autofluids` (P0 safety PR; was legacy `motor-oils`). На GET `getOrder` не уходит. Для KZ oils код ТГ — `autofluids` (не `category_autofluids_motor`).
 
 ## Out of scope (mutating — не менять здесь)
 

@@ -230,6 +230,10 @@ model Order {
   isPaid       Boolean  @default(true)
   // C-04: бизнес-площадка нанесения (int32) — из заказа, не хардкод «1»
   businessPlaceId Int?
+  // MPT wire snapshot when set (STAGE oils = autofluids, not catalog motor-oils)
+  productGroup    String?
+  // STAGE/xTrace orderId from createOrder; getOrder/getCodes prefer this
+  externalOrderId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   lines        OrderLine[]
