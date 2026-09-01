@@ -74,3 +74,5 @@ Shared `request()` / `ensureToken` трогать в A4 только если GE
 - **P2** — методы, которых нет: `sub-orders` (количества), `codes/packs`, party status, doc search/json/errors — только когда появится caller. Не заранее.
 
 Не в A4: mutating POST, close, simulator, новые npm-скрипты на STAGE, смена host.
+
+Phase B (первый POST на STAGE) — отдельный чеклист, не этот аудит: `docs/MPT-PHASE-B-READINESS.md`. Пока нет «да» Harith.
