@@ -23,6 +23,9 @@
     "demo:reset": "node scripts/demo-reset.mjs",
     "demo:smoke": "node scripts/demo-smoke.mjs",
     "mpt:auth-healthcheck": "node scripts/mpt-auth-healthcheck.mjs",
+    "mpt:get-orders-healthcheck": "node scripts/mpt-get-orders-healthcheck.mjs",
+    "mpt:get-codes-healthcheck": "node scripts/mpt-get-codes-healthcheck.mjs",
+    "mpt:get-utilisation-healthcheck": "node scripts/mpt-get-utilisation-healthcheck.mjs",
     "prepare": "husky",
     "predev": "npm run build:cjs --workspace @markflow/shared",
     "prestart": "npm run build:cjs --workspace @markflow/shared"

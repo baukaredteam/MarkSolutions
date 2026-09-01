@@ -1,11 +1,22 @@
 # Factory setup — Cursor Ultra
 
+## MPT Phase 1 — read-only GET (2026-09-01)
+
+- [x] Docs: `docs/STAGE-MPT-READONLY-GET.md` + pointers from healthcheck / `.env.example`
+- [x] Scripts: `mpt:get-orders-healthcheck`, `mpt:get-codes-healthcheck`, `mpt:get-utilisation-healthcheck` (не в `npm test`/`verify`)
+- [x] Shared helper `scripts/lib/mpt-auth-env.mjs` (reuse auth; no secret logs)
+- [x] Mock tests on `127.0.0.1` (`scripts/mpt-readonly-get-healthcheck.spec.ts`)
+- [ ] Human on VPS: A auth (уже `status=200`) → B `GET /api/orders` → C codes (`MPT_PROBE_ORDER_ID` READY/CLOSED) → D utilisation GET (`MPT_PROBE_REPORT_ID` existing). Report ok/fail + HTTP status only
+- [ ] `?orderId=` vs CONTRACT — next fix-PR after human STAGE report; not this PR
+- [ ] Mutating STAGE (createOrder / utilisation / doc) — **запрещено** до отдельного «да»
+- [ ] `NODE_ENV=stage` fail-closed (OpenBao/etc) — не этот PR
+
 ## MPT auth healthcheck (2026-08-31)
 
 - [x] `scripts/mpt-auth-healthcheck.mjs` + `npm run mpt:auth-healthcheck` (auth-only; не в `npm test`/`verify`)
 - [x] Mock tests on `127.0.0.1` (`scripts/mpt-auth-healthcheck.spec.ts`)
 - [x] Docs: `docs/STAGE-MPT-HEALTHCHECK.md` + pointer in `.env.example`
-- [ ] Human on VPS: source `~/.config/marksolutions/mpt.env` → run script → report ok/fail + HTTP status
+- [x] Human on VPS: source `~/.config/marksolutions/mpt.env` → run script → `status=200`
 - [ ] Mutating STAGE (createOrder / utilisation / doc) — **запрещено** до отдельного «да»
 
 ## Factory PRs (2026-08-31)

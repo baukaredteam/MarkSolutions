@@ -2,7 +2,7 @@
 
 Проверка **только** `POST /api/users/authenticate` (контракт: `docs/CONTRACT-IS-MPT.md`, ловушка 3: `Accept: */*`).
 
-Это **не** заказ КМ, не utilisation, не `doc/*`, не GET `/api/codes`. Mutating-вызовы (`createOrder`, utilisation, import/withdrawal) **запрещены**, пока человек отдельно не скажет «да».
+Это **не** заказ КМ, не utilisation, не `doc/*`. Следующий шаг после `status=200` — опциональные read-only GET (фаза 1): `docs/STAGE-MPT-READONLY-GET.md` (`npm run mpt:get-orders-healthcheck` и т.д.). Mutating-вызовы (`createOrder`, utilisation, import/withdrawal) **запрещены**, пока человек отдельно не скажет «да».
 
 Агенты и CI этот скрипт против `test.markirovka.kz` / `prod.markirovka.kz` **не запускают**. Тесты бьют в локальный мок на `127.0.0.1`.
 
@@ -53,3 +53,7 @@ npm run mpt:auth-healthcheck
 - Не добавляет POST `/api/orders`, utilisation, `doc/*`
 - Не меняет mutating-методы `HttpMptAdapter`
 - Не подключает `mpt:auth-healthcheck` к `npm test` / `npm run verify` (у CI нет учёток)
+
+## Дальше (фаза 1, человек на VPS)
+
+После `status=200` — план и GET-пробы: `docs/STAGE-MPT-READONLY-GET.md`. Агенты STAGE не вызывают.

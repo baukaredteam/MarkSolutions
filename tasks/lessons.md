@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-01 — MPT Phase 1 is docs + mock GET probes, not STAGE
+
+- Harith: фаза 1 = read-only GET docs/план, агент STAGE не вызывает. Mutating (createOrder, POST utilisation, doc/*) ждёт отдельное «да».
+- `HttpMptAdapter.getOrder`/`getCodes` шлют `?orderId=`; CONTRACT для списка заказов пишет `cursor`/`limit`, не этот query. Не «чинить» адаптер вызовом STAGE — задокументировать, ждать отчёт человека (400/404 возможен).
+- Пробы: auth как healthcheck (`Accept: */*`, JSON login/password), затем один GET. Stdout `status=<http>`; для codes только `codes_count`; для utilisation только CONTRACT `report_status` (`other` если иное). Никогда body / token / KM / `rejectReason`.
+- Env имён для человека: `MPT_PROBE_ORDER_ID`, `MPT_PROBE_REPORT_ID` (+ существующие `MPT_*`). Не в `npm test`/`verify`.
+
 ## 2026-08-31 — MPT auth healthcheck is human-on-VPS, not agent-on-STAGE
 
 - Script may target STAGE when a human sources `~/.config/marksolutions/mpt.env`. Agents/CI must not HTTP-call markirovka; tests bind `127.0.0.1` and fail if a test URL hostname is `markirovka.kz`.
