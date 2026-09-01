@@ -7,12 +7,15 @@
  * A human on the VPS may run this against STAGE after sourcing
  * ~/.config/marksolutions/mpt.env (see docs/STAGE-MPT-READONLY-GET.md).
  *
- * Auth then one GET. If MPT_PROBE_ORDER_ID is set → GET /api/orders?orderId=
- * (HttpMptAdapter.getOrder). Else GET /api/orders (CONTRACT list; no invented
- * cursor/limit). No POST orders / utilisation / doc/*.
+ * Auth then one GET. Always sends documented query productGroup
+ * (MPT_PRODUCT_GROUP after loading mpt.env; default motor-oils).
+ * If MPT_PROBE_ORDER_ID is set → also orderId= (official list filter).
+ * No invented cursor/limit. No POST orders / utilisation / doc/*.
  *
  * Stdout: status=<http> | status=network | missing env.
- * Never prints response body, tokens, password, or full KM.
+ * Optional second line if HTTP 200 and JSON has an orderInfos array:
+ *   orders_count=<n>
+ * Never prints order bodies, tokens, password, or full KM.
  */
 import {
   authThenGet,
@@ -20,13 +23,29 @@ import {
   writeStatus,
 } from "./lib/mpt-auth-env.mjs";
 
+/** Same default as HttpMptAdapter / .env.example. */
+const DEFAULT_PRODUCT_GROUP = "motor-oils";
+
 loadOptionalEnvFile();
-const orderId = process.env.MPT_PROBE_ORDER_ID;
-const path =
-  orderId && orderId.trim()
-    ? `/api/orders?orderId=${encodeURIComponent(orderId.trim())}`
-    : "/api/orders";
+const productGroup =
+  process.env.MPT_PRODUCT_GROUP?.trim() || DEFAULT_PRODUCT_GROUP;
+const params = new URLSearchParams({ productGroup });
+const orderId = process.env.MPT_PROBE_ORDER_ID?.trim();
+if (orderId) params.set("orderId", orderId);
+const path = `/api/orders?${params.toString()}`;
 
 const result = await authThenGet(path);
 writeStatus(result.status);
+if (
+  result.status === 200 &&
+  result.json &&
+  typeof result.json === "object" &&
+  Array.isArray(
+    /** @type {{ orderInfos?: unknown }} */ (result.json).orderInfos
+  )
+) {
+  const n = /** @type {{ orderInfos: unknown[] }} */ (result.json).orderInfos
+    .length;
+  process.stdout.write(`orders_count=${n}\n`);
+}
 process.exit(result.status === 200 ? 0 : 1);
