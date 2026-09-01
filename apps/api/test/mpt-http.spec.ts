@@ -333,6 +333,113 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     expect(() => toInt32(2 ** 40)).toThrow();
   });
 
+  it("getOrder: list-shaped body → status from orderInfos[].orderStatus, quantity 0", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/orders?")) {
+        const url = new URL(call.url);
+        expect(url.searchParams.get("orderId")).toBe("ord-ready");
+        expect(url.searchParams.has("productGroup")).toBe(false);
+        expect(call.method).toBe("GET");
+        return jsonResponse({
+          status: "REJECTED",
+          quantity: 99,
+          orderInfos: [
+            { orderId: "other", orderStatus: "PENDING" },
+            { orderId: "ord-ready", orderStatus: "READY" },
+          ],
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getOrder("ord-ready");
+    expect(res.status).toBe("READY");
+    expect(res.quantity).toBe(0);
+  });
+
+  it("getOrder: single orderInfos entry used when orderId differs", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/orders?")) {
+        return jsonResponse({
+          orderInfos: [{ orderId: "stage-id", orderStatus: "CLOSED" }],
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getOrder("internal-id");
+    expect(res.status).toBe("CLOSED");
+    expect(res.quantity).toBe(0);
+  });
+
+  it("getCodes: official query orderId+gtin+quantity; returns string[] + packId", async () => {
+    const km = "0104014835723399210000001";
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/codes?")) {
+        const url = new URL(call.url);
+        expect(url.searchParams.get("orderId")).toBe("ord-1");
+        expect(url.searchParams.get("gtin")).toBe("04014835723399");
+        expect(url.searchParams.get("quantity")).toBe("3");
+        expect(url.searchParams.get("lastPackId")).toBe("pack-prev");
+        expect(call.method).toBe("GET");
+        return jsonResponse({
+          codes: [km, "0104014835723399210000002"],
+          packId: "pack-9",
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getCodes({
+      orderId: "ord-1",
+      gtin: "04014835723399",
+      quantity: 3,
+      lastPackId: "pack-prev",
+    });
+    expect(res.codes).toEqual([km, "0104014835723399210000002"]);
+    expect(res.packId).toBe("pack-9");
+    expect(res.codes.every((c) => typeof c === "string")).toBe(true);
+  });
+
+  it("getUtilisation: prefers reportStatus over status", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/utilisation/")) {
+        return jsonResponse({
+          reportId: "rep-1",
+          reportStatus: "SUCCESS",
+          status: "ERROR",
+          rejectReason: "ignored-when-reportStatus-present",
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getUtilisation("rep-1");
+    expect(res.status).toBe("SUCCESS");
+  });
+
+  it("getUtilisation: fallback to status when reportStatus absent", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/utilisation/")) {
+        return jsonResponse({ status: "IN_PROCESS" });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getUtilisation("rep-legacy");
+    expect(res.status).toBe("IN_PROCESS");
+  });
+
   it("submitUtilisation: businessPlaceId int32 в теле; отсутствие → ошибка", async () => {
     const ff = fakeFetch((call) => {
       if (call.url.endsWith("/api/users/authenticate"))

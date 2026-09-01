@@ -48,6 +48,8 @@ function isolatedEnv(
   delete env.MPT_PRODUCT_GROUP;
   delete env.MPT_BUSINESS_PLACE_ID;
   delete env.MPT_PROBE_ORDER_ID;
+  delete env.MPT_PROBE_GTIN;
+  delete env.MPT_PROBE_QUANTITY;
   delete env.MPT_PROBE_REPORT_ID;
   delete env.MPT_ORDERS_BARE;
   for (const [key, value] of Object.entries(extra)) {
@@ -613,16 +615,56 @@ describe("mpt read-only GET healthchecks", () => {
 
     const result = await runScript(
       CODES,
-      authEnv(home, baseUrl, { MPT_PROBE_ORDER_ID: "ready-order" })
+      authEnv(home, baseUrl, {
+        MPT_PROBE_ORDER_ID: "ready-order",
+        MPT_PROBE_GTIN: "04014835723399",
+        MPT_PROBE_QUANTITY: "2",
+      })
     );
 
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("status=200\ncodes_count=2\n");
     assertSafeStdout(result.stdout);
-    expect(mock.captured[1]?.url).toBe("/api/codes?orderId=ready-order");
+    expect(mock.captured[1]?.url).toBe(
+      "/api/codes?orderId=ready-order&gtin=04014835723399&quantity=2"
+    );
     expect(mock.captured[1]?.method).toBe("GET");
     expect(mock.captured[1]?.headers.accept).toBe("*/*");
     expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
+  });
+
+  it("codes missing gtin or quantity → missing env, no HTTP", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 200,
+      getBody: JSON.stringify({ codes: [SAMPLE_KM] }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const noGtin = await runScript(
+      CODES,
+      authEnv(home, baseUrl, {
+        MPT_PROBE_ORDER_ID: "ready-order",
+        MPT_PROBE_QUANTITY: "1",
+      })
+    );
+    expect(noGtin.code).toBe(1);
+    expect(noGtin.stdout).toMatch(/^missing env\n?$/);
+    expect(mock.captured).toHaveLength(0);
+
+    const noQty = await runScript(
+      CODES,
+      authEnv(home, baseUrl, {
+        MPT_PROBE_ORDER_ID: "ready-order",
+        MPT_PROBE_GTIN: "04014835723399",
+      })
+    );
+    expect(noQty.code).toBe(1);
+    expect(noQty.stdout).toMatch(/^missing env\n?$/);
+    expect(mock.captured).toHaveLength(0);
   });
 
   it("codes missing probe order id → missing env, no HTTP", async () => {
@@ -658,7 +700,11 @@ describe("mpt read-only GET healthchecks", () => {
 
     const result = await runScript(
       CODES,
-      authEnv(home, baseUrl, { MPT_PROBE_ORDER_ID: "x" })
+      authEnv(home, baseUrl, {
+        MPT_PROBE_ORDER_ID: "x",
+        MPT_PROBE_GTIN: "04014835723399",
+        MPT_PROBE_QUANTITY: "1",
+      })
     );
 
     expect(result.code).toBe(1);
@@ -672,7 +718,8 @@ describe("mpt read-only GET healthchecks", () => {
       authStatus: 200,
       getStatus: 200,
       getBody: JSON.stringify({
-        status: "SUCCESS",
+        reportStatus: "SUCCESS",
+        status: "ERROR",
         rejectReason: SAMPLE_REJECT,
         accessToken: MOCK_ACCESS_TOKEN,
       }),
@@ -692,6 +739,30 @@ describe("mpt read-only GET healthchecks", () => {
     assertSafeStdout(result.stdout);
     expect(mock.captured[1]?.url).toBe("/api/utilisation/rep-1");
     expect(mock.captured[1]?.method).toBe("GET");
+  });
+
+  it("utilisation fallback to status when reportStatus absent", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 200,
+      getBody: JSON.stringify({
+        status: "IN_PROCESS",
+        rejectReason: SAMPLE_REJECT,
+      }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(
+      UTIL,
+      authEnv(home, baseUrl, { MPT_PROBE_REPORT_ID: "rep-legacy" })
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("status=200\nreport_status=IN_PROCESS\n");
+    assertSafeStdout(result.stdout);
   });
 
   it("utilisation unknown status → report_status=other", async () => {
@@ -751,6 +822,8 @@ describe("mpt read-only GET healthchecks", () => {
         `MPT_LOGIN=${TEST_LOGIN}`,
         `MPT_PASSWORD=${TEST_PASS}`,
         "MPT_PROBE_ORDER_ID=from-file",
+        "MPT_PROBE_GTIN=04014835723399",
+        "MPT_PROBE_QUANTITY=1",
         "",
       ].join("\n"),
       "utf8"
@@ -760,7 +833,9 @@ describe("mpt read-only GET healthchecks", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("status=200\ncodes_count=0\n");
     assertSafeStdout(result.stdout);
-    expect(mock.captured[1]?.url).toBe("/api/codes?orderId=from-file");
+    expect(mock.captured[1]?.url).toBe(
+      "/api/codes?orderId=from-file&gtin=04014835723399&quantity=1"
+    );
   });
 
   it("network error → status=network", async () => {

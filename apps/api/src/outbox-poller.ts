@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "./prisma.service";
+import { parseAdr006Km } from "@markflow/shared";
 import {
   INktAdapter,
   NKT_ADAPTER,
@@ -412,9 +413,16 @@ export class OutboxPoller implements OnModuleDestroy {
     }
 
     if (mpt.status === "READY" || mpt.status === "CLOSED") {
-      // расхождение количества: мок-шов (quantity−1 кодов) → Partially Completed + задача
-      const codes = await this.mpt.getCodes(orderId);
-      if (codes.codes.length < expectedQty) {
+      // MVP: first line gtin; quantity = OrderLine sum (same expectedQty as today).
+      const gtin = order.lines[0]?.gtin ?? order.gtin ?? "";
+      const fetched = await this.mpt.getCodes({
+        orderId,
+        gtin,
+        quantity: expectedQty,
+      });
+      // official codes[] are strings; Vault.ingest still takes structured ADR-006.
+      const codes = fetched.codes.map(parseAdr006Km);
+      if (codes.length < expectedQty) {
         if (order.status !== "PARTIALLY_COMPLETED") {
           await this.prisma.order.update({
             where: { id: orderId },
@@ -429,12 +437,12 @@ export class OutboxPoller implements OnModuleDestroy {
                 tenantId: order.tenantId,
                 reason: "quantity mismatch",
                 expected: expectedQty,
-                actual: codes.codes.length,
+                actual: codes.length,
               },
             },
           });
           // инджест: сколько пришло (PARTIALLY) — в Vault
-          await this.vault.ingest(orderId, codes.codes, order.cardId);
+          await this.vault.ingest(orderId, codes, order.cardId);
         }
         return;
       }
@@ -444,7 +452,7 @@ export class OutboxPoller implements OnModuleDestroy {
           data: { status: "COMPLETED" },
         });
         // инджест всех кодов в Vault (граница с тикетом 03)
-        await this.vault.ingest(orderId, codes.codes, order.cardId);
+        await this.vault.ingest(orderId, codes, order.cardId);
       }
       return;
     }

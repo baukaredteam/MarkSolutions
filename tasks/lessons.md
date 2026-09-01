@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-09-01 — A4 P0: parse official GET bodies, do not invent quantity on list
+
+- `getOrder` status from `orderInfos[].orderStatus` (match orderId or single entry); Http `quantity` is always 0 — poller already sums OrderLine. `getCodes` port is `{orderId,gtin,quantity,lastPackId?}` → `{codes:string[],packId?}`; parse ADR-006 before `vault.ingest`. `getUtilisation` prefers `reportStatus`, one fallback to `status`. No STAGE, no POST, no sim emission change.
+
 ## 2026-09-01 — Phase A3 is GET audit docs, not adapter rewrite
 
 - Official GET /api/orders query params are all optional (`orderId`, `productGroup`, `cursor`/`limit` = «Нет»). Do not invent required cursor/limit. STAGE list 200 (issuer + `productGroup=autofluids`) is practice, not a spec mandate.

@@ -7,8 +7,9 @@
  * A human on the VPS may run this against STAGE after sourcing
  * ~/.config/marksolutions/mpt.env (see docs/STAGE-MPT-READONLY-GET.md).
  *
- * Requires MPT_PROBE_ORDER_ID (READY/CLOSED STAGE order). Auth then
- * GET /api/codes?orderId=... (HttpMptAdapter.getCodes). No POST.
+ * Requires MPT_PROBE_ORDER_ID, MPT_PROBE_GTIN, MPT_PROBE_QUANTITY
+ * (READY/CLOSED STAGE order). Auth then
+ * GET /api/codes?orderId=&gtin=&quantity= (HttpMptAdapter.getCodes). No POST.
  *
  * Stdout: status=<http> | status=network | missing env.
  * Optional second line if HTTP 200 and JSON has a codes array:
@@ -25,14 +26,15 @@ import {
 
 loadOptionalEnvFile();
 const orderId = process.env.MPT_PROBE_ORDER_ID?.trim();
-if (!requiredAuthEnv() || !orderId) {
+const gtin = process.env.MPT_PROBE_GTIN?.trim();
+const quantity = process.env.MPT_PROBE_QUANTITY?.trim();
+if (!requiredAuthEnv() || !orderId || !gtin || !quantity) {
   writeMissingEnv();
   process.exit(1);
 }
 
-const result = await authThenGet(
-  `/api/codes?orderId=${encodeURIComponent(orderId)}`
-);
+const q = new URLSearchParams({ orderId, gtin, quantity });
+const result = await authThenGet(`/api/codes?${q.toString()}`);
 writeStatus(result.status);
 if (
   result.status === 200 &&
