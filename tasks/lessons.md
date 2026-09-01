@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-01 — STAGE GET /api/orders 400 had empty/non-JSON body
+
+- Harith after safe-error PR: `status=400` + `path=/api/orders?productGroup=autofluids`, **no** `error=`. That means `result.json` was null (empty body or parse fail) — sanitize correctly stayed silent.
+- Official table: all GET /api/orders query params optional; example curl is bare `/api/orders`; request lists `Content-Type: application/json` on this GET. 400 = missing/invalid param; 406 empty = Accept (we already send `*/*`).
+- Next probe: send `Content-Type: application/json` on shared GET helper; on ≥400 always print `body_len=` / `content_type=` / `error=empty_body|non_json|<excerpt>`. Optional `MPT_ORDERS_BARE=1` matches official curl. Never dump body. Adapter still untouched.
+
 ## 2026-09-01 — STAGE GET /api/orders 400: show sanitized error, use autofluids
 
 - After PR #12 (`productGroup` on GET) Harith still got `status=400` on empty cabinet. Script discarded the STAGE body, so we could not see why.

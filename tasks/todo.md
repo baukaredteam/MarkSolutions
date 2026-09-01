@@ -5,7 +5,10 @@
 - [x] Script default `productGroup=autofluids` (KZ STAGE UI; not `category_autofluids_motor`; `motor-oils` is legacy)
 - [x] Non-200 GET prints `path=` (path+query only) and `error=` (sanitized; tokens/KM → `redacted`)
 - [x] Mock 400 `{ message: "productGroup required" }` → status/path/error, no secrets
-- [ ] Harith on VPS: pull this branch, re-run `npm run mpt:get-orders-healthcheck`, send back only `status=` / `path=` / `error=`
+- [x] GET sends `Content-Type: application/json` + `Accept: */*` (shared helper)
+- [x] status≥400: `body_len=` `content_type=` `error=empty_body|non_json|<sanitized>`
+- [x] `MPT_ORDERS_BARE=1` → official curl path `/api/orders` (no query)
+- [ ] Harith on VPS: pull PR #13, re-run get-orders (default + optional `MPT_ORDERS_BARE=1`), send back only `status=` / `path=` / `error=` / `body_len=` / `content_type=`
 - [ ] `HttpMptAdapter` untouched this PR
 - [ ] Mutating STAGE — **запрещено** до отдельного «да»
 

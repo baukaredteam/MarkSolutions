@@ -60,13 +60,21 @@ npm run mpt:get-orders-healthcheck
 
 - Без `MPT_PROBE_ORDER_ID` → `GET /api/orders?productGroup=<pg>`.
 - Если задан `MPT_PROBE_ORDER_ID` → `GET /api/orders?productGroup=<pg>&orderId=...` (оба фильтра из официальной таблицы; `orderId` в таблице тоже «Нет»).
-- Скрипт **не** добавляет выдуманные `cursor`/`limit` и другие query.
+- `MPT_ORDERS_BARE=1` → голый `GET /api/orders` без query (как официальный curl; все query в таблице «Нет»).
+- Скрипт **не** добавляет выдуманные `cursor`/`limit` и другие query, кроме `productGroup` / `orderId` выше.
+- GET шлёт `Accept: */*` (ЛОВУШКА 3) и `Content-Type: application/json` (таблица запроса для GET /api/orders).
 
 **Почему голый `GET /api/orders` дал 400 на пустом кабинете (VPS, после PR #11).** Auth был `status=200` (токен ок). Кабинет без заказов. Ожидание по спеке: `200` и `{ "orderInfos": [] }` — пустой массив валиден. Получили `400`. **Hunch (не доказано вызовом STAGE из агента):** STAGE / xTrace часто требует `productGroup` на списке, даже если в таблице «Нет». Скрипт больше не ходит без `productGroup`. Это не «изобретённый» параметр — он есть в `docs/source/Описание API ИС МПТ Роль Пользователь.md`.
 
 Рекомендуется явно задать `MPT_PRODUCT_GROUP=autofluids` в `~/.config/marksolutions/mpt.env` (для масел KZ). Пустой `orderInfos` при HTTP 200 — **ok** (нет заказов в группе), не ошибка.
 
-Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `orderInfos` — `orders_count=<n>`. На любом GET не-200 — строка `path=/api/orders?productGroup=...` (только path+query, без host и без Authorization). На HTTP ≥ 400 с JSON — одна строка `error=<sanitized>` (короткий excerpt: `globalErrors` / `error` / `message` / `error_message` / `description`; токен/Bearer/КМ → `error=redacted`). Тела заказов, raw JSON, пароль, токен **не** печатать.
+Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `orderInfos` — `orders_count=<n>`. На любом GET не-200 — строка `path=/api/orders?...` (только path+query, без host и без Authorization). На HTTP ≥ 400 — `body_len=<bytes>`, `content_type=<mime|none>`, и `error=`:
+
+- пустое тело → `error=empty_body` (Harith 2026-09-01: 400 + path, без error= — тело было пустым или не JSON)
+- тело есть, JSON не парсится → `error=non_json` (тело **не** печатать)
+- JSON → sanitized excerpt (`globalErrors` / `error` / `message` / …; токен/Bearer/КМ → `error=redacted`)
+
+Тела заказов, raw JSON, пароль, токен **не** печатать.
 
 **Caveat (адаптер, не этот PR):** `HttpMptAdapter.getOrder` по-прежнему шлёт только `?orderId=` без `productGroup`. Не меняем адаптер здесь. Форма ответа адаптера (`status` + `quantity`) на STAGE **не доказана**. Человеку достаточно HTTP-статуса (+ опционально `orders_count`).
 
@@ -79,7 +87,7 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `ord
 npm run mpt:get-codes-healthcheck
 ```
 
-Путь как адаптер: `GET /api/codes?orderId=...` (после authenticate, `Accept: */*`, Bearer).
+Путь как адаптер: `GET /api/codes?orderId=...` (после authenticate, `Accept: */*`, `Content-Type: application/json`, Bearer).
 
 Пустой `codes[]` при заказе не READY — **данные STAGE**, не обязательно баг. `?orderId=` в CONTRACT для codes тоже не расписан так же подробно, как путь; адаптер уже так фильтрует.
 
@@ -94,16 +102,16 @@ Stdout: `status=<http>`. Если HTTP 200 и JSON содержит массив
 npm run mpt:get-utilisation-healthcheck
 ```
 
-Путь как адаптер: `GET /api/utilisation/<reportId>`.
+Путь как адаптер: `GET /api/utilisation/<reportId>` (`Accept: */*`, `Content-Type: application/json`).
 
 Stdout: `status=<http>`. Если HTTP 200 и в JSON есть поле `status` — вторая строка `report_status=<IN_PROCESS|SUCCESS|ERROR|other>` (значения из CONTRACT; любое иное → `other`). `rejectReason` **не** печатать (там может оказаться КМ).
 
 ## Что сообщить обратно
 
-Только строки `status=` / `path=` / `error=` (и опционально `orders_count` / `codes_count` / `report_status`). Не копировать тело ответа.
+Только строки `status=` / `path=` / `error=` / `body_len=` / `content_type=` (и опционально `orders_count` / `codes_count` / `report_status`). Не копировать тело ответа.
 
 - `status=200` + exit 0 — ok (в т.ч. пустой список: `orders_count=0`)
-- `status=401` / `400` / `404` / иное + exit 1 — fail; пришлите также `path=` и `error=` если скрипт их напечатал
+- `status=401` / `400` / `404` / иное + exit 1 — fail; пришлите `path=` `error=` `body_len=` `content_type=` если скрипт их напечатал
 - `status=network` + exit 1 — сеть / таймаут ~15 с
 - `missing env` + exit 1 — нет обязательных имён (`MPT_BASE_URL` / `MPT_LOGIN` / `MPT_PASSWORD`; для C ещё `MPT_PROBE_ORDER_ID`; для D ещё `MPT_PROBE_REPORT_ID`). Скрипт **не** говорит, какого ключа не хватает.
 

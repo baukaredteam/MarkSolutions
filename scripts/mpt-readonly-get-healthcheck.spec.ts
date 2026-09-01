@@ -49,6 +49,7 @@ function isolatedEnv(
   delete env.MPT_BUSINESS_PLACE_ID;
   delete env.MPT_PROBE_ORDER_ID;
   delete env.MPT_PROBE_REPORT_ID;
+  delete env.MPT_ORDERS_BARE;
   for (const [key, value] of Object.entries(extra)) {
     if (value === undefined) delete env[key];
     else env[key] = value;
@@ -87,6 +88,8 @@ function startMock(handler: {
   authStatus: number;
   getStatus: number;
   getBody: string;
+  /** GET response Content-Type. null = omit header. default application/json */
+  getContentType?: string | null;
 }): Promise<{
   port: number;
   close: () => Promise<void>;
@@ -115,9 +118,12 @@ function startMock(handler: {
           );
           return;
         }
-        res.writeHead(handler.getStatus, {
-          "Content-Type": "application/json",
-        });
+        const getHeaders: Record<string, string> = {};
+        if (handler.getContentType !== null) {
+          getHeaders["Content-Type"] =
+            handler.getContentType ?? "application/json";
+        }
+        res.writeHead(handler.getStatus, getHeaders);
         res.end(handler.getBody);
       });
     });
@@ -209,6 +215,7 @@ describe("mpt read-only GET healthchecks", () => {
       `Bearer ${MOCK_ACCESS_TOKEN}`
     );
     expect(mock.captured[1]?.headers.accept).toBe("*/*");
+    expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
   });
 
   it("orders empty orderInfos → 200 and orders_count=0, never bodies", async () => {
@@ -298,6 +305,8 @@ describe("mpt read-only GET healthchecks", () => {
     expect(result.stdout).toContain("status=401");
     expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
     expect(result.stdout).toContain("error=unauthorized");
+    expect(result.stdout).toMatch(/body_len=\d+/);
+    expect(result.stdout).toContain("content_type=application/json");
     expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
     expect(result.stdout).not.toContain(SAMPLE_KM);
     expect(result.stdout).not.toContain(TEST_PASS);
@@ -326,6 +335,8 @@ describe("mpt read-only GET healthchecks", () => {
     expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
     expect(result.stdout).toContain("productGroup");
     expect(result.stdout).toContain("error=productGroup required");
+    expect(result.stdout).toMatch(/body_len=\d+/);
+    expect(result.stdout).toContain("content_type=application/json");
     expect(result.stdout).not.toContain("{");
     expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
     expect(result.stdout).not.toContain(SAMPLE_KM);
@@ -357,6 +368,84 @@ describe("mpt read-only GET healthchecks", () => {
     expect(result.stdout).not.toContain("Bearer ");
     expect(result.stdout).not.toContain(TEST_PASS);
     assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 empty body → error=empty_body, body_len=0, content_type=none", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody: "",
+      getContentType: null,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toMatch(/path=\/api\/orders\?productGroup=/);
+    expect(result.stdout).toContain("body_len=0");
+    expect(result.stdout).toContain("content_type=none");
+    expect(result.stdout).toContain("error=empty_body");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 non-JSON → error=non_json, never dumps body", async () => {
+    const html = `<html>oops ${SAMPLE_KM} ${MOCK_ACCESS_TOKEN}</html>`;
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody: html,
+      getContentType: "text/html; charset=utf-8",
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(html)}`);
+    expect(result.stdout).toContain("content_type=text/html");
+    expect(result.stdout).toContain("error=non_json");
+    expect(result.stdout).not.toContain("<html>");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders MPT_ORDERS_BARE=1 → GET /api/orders with no query", async () => {
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 200,
+      getBody: JSON.stringify({ orderInfos: [] }),
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(
+      ORDERS,
+      authEnv(home, baseUrl, { MPT_ORDERS_BARE: "1" })
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("status=200\norders_count=0\n");
+    assertSafeStdout(result.stdout);
+    expect(mock.captured[1]?.method).toBe("GET");
+    expect(mock.captured[1]?.url).toBe("/api/orders");
+    expect(mock.captured[1]?.headers.accept).toBe("*/*");
+    expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
   });
 
   it("auth 401 → exit 1, no GET", async () => {
@@ -419,6 +508,8 @@ describe("mpt read-only GET healthchecks", () => {
     assertSafeStdout(result.stdout);
     expect(mock.captured[1]?.url).toBe("/api/codes?orderId=ready-order");
     expect(mock.captured[1]?.method).toBe("GET");
+    expect(mock.captured[1]?.headers.accept).toBe("*/*");
+    expect(mock.captured[1]?.headers["content-type"]).toBe("application/json");
   });
 
   it("codes missing probe order id → missing env, no HTTP", async () => {

@@ -139,6 +139,50 @@ export function writeSafeError(json) {
   process.stdout.write(`error=${sanitized}\n`);
 }
 
+/** Response Content-Type type only (no charset/params), or `none`. */
+export function mimeFromContentType(header) {
+  if (!header || typeof header !== "string") return "none";
+  const mime = header.split(";")[0].trim();
+  return mime || "none";
+}
+
+/**
+ * Read GET body once. Never returns the raw text to callers (so scripts
+ * cannot accidentally print it).
+ * @returns {Promise<{ json: unknown, bodyLen: number, contentType: string, parse: "empty" | "json" | "non_json" }>}
+ */
+export async function readGetBody(res) {
+  const text = await res.text().catch(() => "");
+  const bodyLen = Buffer.byteLength(text);
+  const contentType = mimeFromContentType(res.headers.get("content-type"));
+  if (!text) {
+    return { json: null, bodyLen, contentType, parse: "empty" };
+  }
+  try {
+    return { json: JSON.parse(text), bodyLen, contentType, parse: "json" };
+  } catch {
+    return { json: null, bodyLen, contentType, parse: "non_json" };
+  }
+}
+
+/**
+ * Safe 400+ diagnostics: body_len, content_type, and one error= line.
+ * Never dumps the body.
+ */
+export function writeSafeHttpError(result) {
+  process.stdout.write(`body_len=${result.bodyLen}\n`);
+  process.stdout.write(`content_type=${result.contentType}\n`);
+  if (result.parse === "empty") {
+    process.stdout.write("error=empty_body\n");
+    return;
+  }
+  if (result.parse === "non_json") {
+    process.stdout.write("error=non_json\n");
+    return;
+  }
+  writeSafeError(result.json);
+}
+
 export async function fetchWithTimeout(url, init, timeoutMs = TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -189,7 +233,8 @@ export async function authenticate(auth) {
 
 /**
  * Authenticate then one GET. Prints status= from the last HTTP (or network).
- * @returns {Promise<{ status: number, json: unknown } | null>} null if already exited via process
+ * GET sends Accept * /* and Content-Type application/json (official table).
+ * @returns {Promise<{ status: number, json: unknown, bodyLen: number, contentType: string, parse: "empty" | "json" | "non_json" } | null>}
  */
 export async function authThenGet(path) {
   loadOptionalEnvFile();
@@ -209,7 +254,10 @@ export async function authThenGet(path) {
     process.exit(1);
   }
 
-  const headers = { Accept: "*/*" };
+  const headers = {
+    Accept: "*/*",
+    "Content-Type": "application/json",
+  };
   if (authResult.accessToken) {
     headers.Authorization = `Bearer ${authResult.accessToken}`;
   }
@@ -219,8 +267,8 @@ export async function authThenGet(path) {
       method: "GET",
       headers,
     });
-    const json = await readJsonQuiet(res);
-    return { status: res.status, json };
+    const body = await readGetBody(res);
+    return { status: res.status, ...body };
   } catch {
     writeStatus("network");
     process.exit(1);
