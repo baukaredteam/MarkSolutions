@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-01 — GET /api/orders 400 globalErrors errorCode 201 is permission
+
+- Harith body (74 bytes): `{"globalErrors":[{"error":"No permission for operation","errorCode":201}]}`. Auth 200; same 400 on bare and with productGroup. Not a query bug.
+- Official API needs `MARKING-CODE-ORDER.READ` and/or `MARKING-CODE-CONTRACTOR-ORDER.READ`. Fix STAGE ЛК permissions + ТГ connected. Do not keep changing query params.
+- Sanitizer missed `globalErrors[].error` (looked for errorMessage/message/field). Print `error=No permission for operation (201)`. Agents still do not call STAGE.
+
 ## 2026-09-01 — STAGE 400 is ~74-byte JSON; nested error object likely
 
 - Harith matrix: A/B with productGroup and C/D bare (with/without Content-Type) all `status=400` `content_type=application/json` `body_len=74`. Query and Content-Type do not change outcome.

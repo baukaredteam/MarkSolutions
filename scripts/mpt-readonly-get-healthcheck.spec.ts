@@ -370,6 +370,35 @@ describe("mpt read-only GET healthchecks", () => {
     assertSafeStdout(result.stdout);
   });
 
+  it("orders GET 400 STAGE permission globalErrors error+errorCode 201", async () => {
+    const getBody =
+      '{"globalErrors":[{"error":"No permission for operation","errorCode":201}]}';
+    expect(Buffer.byteLength(getBody)).toBe(74);
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain("body_len=74");
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).toContain("error=No permission for operation (201)");
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain("globalErrors");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
   it("orders GET 400 with nested error.message object → excerpt, body_len, no dump", async () => {
     const getBody = JSON.stringify({
       error: { code: 400, message: "nested object message" },

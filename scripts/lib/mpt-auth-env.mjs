@@ -74,6 +74,11 @@ function asShortString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function asCode(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return asShortString(value);
+}
+
 function formatFieldErrors(arr) {
   const parts = [];
   for (const item of arr) {
@@ -85,10 +90,17 @@ function formatFieldErrors(arr) {
     if (!item || typeof item !== "object") continue;
     const field = asShortString(item.field);
     const msg =
-      asShortString(item.errorMessage) || asShortString(item.message);
-    if (field && msg) parts.push(`${field}:${msg}`);
-    else if (msg) parts.push(msg);
-    else if (field) parts.push(field);
+      asShortString(item.errorMessage) ||
+      asShortString(item.message) ||
+      asShortString(item.error);
+    const code = asCode(item.errorCode);
+    let text = "";
+    if (field && msg) text = `${field}:${msg}`;
+    else if (msg) text = msg;
+    else if (field) text = field;
+    if (text && code) text = `${text} (${code})`;
+    else if (!text && code) text = code;
+    if (text) parts.push(text);
   }
   return parts.join("; ");
 }

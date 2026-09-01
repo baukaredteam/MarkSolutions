@@ -9,8 +9,9 @@
 - [x] status≥400: `body_len=` `content_type=` `error=empty_body|non_json|<sanitized>`
 - [x] `MPT_ORDERS_BARE=1` → official curl path `/api/orders` (no query)
 - [x] sanitize also digs nested `error` object, `errors[]`, `errorCode`+`errorMessage`, RFC7807 title/detail
-- [ ] Harith: paste `keys=` / `body=` of the 74-byte JSON (safe keys only). Re-run after this follow-up and send `status=` / `path=` / `error=` / `body_len=` / `content_type=`
-- [ ] Default path stays `?productGroup=autofluids` until body keys are known (bare vs pg irrelevant for status)
+- [x] `globalErrors[].error` + `errorCode` → `error=No permission for operation (201)` (STAGE 74-byte body)
+- [ ] Harith: pull, re-run get-orders — expect `error=No permission for operation (201)`. Real fix = STAGE ЛК permissions (`MARKING-CODE-ORDER.READ`), not query
+- [x] Default path stays `?productGroup=autofluids` (bare vs pg irrelevant for this 400)
 - [ ] `HttpMptAdapter` untouched this PR
 - [ ] Mutating STAGE — **запрещено** до отдельного «да»
 

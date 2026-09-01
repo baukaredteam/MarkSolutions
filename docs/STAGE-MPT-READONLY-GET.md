@@ -72,11 +72,21 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `ord
 
 - пустое тело → `error=empty_body` (Harith 2026-09-01: 400 + path, без error= — тело было пустым или не JSON)
 - тело есть, JSON не парсится → `error=non_json` (тело **не** печатать)
-- JSON → sanitized excerpt (`globalErrors`; `error` string **or** `error.message` / `error.errorMessage` / `error.description`; `errors[]`; `errorCode`+`errorMessage`; RFC7807 `title`/`detail`; токен/Bearer/КМ → `error=redacted`). Harith matrix: productGroup and Content-Type do **not** change 400 — STAGE returns ~74-byte `application/json` even on bare GET; nested `error` object is the likely miss. Default path stays `?productGroup=autofluids` until keys/body are known.
+- JSON → sanitized excerpt (`globalErrors[].error` + optional `errorCode` as `text (201)`; `error` string or nested; `errors[]`; RFC7807 `title`/`detail`; токен/Bearer/КМ → `error=redacted`). Known STAGE 400: permission `errorCode` 201 — see below.
 
 Тела заказов, raw JSON, пароль, токен **не** печатать.
 
 **Caveat (адаптер, не этот PR):** `HttpMptAdapter.getOrder` по-прежнему шлёт только `?orderId=` без `productGroup`. Не меняем адаптер здесь. Форма ответа адаптера (`status` + `quantity`) на STAGE **не доказана**. Человеку достаточно HTTP-статуса (+ опционально `orders_count`).
+
+### Если `status=400` и `error=` про permission / errorCode 201
+
+Это **не** missing/invalid `productGroup`. Auth (`status=200`) ок; STAGE запрещает `GET /api/orders` (официально нужны `MARKING-CODE-ORDER.READ` и/или `MARKING-CODE-CONTRACTOR-ORDER.READ`).
+
+Harith 2026-09-01: `body_len=74` `keys=globalErrors:object`  
+`{"globalErrors":[{"error":"No permission for operation","errorCode":201}]}`  
+Одинаково на bare GET и с `productGroup` / `Content-Type`.
+
+**Что делать человеку:** в STAGE ЛК выдать права на чтение заказов КМ и убедиться, что товарная группа подключена. **Не** крутить query-параметры дальше. Агент STAGE не вызывает.
 
 ### C) `GET /api/codes` — нужен готовый заказ
 
