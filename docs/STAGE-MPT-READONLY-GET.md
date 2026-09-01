@@ -72,7 +72,7 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `ord
 
 - пустое тело → `error=empty_body` (Harith 2026-09-01: 400 + path, без error= — тело было пустым или не JSON)
 - тело есть, JSON не парсится → `error=non_json` (тело **не** печатать)
-- JSON → sanitized excerpt (`globalErrors` / `error` / `message` / …; токен/Bearer/КМ → `error=redacted`)
+- JSON → sanitized excerpt (`globalErrors`; `error` string **or** `error.message` / `error.errorMessage` / `error.description`; `errors[]`; `errorCode`+`errorMessage`; RFC7807 `title`/`detail`; токен/Bearer/КМ → `error=redacted`). Harith matrix: productGroup and Content-Type do **not** change 400 — STAGE returns ~74-byte `application/json` even on bare GET; nested `error` object is the likely miss. Default path stays `?productGroup=autofluids` until keys/body are known.
 
 Тела заказов, raw JSON, пароль, токен **не** печатать.
 

@@ -8,7 +8,9 @@
 - [x] GET sends `Content-Type: application/json` + `Accept: */*` (shared helper)
 - [x] status≥400: `body_len=` `content_type=` `error=empty_body|non_json|<sanitized>`
 - [x] `MPT_ORDERS_BARE=1` → official curl path `/api/orders` (no query)
-- [ ] Harith on VPS: pull PR #13, re-run get-orders (default + optional `MPT_ORDERS_BARE=1`), send back only `status=` / `path=` / `error=` / `body_len=` / `content_type=`
+- [x] sanitize also digs nested `error` object, `errors[]`, `errorCode`+`errorMessage`, RFC7807 title/detail
+- [ ] Harith: paste `keys=` / `body=` of the 74-byte JSON (safe keys only). Re-run after this follow-up and send `status=` / `path=` / `error=` / `body_len=` / `content_type=`
+- [ ] Default path stays `?productGroup=autofluids` until body keys are known (bare vs pg irrelevant for status)
 - [ ] `HttpMptAdapter` untouched this PR
 - [ ] Mutating STAGE — **запрещено** до отдельного «да»
 

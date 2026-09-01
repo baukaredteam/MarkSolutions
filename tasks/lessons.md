@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-01 — STAGE 400 is ~74-byte JSON; nested error object likely
+
+- Harith matrix: A/B with productGroup and C/D bare (with/without Content-Type) all `status=400` `content_type=application/json` `body_len=74`. Query and Content-Type do not change outcome.
+- Earlier missing `error=` was not empty body — JSON parsed but `sanitizeMptError` returned null (top-level `error` as object, or other nested shape). Dig `error.message` / `error.errorMessage` / `errors[]` / `errorCode`+`errorMessage` / RFC7807 `title`/`detail`.
+- Do not flip default path to bare until Harith pastes keys=/body= of that 74-byte JSON. Agents still do not call STAGE.
+
 ## 2026-09-01 — STAGE GET /api/orders 400 had empty/non-JSON body
 
 - Harith after safe-error PR: `status=400` + `path=/api/orders?productGroup=autofluids`, **no** `error=`. That means `result.json` was null (empty body or parse fail) — sanitize correctly stayed silent.

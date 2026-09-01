@@ -93,8 +93,19 @@ function formatFieldErrors(arr) {
   return parts.join("; ");
 }
 
+function extractFromErrorObject(err) {
+  if (!err || typeof err !== "object") return "";
+  if (Array.isArray(err)) return formatFieldErrors(err);
+  return (
+    asShortString(err.message) ||
+    asShortString(err.errorMessage) ||
+    asShortString(err.description)
+  );
+}
+
 /**
  * One-line STAGE/xTrace error excerpt. Never raw JSON, tokens, Bearer, or KM.
+ * Digs string fields and common nested shapes (error object, errors[], RFC7807).
  * @returns {string | null} sanitized text, "redacted", or null if nothing to print
  */
 export function sanitizeMptError(json) {
@@ -102,12 +113,22 @@ export function sanitizeMptError(json) {
 
   let extracted = "";
 
-  if (Array.isArray(json.globalErrors) && json.globalErrors.length) {
+  if (Array.isArray(json)) {
+    extracted = formatFieldErrors(json);
+  }
+
+  if (!extracted && Array.isArray(json.globalErrors) && json.globalErrors.length) {
     extracted = formatFieldErrors(json.globalErrors);
   }
 
+  if (!extracted && "error" in json) {
+    const v = json.error;
+    if (typeof v === "string" && v.trim()) extracted = v.trim();
+    else if (v && typeof v === "object") extracted = extractFromErrorObject(v);
+  }
+
   if (!extracted) {
-    for (const key of ["error", "message", "error_message", "description"]) {
+    for (const key of ["message", "error_message", "description"]) {
       const v = json[key];
       if (typeof v === "string" && v.trim()) {
         extracted = v.trim();
@@ -120,8 +141,22 @@ export function sanitizeMptError(json) {
     }
   }
 
-  if (!extracted && Array.isArray(json)) {
-    extracted = formatFieldErrors(json);
+  if (!extracted && Array.isArray(json.errors) && json.errors.length) {
+    extracted = formatFieldErrors(json.errors);
+  }
+
+  if (!extracted) {
+    const code = asShortString(json.errorCode);
+    const msg = asShortString(json.errorMessage);
+    if (code && msg) extracted = `${code}:${msg}`;
+    else extracted = msg || code;
+  }
+
+  if (!extracted) {
+    const title = asShortString(json.title);
+    const detail = asShortString(json.detail);
+    if (title && detail) extracted = `${title}: ${detail}`;
+    else extracted = detail || title;
   }
 
   if (!extracted) return null;

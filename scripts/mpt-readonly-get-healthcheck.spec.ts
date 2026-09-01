@@ -370,6 +370,90 @@ describe("mpt read-only GET healthchecks", () => {
     assertSafeStdout(result.stdout);
   });
 
+  it("orders GET 400 with nested error.message object → excerpt, body_len, no dump", async () => {
+    const getBody = JSON.stringify({
+      error: { code: 400, message: "nested object message" },
+    });
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(getBody)}`);
+    expect(result.stdout).toContain("error=nested object message");
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    expect(result.stdout).not.toContain(SAMPLE_KM);
+    expect(result.stdout).not.toContain(TEST_PASS);
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 RFC7807 title/detail → error excerpt, no raw JSON", async () => {
+    const getBody = JSON.stringify({
+      title: "Bad Request",
+      detail: "rfc7807 detail text",
+    });
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(getBody)}`);
+    expect(result.stdout).toContain("content_type=application/json");
+    expect(result.stdout).toMatch(/error=.*rfc7807 detail text/);
+    expect(result.stdout).not.toContain("{");
+    assertSafeStdout(result.stdout);
+  });
+
+  it("orders GET 400 errors[] + errorCode combo → field:msg excerpt", async () => {
+    const getBody = JSON.stringify({
+      errorCode: "ORD-400",
+      errorMessage: "combo message",
+      errors: [{ field: "productGroup", errorMessage: "unknown group" }],
+    });
+    const mock = await startMock({
+      authStatus: 200,
+      getStatus: 400,
+      getBody,
+    });
+    closers.push(mock.close);
+    const baseUrl = `http://127.0.0.1:${mock.port}`;
+    assertLocalMockUrl(baseUrl);
+    const home = mkdtempSync(join(tmpdir(), "mpt-ro-"));
+
+    const result = await runScript(ORDERS, authEnv(home, baseUrl));
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("status=400");
+    expect(result.stdout).toContain(`body_len=${Buffer.byteLength(getBody)}`);
+    expect(result.stdout).toMatch(/error=/);
+    expect(result.stdout).toMatch(
+      /productGroup:unknown group|ORD-400:combo message|combo message/
+    );
+    expect(result.stdout).not.toContain("{");
+    expect(result.stdout).not.toContain(MOCK_ACCESS_TOKEN);
+    assertSafeStdout(result.stdout);
+  });
+
   it("orders GET 400 empty body → error=empty_body, body_len=0, content_type=none", async () => {
     const mock = await startMock({
       authStatus: 200,
