@@ -35,8 +35,9 @@ import type {
 //   (document.service шлёт внутренние codeKeys Vault; utilisation — serial).
 //   Для реального контура это должно стать полными КМ из vault.reveal —
 //   в скоупе тикетов 02/03 (http-режим для документов включать после них).
-// - getOrder/getCodes фильтруют по orderId query-параметром; точный контракт
-//   списков подтверждается контрактным тестом на STAGE.
+// - getOrder шлёт только ?orderId= (без productGroup); getCodes — только ?orderId=
+//   (официально для codes обязательны ещё gtin+quantity). GET-аудит:
+//   docs/MPT-GET-CONTRACT-AUDIT.md — поведение не менять в docs-PR.
 // - requestId генерируется локально (трассировка в outbox), на провод не уходит.
 
 export function toInt32(v: unknown): number {

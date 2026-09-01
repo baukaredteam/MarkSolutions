@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-01 — Phase A3 is GET audit docs, not adapter rewrite
+
+- Official GET /api/orders query params are all optional (`orderId`, `productGroup`, `cursor`/`limit` = «Нет»). Do not invent required cursor/limit. STAGE list 200 (issuer + `productGroup=autofluids`) is practice, not a spec mandate.
+- Adapter `getOrder` still `?orderId=` only and reads root `status`/`quantity`; official body is `orderInfos[].orderStatus` (no quantity on list). `getCodes` official requires `gtin`+`quantity`; adapter sends only `orderId` and maps object codes vs official `string[]`. `getUtilisation` reads `status`, official field is `reportStatus`.
+- A4 = those three P0 parses/queries only. Shared `request()` omits Content-Type on GET (healthcheck sends it). Do not change POST / simulator / STAGE scripts in the audit PR.
+
 ## 2026-09-01 — GET /api/orders 400 globalErrors errorCode 201 is permission
 
 - Harith body (74 bytes): `{"globalErrors":[{"error":"No permission for operation","errorCode":201}]}`. Auth 200; same 400 on bare and with productGroup. Not a query bug.
