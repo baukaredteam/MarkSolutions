@@ -4,7 +4,7 @@
 
 - [x] `docs/MPT-GET-CONTRACT-AUDIT.md` — official GET vs `HttpMptAdapter` (no STAGE call, no mutating change)
 - [x] Pointers: `docs/STAGE-MPT-READONLY-GET.md`, comment in adapter (query fact only)
-- [ ] A4 (separate PR): P0 parse `orderInfos.orderStatus` + `reportStatus`; `getCodes` official `orderId+gtin+quantity` + `codes[]` strings
+- [x] A4 P0: parse `orderInfos.orderStatus` + `reportStatus`; `getCodes` official `orderId+gtin+quantity` + `codes[]` strings
 - [ ] A4 P1: optional `productGroup` on getOrder; GET Content-Type; document status enum / errors GET
 - [ ] Mutating STAGE / adapter POST — **запрещено** до отдельного «да»
 

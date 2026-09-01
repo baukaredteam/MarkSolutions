@@ -5,7 +5,6 @@ import type { PrismaService } from "./prisma.service";
 import { MockMptAdapter } from "./integrations";
 import type {
   IMptAdapter,
-  MptCodeView,
   MptOrderInput,
   MptOrderStatus,
 } from "./integrations";
@@ -35,9 +34,10 @@ import type {
 //   (document.service шлёт внутренние codeKeys Vault; utilisation — serial).
 //   Для реального контура это должно стать полными КМ из vault.reveal —
 //   в скоупе тикетов 02/03 (http-режим для документов включать после них).
-// - getOrder шлёт только ?orderId= (без productGroup); getCodes — только ?orderId=
-//   (официально для codes обязательны ещё gtin+quantity). GET-аудит:
-//   docs/MPT-GET-CONTRACT-AUDIT.md — поведение не менять в docs-PR.
+// - getOrder шлёт только ?orderId= (без productGroup — P1). Парсит
+//   orderInfos[].orderStatus; quantity=0 (list body has no qty).
+// - getCodes: official query orderId+gtin+quantity (+ lastPackId); codes string[] + packId.
+//   GET-аудит: docs/MPT-GET-CONTRACT-AUDIT.md. A4 P0 landed.
 // - requestId генерируется локально (трассировка в outbox), на провод не уходит.
 
 export function toInt32(v: unknown): number {
@@ -332,7 +332,8 @@ export class HttpMptAdapter implements IMptAdapter {
     return { status: (d.status as MptOrderStatus) ?? "CREATED", requestId };
   }
 
-  // GET /api/orders (список) — фильтр по заказу уточняется на STAGE контрактным тестом.
+  // GET /api/orders?orderId= — official list body { orderInfos[] }.
+  // Do not treat root status/quantity as STAGE contract (A4 P0).
   async getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
@@ -342,29 +343,44 @@ export class HttpMptAdapter implements IMptAdapter {
       "GET",
       { operationId: orderId }
     );
-    const d = data as { status?: string; quantity?: number };
-    return {
-      status: (d.status as MptOrderStatus) ?? "CREATED",
-      quantity: Number(d.quantity ?? 0),
+    const d = data as {
+      orderInfos?: Array<{ orderId?: string; orderStatus?: string }>;
     };
+    const infos = Array.isArray(d.orderInfos) ? d.orderInfos : [];
+    const match =
+      infos.find((row) => row.orderId === orderId) ??
+      (infos.length === 1 ? infos[0] : undefined);
+    const status = (match?.orderStatus as MptOrderStatus) ?? "CREATED";
+    // quantity is not on official list; poller uses OrderLine sums.
+    return { status, quantity: 0 };
   }
 
-  // GET /api/codes (только READY/CLOSED) → codes[].
-  async getCodes(orderId: string): Promise<{ codes: MptCodeView[] }> {
-    const { data } = await this.request(
-      `/api/codes?orderId=${encodeURIComponent(orderId)}`,
-      "GET",
-      { operationId: orderId }
-    );
-    const d = data as { codes?: Array<Record<string, unknown>> };
-    const codes = (d.codes ?? []).map((c) => ({
-      gtin: String(c.gtin ?? ""),
-      serial: String(c.serial ?? ""),
-      ai91: (c.ai91 as string | null) ?? null,
-      ai92: (c.ai92 as string | null) ?? null,
-      form: (c.form as "base" | "extended") ?? "base",
-    }));
-    return { codes };
+  // GET /api/codes — official required query orderId+gtin+quantity; optional lastPackId.
+  // Response codes is string[]; never log full KM (count/mask only).
+  async getCodes(input: {
+    orderId: string;
+    gtin: string;
+    quantity: number;
+    lastPackId?: string;
+  }): Promise<{ codes: string[]; packId?: string }> {
+    const q = new URLSearchParams({
+      orderId: input.orderId,
+      gtin: input.gtin,
+      quantity: String(Math.trunc(Number(input.quantity))),
+    });
+    if (input.lastPackId) q.set("lastPackId", input.lastPackId);
+    const { data } = await this.request(`/api/codes?${q.toString()}`, "GET", {
+      operationId: input.orderId,
+    });
+    const d = data as { codes?: unknown; packId?: unknown };
+    const codes = Array.isArray(d.codes)
+      ? d.codes.filter((c): c is string => typeof c === "string")
+      : [];
+    const packId =
+      typeof d.packId === "string" && d.packId.length > 0
+        ? d.packId
+        : undefined;
+    return { codes, packId };
   }
 
   // ---- Нанесение (п.26): POST /api/utilisation ----
@@ -417,8 +433,15 @@ export class HttpMptAdapter implements IMptAdapter {
       "GET",
       { operationId: reportId }
     );
-    const d = data as { status?: string; rejectReason?: string };
-    const st = (d.status ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
+    // Official field is reportStatus; fallback to status if STAGE still emits
+    // the older name (one explicit fallback, do not treat both as equal).
+    const d = data as {
+      reportStatus?: string;
+      status?: string;
+      rejectReason?: string;
+    };
+    const st = (d.reportStatus ?? d.status ?? "IN_PROCESS") as
+      "IN_PROCESS" | "SUCCESS" | "ERROR";
     return { status: st, rejectReason: d.rejectReason ?? undefined };
   }
 

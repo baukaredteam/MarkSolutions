@@ -32,6 +32,8 @@ MPT_REQUEST_TIMEOUT_MS=15000
 
 ```
 MPT_PROBE_ORDER_ID=
+MPT_PROBE_GTIN=
+MPT_PROBE_QUANTITY=
 MPT_PROBE_REPORT_ID=
 ```
 
@@ -76,7 +78,7 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть массив `ord
 
 Тела заказов, raw JSON, пароль, токен **не** печатать.
 
-**Caveat (адаптер, не этот PR):** `HttpMptAdapter.getOrder` по-прежнему шлёт только `?orderId=` без `productGroup`. Не меняем адаптер здесь. Форма ответа адаптера (`status` + `quantity`) на STAGE **не доказана**. Человеку достаточно HTTP-статуса (+ опционально `orders_count`).
+**Caveat (query P1, не этот PR):** `HttpMptAdapter.getOrder` по-прежнему шлёт только `?orderId=` без `productGroup`. A4 P0 парсит `orderInfos[].orderStatus` и возвращает `quantity: 0` (list body qty нет). Человеку достаточно HTTP-статуса (+ опционально `orders_count`).
 
 Таблица GET-only: адаптер vs официальный путь/query/заголовки — `docs/MPT-GET-CONTRACT-AUDIT.md` (Phase A3). A4 — узкие GET-фиксы по P0/P1 из того файла, не mutating.
 
@@ -92,16 +94,16 @@ Harith 2026-09-01: `body_len=74` `keys=globalErrors:object`
 
 ### C) `GET /api/codes` — нужен готовый заказ
 
-Нужен реальный STAGE `orderId` в статусе **READY** или **CLOSED** (CONTRACT: коды только тогда). Человек кладёт id в `MPT_PROBE_ORDER_ID`.
+Нужен реальный STAGE `orderId` в статусе **READY** или **CLOSED** (CONTRACT: коды только тогда) плюс `gtin` и `quantity` (официальные обязательные query). Человек кладёт их в `MPT_PROBE_ORDER_ID` / `MPT_PROBE_GTIN` / `MPT_PROBE_QUANTITY`.
 
 ```
-# в mpt.env: MPT_PROBE_ORDER_ID=<готовый STAGE orderId>
+# в mpt.env: MPT_PROBE_ORDER_ID / MPT_PROBE_GTIN / MPT_PROBE_QUANTITY
 npm run mpt:get-codes-healthcheck
 ```
 
-Путь как адаптер: `GET /api/codes?orderId=...` (после authenticate, `Accept: */*`, `Content-Type: application/json`, Bearer).
+Путь как адаптер (A4 P0): `GET /api/codes?orderId=&gtin=&quantity=` (после authenticate, `Accept: */*`, `Content-Type: application/json`, Bearer). Адаптер парсит `codes` как `string[]` (+ `packId` если есть).
 
-Пустой `codes[]` при заказе не READY — **данные STAGE**, не обязательно баг. `?orderId=` в CONTRACT для codes тоже не расписан так же подробно, как путь; адаптер уже так фильтрует.
+Пустой `codes[]` при заказе не READY — **данные STAGE**, не обязательно баг.
 
 Stdout: `status=<http>`. Если HTTP 200 и JSON содержит массив `codes` — вторая строка `codes_count=<n>` (длина массива). Значения кодов **не** печатать.
 
@@ -116,7 +118,7 @@ npm run mpt:get-utilisation-healthcheck
 
 Путь как адаптер: `GET /api/utilisation/<reportId>` (`Accept: */*`, `Content-Type: application/json`).
 
-Stdout: `status=<http>`. Если HTTP 200 и в JSON есть поле `status` — вторая строка `report_status=<IN_PROCESS|SUCCESS|ERROR|other>` (значения из CONTRACT; любое иное → `other`). `rejectReason` **не** печатать (там может оказаться КМ).
+Stdout: `status=<http>`. Если HTTP 200 — вторая строка `report_status=<IN_PROCESS|SUCCESS|ERROR|other>` из официального `reportStatus` (fallback на `status`, если поля нет). Любое иное → `other`. `rejectReason` **не** печатать (там может оказаться КМ).
 
 ## Что сообщить обратно
 
@@ -125,7 +127,7 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть поле `status`
 - `status=200` + exit 0 — ok (в т.ч. пустой список: `orders_count=0`)
 - `status=401` / `400` / `404` / иное + exit 1 — fail; пришлите `path=` `error=` `body_len=` `content_type=` если скрипт их напечатал
 - `status=network` + exit 1 — сеть / таймаут ~15 с
-- `missing env` + exit 1 — нет обязательных имён (`MPT_BASE_URL` / `MPT_LOGIN` / `MPT_PASSWORD`; для C ещё `MPT_PROBE_ORDER_ID`; для D ещё `MPT_PROBE_REPORT_ID`). Скрипт **не** говорит, какого ключа не хватает.
+- `missing env` + exit 1 — нет обязательных имён (`MPT_BASE_URL` / `MPT_LOGIN` / `MPT_PASSWORD`; для C ещё `MPT_PROBE_ORDER_ID` + `MPT_PROBE_GTIN` + `MPT_PROBE_QUANTITY`; для D ещё `MPT_PROBE_REPORT_ID`). Скрипт **не** говорит, какого ключа не хватает.
 
 Тело ответа, `accessToken`, пароль, полный КМ — не копировать. Если коды пришли — только **число** и факт наличия маски в голове («коды есть / пусто»), никогда сырые значения.
 
@@ -137,7 +139,7 @@ Stdout: `status=<http>`. Если HTTP 200 и в JSON есть поле `status`
 
 ## Известные блокеры (фаза 0) — задокументировать, не чинить вызовом STAGE
 
-1. **`getOrder` / `getCodes` и `?orderId=`.** В CONTRACT список заказов описан как `GET /api/orders` (`cursor`/`limit`), без явного `?orderId=`. Официальная таблица помечает `orderId`/`productGroup`/`cursor`/`limit` как необязательные — не выдумывать обязательность. Адаптер `getOrder` шлёт только `?orderId=`; `getCodes` — только `?orderId=` (официально ещё `gtin`+`quantity`). Сводка: `docs/MPT-GET-CONTRACT-AUDIT.md`. Форма ответа `getOrder` (`status` + `quantity`) на STAGE не доказана. Возможен 400/404, пока адаптер не выровняют отдельным A4 PR.
+1. **`getOrder` query без `productGroup` (P1).** A4 P0: адаптер парсит `orderInfos[].orderStatus`, `quantity: 0`; `getCodes` шлёт `orderId+gtin+quantity` и читает `string[]`; `getUtilisation` читает `reportStatus` (fallback `status`). Query `productGroup` на getOrder и GET Content-Type — P1, не этот PR.
 2. **Utilisation / import на http-пути** отдали бы serial / codeKey, не полный КМ. Это **mutating** и **вне фазы 1**. Не слать КМ и не POST utilisation/import.
 3. **`NODE_ENV=stage` fail-closed** для OpenBao и прочей прод-инфры — **не этот PR**.
 
@@ -160,6 +162,6 @@ npm run mpt:get-utilisation-healthcheck
 ## Что этот PR не делает
 
 - Не ходит в STAGE из CI и агентов
-- Не чинит query/response `HttpMptAdapter` (следующий fix-PR после отчёта человека)
+- Не делает P1/P2 (productGroup на getOrder, GET Content-Type, sub-orders, default autofluids в адаптере)
 - Не добавляет POST orders / utilisation / `doc/*`
 - Не мержит сам себя

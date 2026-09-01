@@ -127,3 +127,58 @@ export function verifyGs1Mod10(code: string, length = 14): boolean {
   const base = code.slice(0, -1);
   return gs1Mod10CheckDigit(base) === Number(code.slice(-1));
 }
+
+// ADR-006: official ИС МПТ code string → structure. GS = 0x1D or literal <GS>.
+// Do not log `raw` (full KM).
+export type Adr006Km = {
+  gtin: string;
+  serial: string;
+  ai91: string | null;
+  ai92: string | null;
+  form: "base" | "extended";
+};
+
+export function parseAdr006Km(raw: string): Adr006Km {
+  const normalized = raw.replaceAll("<GS>", "\x1d");
+  const [head, ...rest] = normalized.split("\x1d");
+  if (
+    !head ||
+    !head.startsWith("01") ||
+    head.length < 18 ||
+    head.slice(16, 18) !== "21"
+  ) {
+    throw new Error("invalid ADR-006 KM");
+  }
+  const gtin = head.slice(2, 16);
+  const serial = head.slice(18);
+  if (!gtin || !serial) throw new Error("invalid ADR-006 KM");
+  let ai91: string | null = null;
+  let ai92: string | null = null;
+  for (const part of rest) {
+    if (part.startsWith("91")) ai91 = part.slice(2);
+    else if (part.startsWith("92")) ai92 = part.slice(2);
+  }
+  return {
+    gtin,
+    serial,
+    ai91,
+    ai92,
+    form: ai91 || ai92 ? "extended" : "base",
+  };
+}
+
+export function serializeAdr006Km(code: {
+  gtin: string;
+  serial: string;
+  ai91?: string | null;
+  ai92?: string | null;
+  form?: string;
+}): string {
+  const g14 = code.gtin.length === 13 ? `0${code.gtin}` : code.gtin;
+  let s = `01${g14}21${code.serial}`;
+  if (code.form === "extended") {
+    if (code.ai91) s += `\x1d91${code.ai91}`;
+    if (code.ai92) s += `\x1d92${code.ai92}`;
+  }
+  return s;
+}

@@ -11,7 +11,8 @@
  * Auth then GET /api/utilisation/<id> (HttpMptAdapter.getUtilisation).
  *
  * Stdout: status=<http> | status=network | missing env.
- * Optional second line if HTTP 200 and JSON has a status field:
+ * Optional second line if HTTP 200 and JSON has reportStatus (preferred)
+ * or status (explicit fallback):
  *   report_status=<IN_PROCESS|SUCCESS|ERROR|other>
  * Never prints rejectReason, tokens, password, or full KM.
  */
@@ -40,14 +41,20 @@ const result = await authThenGet(
   `/api/utilisation/${encodeURIComponent(reportId)}`
 );
 writeStatus(result.status);
-if (
-  result.status === 200 &&
-  result.json &&
-  typeof result.json === "object" &&
-  typeof /** @type {{ status?: unknown }} */ (result.json).status === "string"
-) {
-  const raw = /** @type {{ status: string }} */ (result.json).status;
-  const label = CONTRACT_REPORT_STATUSES.has(raw) ? raw : "other";
-  process.stdout.write(`report_status=${label}\n`);
+if (result.status === 200 && result.json && typeof result.json === "object") {
+  const body = /** @type {{ reportStatus?: unknown; status?: unknown }} */ (
+    result.json
+  );
+  // Official field is reportStatus; fallback to status if absent.
+  const raw =
+    typeof body.reportStatus === "string"
+      ? body.reportStatus
+      : typeof body.status === "string"
+        ? body.status
+        : undefined;
+  if (raw) {
+    const label = CONTRACT_REPORT_STATUSES.has(raw) ? raw : "other";
+    process.stdout.write(`report_status=${label}\n`);
+  }
 }
 process.exit(result.status === 200 ? 0 : 1);
