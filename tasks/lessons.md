@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-09-03 — Factory PRs need `chore/cursor-agent-factory` on CI pull_request
+
+- `ci.yml` used to trigger only on PRs into `main`, so factory PRs reported zero checks. Adding the factory branch to `on.pull_request.branches` is what makes “wait for green CI then merge” possible. Still mock-only; never `ADAPTERS_MPT=http`.
+
 ## 2026-09-03 — Real-contour roadmap is a new file, not a rewrite of W1–W4
 
 - Canon for the live contour is `docs/ROADMAP-REAL.md` (A read-only → B mutating after Harith «да» → C NKT → D 1С). `docs/ROADMAP.md` stays archive (OpenCode W1–W4 + sim). Do not keep adding sprint weeks or «к 01.02.2027 сдаём» as product dates; 01.02.2026 / 01.02.2027 are regulatory anchors in RULES-MM, not MarkFlow delivery.
