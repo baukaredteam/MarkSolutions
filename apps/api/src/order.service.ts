@@ -114,6 +114,7 @@ export class OrderService {
             gtin: body.gtin,
             isPaid: true,
             businessPlaceId: body.businessPlaceId ?? null, // C-04
+            productGroup: body.productGroup ?? null,
             status: "DRAFT",
             // number omitted — assigned by PG sequence (nextval('order_number_seq'))
           },

@@ -122,10 +122,12 @@ export interface IMptAdapter {
   createOrder(input: MptOrderInput): Promise<{
     status: MptOrderStatus;
     requestId?: string; // корреляционный ID запроса (HttpMptAdapter; mock не возвращает)
+    orderId?: string; // STAGE/xTrace orderId when present
   }>;
   getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
+    found?: boolean;
   }>;
   getCodes(input: {
     orderId: string;
@@ -213,11 +215,12 @@ export class MockMptAdapter implements IMptAdapter {
   async getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
+    found?: boolean;
   }> {
     const order = await this.prisma.mptOrder.findUnique({
       where: { externalId: orderId },
     });
-    if (!order) return { status: "CREATED", quantity: 0 };
+    if (!order) return { status: "CREATED", quantity: 0, found: false };
     const status = this.statusOf(order);
     // первый переход в READY → эмитировать коды (один раз)
     if (status === "READY" && order.status !== "READY") {
@@ -227,7 +230,7 @@ export class MockMptAdapter implements IMptAdapter {
       where: { id: order.id },
       data: { status },
     });
-    return { status, quantity: order.quantity };
+    return { status, quantity: order.quantity, found: true };
   }
 
   async getCodes(input: {

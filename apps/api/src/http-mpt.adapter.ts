@@ -40,9 +40,12 @@ import type {
 //   GET-аудит: docs/MPT-GET-CONTRACT-AUDIT.md. A4 P0 landed.
 // - requestId генерируется локально (трассировка в outbox), на провод не уходит.
 //
-// Phase B readiness (docs only): docs/MPT-PHASE-B-READINESS.md
-// createOrder already sends Idempotency-Key = orderId. In-adapter 5xx/timeout
-// retry of POST is a known gap vs UNKNOWN_RESULT→RECONCILIATION — no change here.
+// Phase B P0: mutating POST (createOrder / utilisation / import / withdrawal)
+// is one attempt. 5xx/timeout/network → MptUnknownResultError (UNKNOWN_RESULT).
+// Do not loop POST. GET and token refresh still backoff. 401 refresh replay
+// of the same request (same Idempotency-Key) is allowed. Idempotency-Key on
+// createOrder stays = MarkFlow order.id (ADR-024).
+// submitUtilisation still has no Idempotency-Key (cabinet empty; not first B).
 
 export function toInt32(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -69,6 +72,19 @@ export class MptPermanentError extends Error {
   ) {
     super(message);
     this.name = "MptPermanentError";
+  }
+}
+
+// Timeout/5xx/network after a mutating POST: first attempt only.
+// Not permanent — outbox must mark UNKNOWN_RESULT and GET-reconcile, not re-POST.
+export class MptUnknownResultError extends Error {
+  readonly unknownResult = true;
+  constructor(
+    message: string,
+    readonly path: string
+  ) {
+    super(message);
+    this.name = "MptUnknownResultError";
   }
 }
 
@@ -106,6 +122,8 @@ interface RequestOptions {
   form?: string;
   headers?: Record<string, string>;
   operationId: string;
+  /** Mutating POST: no retry on 5xx/timeout/network. GET/refresh may retry. */
+  mutating?: boolean;
 }
 
 @Injectable()
@@ -135,7 +153,7 @@ export class HttpMptAdapter implements IMptAdapter {
       config.get("MPT_REQUEST_TIMEOUT_MS") ?? 15000
     );
     this.maxRetries = Number(config.get("MPT_MAX_RETRIES") ?? 2);
-    this.productGroup = config.get<string>("MPT_PRODUCT_GROUP") ?? "motor-oils";
+    this.productGroup = config.get<string>("MPT_PRODUCT_GROUP") ?? "autofluids";
     const bp = config.get<string>("MPT_BUSINESS_PLACE_ID");
     this.businessPlaceIdCfg = bp ? toInt32(bp) : undefined;
   }
@@ -249,7 +267,14 @@ export class HttpMptAdapter implements IMptAdapter {
       } catch (e) {
         // постоянная ошибка (конфиг/auth) — ретрай бесполезен
         if (e instanceof MptPermanentError) throw e;
-        // network/timeout — retryable: backoff+jitter, затем исчерпали → бросок
+        // mutating POST: one attempt; timeout/network → UNKNOWN_RESULT (no loop)
+        if (opts.mutating) {
+          throw new MptUnknownResultError(
+            `MPT UNKNOWN_RESULT on ${path}: ${String(e)}`,
+            path
+          );
+        }
+        // GET / token-adjacent: network/timeout — retryable
         if (retry < this.maxRetries) {
           await new Promise((r) => setTimeout(r, backoffMs(retry)));
           continue;
@@ -281,7 +306,13 @@ export class HttpMptAdapter implements IMptAdapter {
         );
       }
       if (res.status >= 500 || res.status === 504) {
-        // временная ошибка — backoff+jitter, затем исчерпали → бросок
+        if (opts.mutating) {
+          throw new MptUnknownResultError(
+            `MPT UNKNOWN_RESULT on ${path}: ${res.status}`,
+            path
+          );
+        }
+        // GET: временная ошибка — backoff+jitter, затем исчерпали → бросок
         if (retry < this.maxRetries) {
           await new Promise((r) => setTimeout(r, backoffMs(retry)));
           continue;
@@ -310,6 +341,7 @@ export class HttpMptAdapter implements IMptAdapter {
   async createOrder(input: MptOrderInput): Promise<{
     status: MptOrderStatus;
     requestId?: string;
+    orderId?: string;
   }> {
     const requestId = randomUUID();
     const businessPlaceId = input.businessPlaceId ?? this.businessPlaceIdCfg;
@@ -330,11 +362,20 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request("/api/orders", "POST", {
       json: body,
       operationId: input.orderId,
-      // Phase B: key = MarkFlow orderId (ADR-024). Do not add retries here.
+      mutating: true,
+      // Idempotency-Key = MarkFlow orderId (ADR-024). Do not retry this POST.
       headers: { "Idempotency-Key": input.orderId },
     });
     const d = data as { status?: string; orderId?: string };
-    return { status: (d.status as MptOrderStatus) ?? "CREATED", requestId };
+    const stageOrderId =
+      typeof d.orderId === "string" && d.orderId.length > 0
+        ? d.orderId
+        : undefined;
+    return {
+      status: (d.status as MptOrderStatus) ?? "CREATED",
+      requestId,
+      ...(stageOrderId ? { orderId: stageOrderId } : {}),
+    };
   }
 
   // GET /api/orders?orderId= — official list body { orderInfos[] }.
@@ -342,6 +383,7 @@ export class HttpMptAdapter implements IMptAdapter {
   async getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
+    found?: boolean;
   }> {
     const { data } = await this.request(
       `/api/orders?orderId=${encodeURIComponent(orderId)}`,
@@ -357,7 +399,7 @@ export class HttpMptAdapter implements IMptAdapter {
       (infos.length === 1 ? infos[0] : undefined);
     const status = (match?.orderStatus as MptOrderStatus) ?? "CREATED";
     // quantity is not on official list; poller uses OrderLine sums.
-    return { status, quantity: 0 };
+    return { status, quantity: 0, found: Boolean(match) };
   }
 
   // GET /api/codes — official required query orderId+gtin+quantity; optional lastPackId.
@@ -412,7 +454,9 @@ export class HttpMptAdapter implements IMptAdapter {
     };
     const { data } = await this.request("/api/utilisation", "POST", {
       json: body,
+      // ponytail: no Idempotency-Key yet (cabinet empty; not first B slice)
       operationId: `util-${Date.now()}`,
+      mutating: true,
     });
     const d = data as {
       reportId?: string;
@@ -475,6 +519,7 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request("/public/api/v1/doc/import", "POST", {
       json: { documentBody },
       operationId: input.customsNumber,
+      mutating: true,
     });
     const d = data as {
       documentId?: string;
@@ -513,7 +558,11 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request(
       "/public/api/v1/doc/withdrawal",
       "POST",
-      { json: { documentBody }, operationId: `wdr-${Date.now()}` }
+      {
+        json: { documentBody },
+        operationId: `wdr-${Date.now()}`,
+        mutating: true,
+      }
     );
     const d = data as {
       documentId?: string;

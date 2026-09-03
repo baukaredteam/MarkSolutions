@@ -120,7 +120,7 @@ These routes are **not** `StubPage`: `/dashboard`, `/tasks`, `/products`, `/prod
 | `.github/workflows/ci.yml` `KMS_PROFILE: file` + `STORAGE_DIR` | File-KMS + local disk in CI. | Keep in CI. Prod: OpenBao + MinIO (`KMS_PROFILE=openbao`, no `STORAGE_DIR`). | keep (CI) / **W0** (VPS) |
 | `validateProductionConfig` vs missing HTTP adapters | Prod/stage **reject** `ADAPTERS_GS1/NKT/1ECOM=mock`, but no HTTP implementations exist. | Adding `=http` without an adapter would still run `Mock*` (DI gap). Real HTTP classes on existing ports before any prod boot. | **C** / **GS1** / **1ecom** |
 
-CI workflow `on.pull_request.branches: [main]` only — factory PRs into `chore/cursor-agent-factory` do not run this job. That is a process note, not a mock-displacement item.
+CI workflow `on.pull_request.branches` includes `main` and `chore/cursor-agent-factory` (so factory PRs get the mock CI job). Still never `ADAPTERS_MPT=http` in Actions.
 
 ---
 

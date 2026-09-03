@@ -13,13 +13,24 @@
 
 ---
 
+## MPT P0 safety before Phase B (2026-09-01)
+
+- [x] No mutating POST retry on 5xx/timeout/network (`MptUnknownResultError`)
+- [x] Outbox UNKNOWN_RESULT → SENT + reconcile GET, not PENDING re-POST
+- [x] `reconcileOrder`: no RELEASE while CREATED/PENDING; default timeout 30 min
+- [x] Persist STAGE `orderId` → `Order.externalOrderId`; getOrder/getCodes use it
+- [x] send path uses order `productGroup`/`businessPlaceId`; adapter default `autofluids`
+- [ ] A4 P1 — **не** этот PR
+- [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
+- [ ] `releaseMethodType` on createOrder body — follow-up (CONTRACT requires; not this PR)
+
 ## MPT Phase B readiness A6 (2026-09-01)
 
 - [x] `docs/MPT-PHASE-B-READINESS.md` — goal, hard rules, as-is vs to-be, Harith checklist, proposal only
 - [x] Pointers: `tasks/lessons.md`, `docs/STAGE-MPT-READONLY-GET.md`, `docs/CONTRACT-IS-MPT.md`, comment-only in adapter/outbox
+- [x] P0 code gaps closed in follow-up PR (see above)
 - [ ] A4 P1 — **не** этот PR
 - [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
-- [ ] Не реализовывать POST-фиксы (Idempotency retry / UNKNOWN_RESULT) в этом PR
 
 ## MPT GET contract audit A3 (2026-09-01)
 
