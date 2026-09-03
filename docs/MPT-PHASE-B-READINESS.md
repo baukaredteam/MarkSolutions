@@ -6,7 +6,7 @@ P0 code gaps (retry POST / outbox re-POST / false RELEASE / dropped STAGE orderI
 
 Источники: `docs/CONTRACT-IS-MPT.md`, `docs/MPT-GET-CONTRACT-AUDIT.md` (A3 + A4 P0), `AGENTS.md` §5, ADR-024 в `docs/DECISIONS.md`, код на factory `2df8f3a` + P0 safety PR.
 
-Phase A (read-only, человек на VPS): **auth 200**, **GET /api/orders 200** `orders_count=0` на issuer + `productGroup=autofluids`. A5 не форсировали: кабинет пустой. Mutating — только после явного «да» Harith.
+Phase A (read-only, человек на VPS): **auth 200**, **GET /api/orders 200** `orders_count=0` на issuer + `productGroup=autofluids`. A5 не форсировали: кабинет пустой. Mutating — только после явного «да» Harith. STAGE ЛК fields (МОД **803**, GTIN-14, гейт опубликованной карточки): `docs/STAGE-LK-FIELDS.md`.
 
 ---
 
@@ -62,7 +62,7 @@ Phase A (read-only, человек на VPS): **auth 200**, **GET /api/orders 20
 - [ ] Права заказа: `MARKING-CODE-ORDER.CREATE` (+ READ / ADMINISTRATION для сверки и кодов).
 - [ ] Товарная группа подключена: **`autofluids`** (не `category_autofluids_motor`, не legacy `motor-oils`).
 - [ ] Повторный read-only: `npm run mpt:auth-healthcheck` → `status=200`; `npm run mpt:get-orders-healthcheck` → `status=200` (пустой список ок).
-- [ ] **`businessPlaceId` / МОД** подтверждён в ЛК (в env скриптов было `MPT_BUSINESS_PLACE_ID=36` — сверить с ЛК, не из этого файла).
+- [ ] **`businessPlaceId` / МОД** — STAGE ЛК 2026-09-03: **803** (не legacy 36). См. `docs/STAGE-LK-FIELDS.md`.
 - [ ] Баланс / тариф ИС МПТ в кабинете позволяет **1** код; тариф MarkFlow seeded (`BillingService.activeTariff`).
 - [ ] Карточка tenant с валидным GTIN (та же ТГ `autofluids`); qty=1 проходит `1 ≤ quantity ≤ places×unitsPerPlace`.
 - [ ] На VPS API: `ADAPTERS_MPT=http`, `MPT_BASE_URL=https://test.markirovka.kz`, `MPT_PRODUCT_GROUP=autofluids`. **CI без `ADAPTERS_MPT=http`.**

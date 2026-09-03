@@ -1,5 +1,12 @@
 # Factory setup — Cursor Ultra
 
+## P2-D STAGE ЛК field inventory (2026-09-03)
+
+- [x] `docs/STAGE-LK-FIELDS.md` — create-order steps, product-card fields, GTIN-14, МОД **803**, moderation gate, MarkFlow mapping
+- [x] Pointers only: `docs/CONTRACT-IS-MPT.md`, `docs/MPT-PHASE-B-READINESS.md`, `CONTEXT.md`, `tasks/lessons.md`
+- [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
+- [ ] Этот файл не авторизует POST и не меняет wire-методы CONTRACT
+
 ## R1 — real-contour roadmap (2026-09-03)
 
 - [x] PR `feature/R1-roadmap-real` → `chore/cursor-agent-factory` — https://github.com/baukaredteam/MarkSolutions/pull/18 (`docs/ROADMAP-REAL.md`, канон A→B→C→D). **squash-merged.**
