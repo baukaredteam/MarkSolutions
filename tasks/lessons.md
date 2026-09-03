@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-03 — STAGE ЛК recon: МОД 803, GTIN-14, published card before createOrder
+
+- Default `MPT_BUSINESS_PLACE_ID=803` (Хранение, Астана/Есиль). Legacy env `36` is wrong; healthcheck docs still mention it.
+- UI product group «Смазочные материалы и специальные жидкости» = wire `autofluids`. Category `category_autofluids_motor` is not `productGroup`.
+- Create-order GTIN field is exactly 14 chars; pad 13 with a leading zero. Lookup fails until the product card is **Опубликованные** (UI has «Отправить на модерацию», not Publish). Block MarkFlow createOrder until that gate.
+- Do not invent ИС МПТ lookup/publish endpoints. Wire stays `docs/CONTRACT-IS-MPT.md`. This recon is not Harith «да» for POST. Inventory: `docs/STAGE-LK-FIELDS.md`.
+
 ## 2026-09-03 — Factory PRs need `chore/cursor-agent-factory` on CI pull_request
 
 - `ci.yml` used to trigger only on PRs into `main`, so factory PRs reported zero checks. Adding the factory branch to `on.pull_request.branches` is what makes “wait for green CI then merge” possible. Still mock-only; never `ADAPTERS_MPT=http`.

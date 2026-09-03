@@ -76,7 +76,7 @@
 
 ## Навигация по контексту
 
-Решения — docs/DECISIONS.md; роадмап — docs/ROADMAP.md; API — docs/CONTRACT-IS-MPT.md; Правила — docs/RULES-MM.md; каталог/инвойс — docs/CATALOG-MM.md; происхождение файлов — docs/SOURCE-MANIFEST.md. Read-only STAGE auth healthcheck (человек на VPS, агенты не зовут markirovka) — docs/STAGE-MPT-HEALTHCHECK.md. Фаза 1 read-only GET — docs/STAGE-MPT-READONLY-GET.md. Phase B readiness (mutating ещё закрыт) — docs/MPT-PHASE-B-READINESS.md. Правила агента — AGENTS.md.
+Решения — docs/DECISIONS.md; роадмап — docs/ROADMAP.md; API — docs/CONTRACT-IS-MPT.md; Правила — docs/RULES-MM.md; каталог/инвойс — docs/CATALOG-MM.md; происхождение файлов — docs/SOURCE-MANIFEST.md. Read-only STAGE auth healthcheck (человек на VPS, агенты не зовут markirovka) — docs/STAGE-MPT-HEALTHCHECK.md. Фаза 1 read-only GET — docs/STAGE-MPT-READONLY-GET.md. Phase B readiness (mutating ещё закрыт) — docs/MPT-PHASE-B-READINESS.md. STAGE ЛК fields (2026-09-03 recon, не POST) — docs/STAGE-LK-FIELDS.md. Правила агента — AGENTS.md.
 
 ## Стек и структура
 

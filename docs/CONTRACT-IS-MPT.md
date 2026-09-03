@@ -50,3 +50,5 @@ Auth: POST /api/users/authenticate (JSON login/password) → accessToken (BEARER
 Ошибки: 200/400/401/403/404/405/500/503/504. Retry только идемпотентные+временные, backoff+jitter.
 
 Phase B (первый mutating на STAGE) — не из этого файла: `docs/MPT-PHASE-B-READINESS.md`. POST orders/utilisation/doc/* с агента/CI запрещены до «да» человека. Timeout после mutating → UNKNOWN_RESULT → GET-сверка, не повторный POST.
+
+STAGE ЛК fields (UI recon 2026-09-03, не новые методы): `docs/STAGE-LK-FIELDS.md`.
