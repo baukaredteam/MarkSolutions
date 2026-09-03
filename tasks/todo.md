@@ -1,5 +1,9 @@
 # Factory setup — Cursor Ultra
 
+## R2 sim/mock/StubPage inventory (2026-09-03)
+
+- [x] `docs/TECH-DEBT-SIM-STUB.md` — path → replaced-by → phase A/B/C/D (displace, not MVP)
+
 ## MPT Phase B readiness A6 (2026-09-01)
 
 - [x] `docs/MPT-PHASE-B-READINESS.md` — goal, hard rules, as-is vs to-be, Harith checklist, proposal only
