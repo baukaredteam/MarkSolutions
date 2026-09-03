@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-09-03 — Real-contour roadmap is a new file, not a rewrite of W1–W4
+
+- Canon for the live contour is `docs/ROADMAP-REAL.md` (A read-only → B mutating after Harith «да» → C NKT → D 1С). `docs/ROADMAP.md` stays archive (OpenCode W1–W4 + sim). Do not keep adding sprint weeks or «к 01.02.2027 сдаём» as product dates; 01.02.2026 / 01.02.2027 are regulatory anchors in RULES-MM, not MarkFlow delivery.
+- Horizons (GS1 api11.gs1.kz, NKT, 1С, Markmobile, ЭДО, РФ) are sequenced, not parallel, and never instead of MPT. Sim/StubPage are debt to displace with Http MPT / real modules — do not expand them as the goal. PR #17 P0 safety is pending; a docs PR does not merge it.
+
 ## 2026-09-01 — A6 Phase B prep is docs, not the first POST
 
 - Phase A ended on empty cabinet (GET orders 200, `orders_count=0`). First mutating after Harith «да» is almost certainly `createOrder` qty=1, not utilisation.

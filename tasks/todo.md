@@ -1,8 +1,17 @@
 # Factory setup — Cursor Ultra
 
+## R1 — real-contour roadmap (2026-09-03)
+
+- [x] PR `feature/R1-roadmap-real` → `chore/cursor-agent-factory` — https://github.com/baukaredteam/MarkSolutions/pull/18 (`docs/ROADMAP-REAL.md`, канон A→B→C→D). **squash-merged.**
+- [x] Канон роадмапа = `docs/ROADMAP-REAL.md`, не архивный `docs/ROADMAP.md`
+
+---
+
 ## R2 sim/mock/StubPage inventory (2026-09-03)
 
 - [x] `docs/TECH-DEBT-SIM-STUB.md` — path → replaced-by → phase A/B/C/D (displace, not MVP)
+
+---
 
 ## MPT Phase B readiness A6 (2026-09-01)
 
