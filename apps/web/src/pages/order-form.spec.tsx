@@ -96,8 +96,90 @@ describe("OrderForm (мастер 4 шага)", () => {
       quantity: 6,
       cisType: "UNIT",
       serialNumberType: "OPERATOR",
+      productGroup: "autofluids",
     });
     expect(key).toBeTruthy(); // crypto.randomUUID
+  });
+
+  it("P2-C: 13-digit GTIN blocks step 0 with Длина должна быть равна 14", async () => {
+    get.mockImplementation((path: string) => {
+      if (path === "/products/cards")
+        return Promise.resolve({
+          items: [
+            {
+              id: "c13",
+              gtin: "4650063110374",
+              name: "Short GTIN",
+              status: "REGISTERED",
+            },
+          ],
+        });
+      if (path === "/billing/tariff/active")
+        return Promise.resolve({ id: "t1", pricePerCodeKZT: "100" });
+      if (path === "/billing/balance")
+        return Promise.resolve({ available: "5000" });
+      return Promise.resolve(null);
+    });
+    render(<OrderForm />);
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "c13" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    expect(toastPush).toHaveBeenCalledWith("Длина должна быть равна 14");
+    expect(screen.getByRole("combobox")).toBeTruthy();
+    expect(postRaw).not.toHaveBeenCalled();
+  });
+
+  it("P2-C: 04650063110374 + optional businessPlaceId go to POST", async () => {
+    get.mockImplementation((path: string) => {
+      if (path === "/products/cards")
+        return Promise.resolve({
+          items: [
+            {
+              id: "c14",
+              gtin: "04650063110374",
+              name: "STAGE oils",
+              status: "REGISTERED",
+            },
+          ],
+        });
+      if (path === "/billing/tariff/active")
+        return Promise.resolve({ id: "t1", pricePerCodeKZT: "100" });
+      if (path === "/billing/balance")
+        return Promise.resolve({ available: "5000" });
+      return Promise.resolve(null);
+    });
+    postRaw.mockResolvedValue({ status: 201, body: { id: "o14" } });
+    render(<OrderForm />);
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "c14" },
+    });
+    expect(screen.getByDisplayValue("04650063110374")).toBeTruthy();
+    expect(screen.getByText(/autofluids/)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("МОД (businessPlaceId)"), {
+      target: { value: "803" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    fireEvent.change(screen.getByPlaceholderText("Места"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Штук в месте"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    fireEvent.click(screen.getByRole("button", { name: "Заказать коды" }));
+    await waitFor(() => expect(postRaw).toHaveBeenCalled());
+    const [, body] = postRaw.mock.calls[0];
+    expect(body).toMatchObject({
+      cardId: "c14",
+      gtin: "04650063110374",
+      productGroup: "autofluids",
+      businessPlaceId: 803,
+      quantity: 1,
+    });
   });
 
   it("quantity > places×units → блок на шаге параметров без POST", async () => {

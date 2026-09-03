@@ -1,5 +1,13 @@
 # Factory setup — Cursor Ultra
 
+## P2-C ORD/CAT GTIN-14 (2026-09-03)
+
+- [x] Order/catalog create: GTIN-14 only; 13-digit → `Длина должна быть равна 14`
+- [x] Order create defaults `productGroup=autofluids`; UI МОД display; `.env.example` `MPT_BUSINESS_PLACE_ID=803` (not 36 / motor-oils)
+- [ ] Mutating STAGE (`createOrder`) — **запрещено** до «да» Harith. This PR is DTO/UI/validation only.
+
+---
+
 ## P2-D STAGE ЛК field inventory (2026-09-03)
 
 - [x] `docs/STAGE-LK-FIELDS.md` — create-order steps, product-card fields, GTIN-14, МОД **803**, moderation gate, MarkFlow mapping

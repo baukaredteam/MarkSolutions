@@ -9,6 +9,7 @@ import { PrismaService } from "./prisma.service";
 import { BillingService } from "./billing.service";
 import { productGroupOf } from "@markflow/shared";
 import type { CreateOrderDto } from "./order/order.dto";
+import { requireGtin14, resolveOrderProductGroup } from "./order/gtin14";
 
 // ORD-026: машина заказа до Queued в этом тикете.
 const QUEUEABLE = ["DRAFT", "VALIDATING", "FUNDS_RESERVED", "QUEUED"] as const;
@@ -57,9 +58,18 @@ export class OrderService {
       throw new BadRequestException("businessPlaceId must be a positive int32");
     }
 
+    let gtin: string;
+    try {
+      gtin = requireGtin14(body.gtin ?? "");
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    // Oils tenant: persist STAGE ТГ autofluids unless the client sent another group.
+    const mptProductGroup = resolveOrderProductGroup(body.productGroup);
+
     // карточка tenant (каталог не трогаем, ADR-023)
     const card = await this.prisma.productCard.findFirst({
-      where: { id: body.cardId, tenantId, gtin: body.gtin },
+      where: { id: body.cardId, tenantId, gtin },
     });
     if (!card) throw new NotFoundException("card not found for tenant");
 
@@ -111,10 +121,10 @@ export class OrderService {
             tenantId,
             idempotencyKey,
             cardId: card.id,
-            gtin: body.gtin,
+            gtin,
             isPaid: true,
-            businessPlaceId: body.businessPlaceId ?? null, // C-04
-            productGroup: body.productGroup ?? null,
+            businessPlaceId: body.businessPlaceId ?? null, // C-04: order/tenant; env 803 is adapter fallback
+            productGroup: mptProductGroup,
             status: "DRAFT",
             // number omitted — assigned by PG sequence (nextval('order_number_seq'))
           },
@@ -140,7 +150,7 @@ export class OrderService {
             tenantId,
             orderId: created.id,
             cardId: card.id,
-            gtin: body.gtin,
+            gtin,
             places: body.places,
             unitsPerPlace: body.unitsPerPlace,
             quantity,
@@ -161,7 +171,7 @@ export class OrderService {
             payload: {
               orderId: created.id,
               tenantId,
-              gtin: body.gtin,
+              gtin,
               quantity,
             },
           },
