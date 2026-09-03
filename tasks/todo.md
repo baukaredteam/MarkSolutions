@@ -2,7 +2,7 @@
 
 ## R1 — real-contour roadmap (2026-09-03)
 
-- [x] Draft PR `feature/R1-roadmap-real` → `chore/cursor-agent-factory` — `docs/ROADMAP-REAL.md` (канон A→B→C→D). **Не мержить** из этого пункта; URL появится в PR.
+- [x] Draft PR `feature/R1-roadmap-real` → `chore/cursor-agent-factory` — https://github.com/baukaredteam/MarkSolutions/pull/18 (`docs/ROADMAP-REAL.md`, канон A→B→C→D). **Не мержить.**
 - [ ] Канон роадмапа = `docs/ROADMAP-REAL.md`, не архивный `docs/ROADMAP.md`
 
 ---
