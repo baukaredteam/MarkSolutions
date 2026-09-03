@@ -29,6 +29,8 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
   const [places, setPlaces] = useState("");
   const [unitsPerPlace, setUnitsPerPlace] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [businessPlaceId, setBusinessPlaceId] = useState("");
+  const productGroup = "autofluids";
   const [tariff, setTariff] = useState<Tariff | null>(null);
   const [balance, setBalance] = useState<{ available: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -61,8 +63,9 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
   const available = balance ? BigInt(balance.available) : BigInt(0);
   const afterSettle = available - totalPrice;
 
+  const gtin14 = /^\d{14}$/.test(gtin.trim());
   const stepValid = (() => {
-    if (step === 0) return cardId.trim() !== "" && gtin.trim() !== "";
+    if (step === 0) return cardId.trim() !== "" && gtin14;
     if (step === 1) return placesNum >= 1 && unitsNum >= 1 && qtyValid;
     if (step === 2) return tariff !== null;
     return true;
@@ -70,8 +73,13 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
 
   function next() {
     if (!stepValid) {
-      if (step === 0) toast.push("Выберите карточку товара");
-      else if (step === 1)
+      if (step === 0) {
+        toast.push(
+          gtin.trim() && !gtin14
+            ? "Длина должна быть равна 14"
+            : "Выберите карточку товара"
+        );
+      } else if (step === 1)
         toast.push("Заполните места/штук (quantity 1..места×штук)");
       else if (step === 2) toast.push("Тариф не загружен");
       return;
@@ -92,6 +100,10 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
           quantity: qtyNum,
           cisType: "UNIT",
           serialNumberType: "OPERATOR",
+          productGroup,
+          ...(businessPlaceId.trim()
+            ? { businessPlaceId: Number(businessPlaceId) }
+            : {}),
         },
         idemKey
       );
@@ -177,11 +189,36 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
               : "Карточки товара из каталога (Registered/Approved)"}
           </p>
           <input
-            placeholder="GTIN"
+            placeholder="GTIN-14"
             value={gtin}
             readOnly
+            maxLength={14}
+            inputMode="numeric"
             style={{ opacity: 0.6 }}
           />
+          {gtin && !gtin14 && (
+            <p className="hint" role="alert">
+              Длина должна быть равна 14
+            </p>
+          )}
+          <p className="hint">
+            Товарная группа STAGE: <code>{productGroup}</code> (autofluids, не
+            motor-oils)
+          </p>
+          <label>
+            МОД (businessPlaceId):
+            <input
+              type="number"
+              placeholder="МОД (businessPlaceId)"
+              value={businessPlaceId}
+              onChange={(e) => setBusinessPlaceId(e.target.value)}
+              min={1}
+            />
+          </label>
+          <p className="hint">
+            Площадка нанесения из заказа. Дефолт env: MPT_BUSINESS_PLACE_ID=803
+            (не хардкод в адаптере).
+          </p>
         </div>
       )}
 
@@ -241,6 +278,12 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
           <p>
             Заказ: {selectedCard?.name || gtin} · {qtyNum} КМ ·{" "}
             {formatTenge(totalPrice)}
+          </p>
+          <p className="hint">
+            ТГ {productGroup}
+            {businessPlaceId.trim()
+              ? ` · МОД ${businessPlaceId.trim()}`
+              : " · МОД из tenant/env"}
           </p>
           <p>
             Idempotency-Key: <code>{idemKey}</code>

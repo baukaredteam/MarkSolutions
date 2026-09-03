@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-03 — P2-C: STAGE GTIN is 14 digits; ТГ autofluids; МОД 803 in env only
+
+- STAGE ЛК GTIN is 14 digits (`04650063110374`). Reject 13 with `Длина должна быть равна 14`; do not silently pad unless checksum-proven.
+- Catalog tariff group `motor-oils` ≠ STAGE `productGroup=autofluids`. Persist autofluids on order create so a later human «да» is not blocked by the wrong ТГ.
+- МОД default 803 belongs in `.env.example` / tenant-or-order field, not hardcoded in `http-mpt.adapter.ts`. This PR does not call STAGE and does not change POST retry.
+
 ## 2026-09-03 — STAGE ЛК recon: МОД 803, GTIN-14, published card before createOrder
 
 - Default `MPT_BUSINESS_PLACE_ID=803` (Хранение, Астана/Есиль). Legacy env `36` is wrong; healthcheck docs still mention it.

@@ -131,7 +131,13 @@ describe("ProductsPage (UI-04: cards list + drafts)", () => {
           return {
             ok: true,
             json: async () => ({
-              items: [{ gtin: "04014835723399", tnved: "2710198200", name: "Castrol EDGE" }],
+              items: [
+                {
+                  gtin: "04014835723399",
+                  tnved: "2710198200",
+                  name: "Castrol EDGE",
+                },
+              ],
             }),
           };
         }
@@ -150,7 +156,9 @@ describe("ProductsPage (UI-04: cards list + drafts)", () => {
       fireEvent.click(screen.getByText("⇩ 1ecom"));
     });
     await waitFor(() => {
-      expect(calls.some((c) => c.includes("POST") && c.includes("ecom/import"))).toBe(true);
+      expect(
+        calls.some((c) => c.includes("POST") && c.includes("ecom/import"))
+      ).toBe(true);
     });
   });
 
@@ -181,12 +189,46 @@ describe("ProductsPage (UI-04: cards list + drafts)", () => {
     fireEvent.change(screen.getByPlaceholderText("Полное наименование"), {
       target: { value: "Новое масло" },
     });
-    fireEvent.change(screen.getByPlaceholderText("GTIN"), {
-      target: { value: "04014835723399" },
+    fireEvent.change(screen.getByPlaceholderText(/GTIN-14/), {
+      target: { value: "04650063110374" },
     });
     fireEvent.click(screen.getByText("Создать карточку"));
     await waitFor(() => {
       expect(calls.some((c) => c.includes("/products/cards"))).toBe(true);
     });
+  });
+
+  it("P2-C: 13-digit GTIN shows Длина должна быть равна 14 and does not POST", async () => {
+    const posts: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (String(url).endsWith("/products/cards") && method === "POST") {
+          posts.push(String(url));
+          return { ok: true, json: async () => ({ id: "new-card" }) };
+        }
+        return { ok: true, json: async () => ({ items: [] }) };
+      })
+    );
+    render(
+      <MemoryRouter>
+        <ProductsPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => {
+      fireEvent.click(screen.getByText("+ Создать товар"));
+    });
+    fireEvent.change(screen.getByPlaceholderText("Полное наименование"), {
+      target: { value: "Новое масло" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/GTIN-14/), {
+      target: { value: "4650063110374" },
+    });
+    fireEvent.click(screen.getByText("Создать карточку"));
+    await waitFor(() => {
+      expect(screen.getByText("Длина должна быть равна 14")).toBeTruthy();
+    });
+    expect(posts).toHaveLength(0);
   });
 });

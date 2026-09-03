@@ -546,4 +546,75 @@ describe("order create (W3, ORD-024..028)", () => {
     });
     expect(tariff!.productGroup).toBe("motor-oils");
   });
+
+  it("P2-C: 13-digit GTIN → 400 Длина должна быть равна 14 (no order)", async () => {
+    const { id: cardId } = await createCard();
+    const res = await createOrder(
+      {
+        cardId,
+        gtin: "4650063110374",
+        places: 1,
+        unitsPerPlace: 1,
+      },
+      "k-gtin13"
+    ).expect(400);
+    expect(res.body.message).toBe("Длина должна быть равна 14");
+    expect(
+      await prisma.order.findUnique({ where: { idempotencyKey: "k-gtin13" } })
+    ).toBeNull();
+  });
+
+  it("P2-C: accepts 04650063110374-shaped GTIN-14 and defaults productGroup autofluids", async () => {
+    const gtin = "04650063110374";
+    const made = await request(app.getHttpServer())
+      .post("/products/cards")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        gtin,
+        attributes: {
+          schemaVersion: 1,
+          gtin,
+          name: "STAGE oils 5W-30",
+          brand: "STAGEOIL",
+          countryOfBrand: "Германия",
+          composition: "синтетическое",
+          shelfLifeMonths: 60,
+          productType: "моторное масло",
+          volumeL: 4,
+          purpose: "легковые",
+          sae: "5W-30",
+          storage: "сухое",
+          conformityMark: "нет",
+          eacMarks: "нет",
+          grossWeightKg: 3.8,
+          tnved: "2710198200",
+          group: "Смазочные материалы",
+          category: "Моторные масла",
+          packageType: "Единица товара",
+          kpved: "19.20.29",
+          gpc: "10005267",
+          ownerGcp: "0465006",
+          ownerName: "ТОО Автодеталь",
+          ownerCountry: "Казахстан",
+          ownerAddress: "г. Шымкент",
+          platformName: "1ecom",
+          platformCountry: "Казахстан",
+          platformAddress: "г. Алматы",
+          participantTaxNumber: "123456789012",
+          participantName: "ТОО Автодеталь",
+          participantCountry: "Казахстан",
+          participantAddress: "г. Шымкент",
+        },
+      })
+      .expect(201);
+    const res = await createOrder(
+      { cardId: made.body.id, gtin, places: 1, unitsPerPlace: 1 },
+      "k-gtin14-stage"
+    ).expect(201);
+    const order = await prisma.order.findUnique({
+      where: { id: res.body.id },
+    });
+    expect(order!.gtin).toBe("04650063110374");
+    expect(order!.productGroup).toBe("autofluids");
+  });
 });

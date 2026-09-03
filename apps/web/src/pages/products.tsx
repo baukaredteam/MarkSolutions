@@ -177,6 +177,10 @@ export function ProductsPage() {
 
   // Мастер создания карточки (4 шага) → POST /products/cards (admin|manager)
   async function createCard() {
+    if (!/^\d{14}$/.test(form.gtin.trim())) {
+      toast.push("Длина должна быть равна 14", "error");
+      return;
+    }
     const attrs: Record<string, unknown> = {
       schemaVersion: 1,
       gtin: form.gtin,
@@ -426,13 +430,28 @@ export function ProductsPage() {
               />
             </div>
             <div className="field">
-              <label>GTIN *</label>
+              <label>GTIN-14 *</label>
               <input
                 className="input"
-                placeholder="GTIN"
+                placeholder="GTIN-14 (14 цифр)"
+                inputMode="numeric"
+                maxLength={14}
                 value={form.gtin}
-                onChange={(e) => setForm({ ...form, gtin: e.target.value })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    gtin: e.target.value.replace(/\D/g, "").slice(0, 14),
+                  })
+                }
               />
+              {form.gtin && !/^\d{14}$/.test(form.gtin) && (
+                <p className="hint" role="alert">
+                  Длина должна быть равна 14
+                </p>
+              )}
+              <p className="hint">
+                14 цифр. Товарная группа STAGE: autofluids (не motor-oils)
+              </p>
             </div>
             <div className="field">
               <label>Бренд</label>
@@ -476,7 +495,7 @@ export function ProductsPage() {
             <button
               className="btn btn-primary"
               onClick={createCard}
-              disabled={!form.name || !form.gtin}
+              disabled={!form.name || !/^\d{14}$/.test(form.gtin)}
             >
               Создать карточку
             </button>
