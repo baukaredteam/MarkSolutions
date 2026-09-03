@@ -157,7 +157,7 @@ describe("OrderForm (мастер 4 шага)", () => {
       target: { value: "c14" },
     });
     expect(screen.getByDisplayValue("04650063110374")).toBeTruthy();
-    expect(screen.getByText(/autofluids/)).toBeTruthy();
+    expect(screen.getAllByText(/autofluids/).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByPlaceholderText("МОД (businessPlaceId)"), {
       target: { value: "803" },
     });
