@@ -1,5 +1,12 @@
 # Factory setup — Cursor Ultra
 
+## R1 — real-contour roadmap (2026-09-03)
+
+- [x] Draft PR `feature/R1-roadmap-real` → `chore/cursor-agent-factory` — `docs/ROADMAP-REAL.md` (канон A→B→C→D). **Не мержить** из этого пункта; URL появится в PR.
+- [ ] Канон роадмапа = `docs/ROADMAP-REAL.md`, не архивный `docs/ROADMAP.md`
+
+---
+
 ## MPT Phase B readiness A6 (2026-09-01)
 
 - [x] `docs/MPT-PHASE-B-READINESS.md` — goal, hard rules, as-is vs to-be, Harith checklist, proposal only
