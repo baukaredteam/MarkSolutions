@@ -5,7 +5,6 @@ import type { PrismaService } from "./prisma.service";
 import { MockMptAdapter } from "./integrations";
 import type {
   IMptAdapter,
-  MptCodeView,
   MptOrderInput,
   MptOrderStatus,
 } from "./integrations";
@@ -35,9 +34,18 @@ import type {
 //   (document.service шлёт внутренние codeKeys Vault; utilisation — serial).
 //   Для реального контура это должно стать полными КМ из vault.reveal —
 //   в скоупе тикетов 02/03 (http-режим для документов включать после них).
-// - getOrder/getCodes фильтруют по orderId query-параметром; точный контракт
-//   списков подтверждается контрактным тестом на STAGE.
+// - getOrder шлёт только ?orderId= (без productGroup — P1). Парсит
+//   orderInfos[].orderStatus; quantity=0 (list body has no qty).
+// - getCodes: official query orderId+gtin+quantity (+ lastPackId); codes string[] + packId.
+//   GET-аудит: docs/MPT-GET-CONTRACT-AUDIT.md. A4 P0 landed.
 // - requestId генерируется локально (трассировка в outbox), на провод не уходит.
+//
+// Phase B P0: mutating POST (createOrder / utilisation / import / withdrawal)
+// is one attempt. 5xx/timeout/network → MptUnknownResultError (UNKNOWN_RESULT).
+// Do not loop POST. GET and token refresh still backoff. 401 refresh replay
+// of the same request (same Idempotency-Key) is allowed. Idempotency-Key on
+// createOrder stays = MarkFlow order.id (ADR-024).
+// submitUtilisation still has no Idempotency-Key (cabinet empty; not first B).
 
 export function toInt32(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
@@ -64,6 +72,19 @@ export class MptPermanentError extends Error {
   ) {
     super(message);
     this.name = "MptPermanentError";
+  }
+}
+
+// Timeout/5xx/network after a mutating POST: first attempt only.
+// Not permanent — outbox must mark UNKNOWN_RESULT and GET-reconcile, not re-POST.
+export class MptUnknownResultError extends Error {
+  readonly unknownResult = true;
+  constructor(
+    message: string,
+    readonly path: string
+  ) {
+    super(message);
+    this.name = "MptUnknownResultError";
   }
 }
 
@@ -101,6 +122,8 @@ interface RequestOptions {
   form?: string;
   headers?: Record<string, string>;
   operationId: string;
+  /** Mutating POST: no retry on 5xx/timeout/network. GET/refresh may retry. */
+  mutating?: boolean;
 }
 
 @Injectable()
@@ -130,7 +153,7 @@ export class HttpMptAdapter implements IMptAdapter {
       config.get("MPT_REQUEST_TIMEOUT_MS") ?? 15000
     );
     this.maxRetries = Number(config.get("MPT_MAX_RETRIES") ?? 2);
-    this.productGroup = config.get<string>("MPT_PRODUCT_GROUP") ?? "motor-oils";
+    this.productGroup = config.get<string>("MPT_PRODUCT_GROUP") ?? "autofluids";
     const bp = config.get<string>("MPT_BUSINESS_PLACE_ID");
     this.businessPlaceIdCfg = bp ? toInt32(bp) : undefined;
   }
@@ -244,7 +267,14 @@ export class HttpMptAdapter implements IMptAdapter {
       } catch (e) {
         // постоянная ошибка (конфиг/auth) — ретрай бесполезен
         if (e instanceof MptPermanentError) throw e;
-        // network/timeout — retryable: backoff+jitter, затем исчерпали → бросок
+        // mutating POST: one attempt; timeout/network → UNKNOWN_RESULT (no loop)
+        if (opts.mutating) {
+          throw new MptUnknownResultError(
+            `MPT UNKNOWN_RESULT on ${path}: ${String(e)}`,
+            path
+          );
+        }
+        // GET / token-adjacent: network/timeout — retryable
         if (retry < this.maxRetries) {
           await new Promise((r) => setTimeout(r, backoffMs(retry)));
           continue;
@@ -276,7 +306,13 @@ export class HttpMptAdapter implements IMptAdapter {
         );
       }
       if (res.status >= 500 || res.status === 504) {
-        // временная ошибка — backoff+jitter, затем исчерпали → бросок
+        if (opts.mutating) {
+          throw new MptUnknownResultError(
+            `MPT UNKNOWN_RESULT on ${path}: ${res.status}`,
+            path
+          );
+        }
+        // GET: временная ошибка — backoff+jitter, затем исчерпали → бросок
         if (retry < this.maxRetries) {
           await new Promise((r) => setTimeout(r, backoffMs(retry)));
           continue;
@@ -305,6 +341,7 @@ export class HttpMptAdapter implements IMptAdapter {
   async createOrder(input: MptOrderInput): Promise<{
     status: MptOrderStatus;
     requestId?: string;
+    orderId?: string;
   }> {
     const requestId = randomUUID();
     const businessPlaceId = input.businessPlaceId ?? this.businessPlaceIdCfg;
@@ -318,6 +355,8 @@ export class HttpMptAdapter implements IMptAdapter {
           cisType: input.cisType,
         },
       ],
+      // CONTRACT required. Default PRIMARY. Do not invent aliases (Повторная/COMMISSION).
+      releaseMethodType: input.releaseMethodType ?? "PRIMARY",
       isPaid: input.isPaid,
     };
     if (businessPlaceId !== undefined)
@@ -325,45 +364,72 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request("/api/orders", "POST", {
       json: body,
       operationId: input.orderId,
+      mutating: true,
+      // Idempotency-Key = MarkFlow orderId (ADR-024). Do not retry this POST.
       headers: { "Idempotency-Key": input.orderId },
     });
     const d = data as { status?: string; orderId?: string };
-    return { status: (d.status as MptOrderStatus) ?? "CREATED", requestId };
+    const stageOrderId =
+      typeof d.orderId === "string" && d.orderId.length > 0
+        ? d.orderId
+        : undefined;
+    return {
+      status: (d.status as MptOrderStatus) ?? "CREATED",
+      requestId,
+      ...(stageOrderId ? { orderId: stageOrderId } : {}),
+    };
   }
 
-  // GET /api/orders (список) — фильтр по заказу уточняется на STAGE контрактным тестом.
+  // GET /api/orders?orderId= — official list body { orderInfos[] }.
+  // Do not treat root status/quantity as STAGE contract (A4 P0).
   async getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
+    found?: boolean;
   }> {
     const { data } = await this.request(
       `/api/orders?orderId=${encodeURIComponent(orderId)}`,
       "GET",
       { operationId: orderId }
     );
-    const d = data as { status?: string; quantity?: number };
-    return {
-      status: (d.status as MptOrderStatus) ?? "CREATED",
-      quantity: Number(d.quantity ?? 0),
+    const d = data as {
+      orderInfos?: Array<{ orderId?: string; orderStatus?: string }>;
     };
+    const infos = Array.isArray(d.orderInfos) ? d.orderInfos : [];
+    const match =
+      infos.find((row) => row.orderId === orderId) ??
+      (infos.length === 1 ? infos[0] : undefined);
+    const status = (match?.orderStatus as MptOrderStatus) ?? "CREATED";
+    // quantity is not on official list; poller uses OrderLine sums.
+    return { status, quantity: 0, found: Boolean(match) };
   }
 
-  // GET /api/codes (только READY/CLOSED) → codes[].
-  async getCodes(orderId: string): Promise<{ codes: MptCodeView[] }> {
-    const { data } = await this.request(
-      `/api/codes?orderId=${encodeURIComponent(orderId)}`,
-      "GET",
-      { operationId: orderId }
-    );
-    const d = data as { codes?: Array<Record<string, unknown>> };
-    const codes = (d.codes ?? []).map((c) => ({
-      gtin: String(c.gtin ?? ""),
-      serial: String(c.serial ?? ""),
-      ai91: (c.ai91 as string | null) ?? null,
-      ai92: (c.ai92 as string | null) ?? null,
-      form: (c.form as "base" | "extended") ?? "base",
-    }));
-    return { codes };
+  // GET /api/codes — official required query orderId+gtin+quantity; optional lastPackId.
+  // Response codes is string[]; never log full KM (count/mask only).
+  async getCodes(input: {
+    orderId: string;
+    gtin: string;
+    quantity: number;
+    lastPackId?: string;
+  }): Promise<{ codes: string[]; packId?: string }> {
+    const q = new URLSearchParams({
+      orderId: input.orderId,
+      gtin: input.gtin,
+      quantity: String(Math.trunc(Number(input.quantity))),
+    });
+    if (input.lastPackId) q.set("lastPackId", input.lastPackId);
+    const { data } = await this.request(`/api/codes?${q.toString()}`, "GET", {
+      operationId: input.orderId,
+    });
+    const d = data as { codes?: unknown; packId?: unknown };
+    const codes = Array.isArray(d.codes)
+      ? d.codes.filter((c): c is string => typeof c === "string")
+      : [];
+    const packId =
+      typeof d.packId === "string" && d.packId.length > 0
+        ? d.packId
+        : undefined;
+    return { codes, packId };
   }
 
   // ---- Нанесение (п.26): POST /api/utilisation ----
@@ -390,7 +456,9 @@ export class HttpMptAdapter implements IMptAdapter {
     };
     const { data } = await this.request("/api/utilisation", "POST", {
       json: body,
+      // ponytail: no Idempotency-Key yet (cabinet empty; not first B slice)
       operationId: `util-${Date.now()}`,
+      mutating: true,
     });
     const d = data as {
       reportId?: string;
@@ -416,8 +484,15 @@ export class HttpMptAdapter implements IMptAdapter {
       "GET",
       { operationId: reportId }
     );
-    const d = data as { status?: string; rejectReason?: string };
-    const st = (d.status ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
+    // Official field is reportStatus; fallback to status if STAGE still emits
+    // the older name (one explicit fallback, do not treat both as equal).
+    const d = data as {
+      reportStatus?: string;
+      status?: string;
+      rejectReason?: string;
+    };
+    const st = (d.reportStatus ?? d.status ?? "IN_PROCESS") as
+      "IN_PROCESS" | "SUCCESS" | "ERROR";
     return { status: st, rejectReason: d.rejectReason ?? undefined };
   }
 
@@ -446,6 +521,7 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request("/public/api/v1/doc/import", "POST", {
       json: { documentBody },
       operationId: input.customsNumber,
+      mutating: true,
     });
     const d = data as {
       documentId?: string;
@@ -484,7 +560,11 @@ export class HttpMptAdapter implements IMptAdapter {
     const { data } = await this.request(
       "/public/api/v1/doc/withdrawal",
       "POST",
-      { json: { documentBody }, operationId: `wdr-${Date.now()}` }
+      {
+        json: { documentBody },
+        operationId: `wdr-${Date.now()}`,
+        mutating: true,
+      }
     );
     const d = data as {
       documentId?: string;

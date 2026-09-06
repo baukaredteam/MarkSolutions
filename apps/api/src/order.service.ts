@@ -8,21 +8,12 @@ import {
 import { PrismaService } from "./prisma.service";
 import { BillingService } from "./billing.service";
 import { productGroupOf } from "@markflow/shared";
+import type { CreateOrderDto } from "./order/order.dto";
+import { requireGtin14, resolveOrderProductGroup } from "./order/gtin14";
+import { resolveReleaseMethodType } from "./order/release-method";
 
 // ORD-026: машина заказа до Queued в этом тикете.
-// Draft → Validating → Funds Reserved → Queued (Sent/Processing/Completed — тикет 03).
 const QUEUEABLE = ["DRAFT", "VALIDATING", "FUNDS_RESERVED", "QUEUED"] as const;
-
-interface CreateOrderInput {
-  cardId: string;
-  gtin: string;
-  places: number;
-  unitsPerPlace: number;
-  quantity?: number;
-  cisType?: string;
-  serialNumberType?: string;
-  businessPlaceId?: number; // C-04: площадка нанесения (int32), источник для utilisation
-}
 
 @Injectable()
 export class OrderService {
@@ -42,11 +33,7 @@ export class OrderService {
     return order;
   }
 
-  async create(
-    tenantId: string,
-    idempotencyKey: string,
-    body: CreateOrderInput
-  ) {
+  async create(tenantId: string, idempotencyKey: string, body: CreateOrderDto) {
     if (!idempotencyKey)
       throw new BadRequestException("Idempotency-Key header required");
     // контрактные ограничения (ADR-024): cisType=UNIT, serialNumberType=OPERATOR, isPaid=true
@@ -72,9 +59,25 @@ export class OrderService {
       throw new BadRequestException("businessPlaceId must be a positive int32");
     }
 
+    let gtin: string;
+    try {
+      gtin = requireGtin14(body.gtin ?? "");
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    // Oils tenant: persist STAGE ТГ autofluids unless the client sent another group.
+    const mptProductGroup = resolveOrderProductGroup(body.productGroup);
+
+    let releaseMethodType: string;
+    try {
+      releaseMethodType = resolveReleaseMethodType(body.releaseMethodType);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
     // карточка tenant (каталог не трогаем, ADR-023)
     const card = await this.prisma.productCard.findFirst({
-      where: { id: body.cardId, tenantId, gtin: body.gtin },
+      where: { id: body.cardId, tenantId, gtin },
     });
     if (!card) throw new NotFoundException("card not found for tenant");
 
@@ -106,6 +109,7 @@ export class OrderService {
         number: existing.number,
         status: existing.status,
         isPaid: existing.isPaid,
+        releaseMethodType: existing.releaseMethodType,
         lines: existing.lines.map((l) => ({
           quantity: l.quantity,
           totalPrice: l.totalPrice.toString(),
@@ -126,9 +130,11 @@ export class OrderService {
             tenantId,
             idempotencyKey,
             cardId: card.id,
-            gtin: body.gtin,
+            gtin,
             isPaid: true,
-            businessPlaceId: body.businessPlaceId ?? null, // C-04
+            businessPlaceId: body.businessPlaceId ?? null, // C-04: order/tenant; env 803 is adapter fallback
+            productGroup: mptProductGroup,
+            releaseMethodType,
             status: "DRAFT",
             // number omitted — assigned by PG sequence (nextval('order_number_seq'))
           },
@@ -151,9 +157,10 @@ export class OrderService {
         });
         await tx.orderLine.create({
           data: {
+            tenantId,
             orderId: created.id,
             cardId: card.id,
-            gtin: body.gtin,
+            gtin,
             places: body.places,
             unitsPerPlace: body.unitsPerPlace,
             quantity,
@@ -174,7 +181,7 @@ export class OrderService {
             payload: {
               orderId: created.id,
               tenantId,
-              gtin: body.gtin,
+              gtin,
               quantity,
             },
           },
@@ -198,6 +205,7 @@ export class OrderService {
             number: existing.number,
             status: existing.status,
             isPaid: existing.isPaid,
+            releaseMethodType: existing.releaseMethodType,
             lines: existing.lines.map((l) => ({
               quantity: l.quantity,
               totalPrice: l.totalPrice.toString(),
@@ -213,6 +221,7 @@ export class OrderService {
       number: order.number,
       status: order.status,
       isPaid: order.isPaid,
+      releaseMethodType: order.releaseMethodType,
       lines: [
         {
           quantity,
@@ -308,6 +317,7 @@ export class OrderService {
       status: order.status,
       gtin: order.gtin,
       isPaid: order.isPaid,
+      releaseMethodType: order.releaseMethodType,
       lines: order.lines.map((l) => ({
         quantity: l.quantity,
         totalPrice: l.totalPrice.toString(),

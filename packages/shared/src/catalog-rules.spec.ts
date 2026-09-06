@@ -7,6 +7,7 @@ import {
   checkDuplicate,
   verifyGs1Mod10,
   gs1Mod10CheckDigit,
+  parseAdr006Km,
   type FuzzyKey,
 } from "./catalog-rules";
 
@@ -64,6 +65,28 @@ describe("GS1 check digit (mod 10) — GtinResolver слой 2 + SSCC (ADR-025)"
 
   it("gs1Mod10CheckDigit для GTIN-14 base совпадает с последней цифрой", () => {
     expect(gs1Mod10CheckDigit("0401483572339")).toBe(9);
+  });
+
+  it("parseAdr006Km: base 01+GTIN14+21+serial", () => {
+    expect(parseAdr006Km("0104014835723399210000001")).toEqual({
+      gtin: "04014835723399",
+      serial: "0000001",
+      ai91: null,
+      ai92: null,
+      form: "base",
+    });
+  });
+
+  it("parseAdr006Km: extended with GS (0x1D) AI91/AI92", () => {
+    expect(
+      parseAdr006Km("0104014835723399210000001\x1d91KEY91\x1d92CHK92")
+    ).toEqual({
+      gtin: "04014835723399",
+      serial: "0000001",
+      ai91: "KEY91",
+      ai92: "CHK92",
+      form: "extended",
+    });
   });
 });
 

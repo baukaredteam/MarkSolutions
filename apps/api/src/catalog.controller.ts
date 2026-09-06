@@ -31,17 +31,12 @@ import {
   type MotorOilAttributes,
   type FuzzyKey,
 } from "@markflow/shared";
-
-interface DraftRow {
-  name?: string;
-  tnved?: string;
-  brand?: string;
-  sae?: string;
-  volumeL?: number;
-  gtin?: string;
-  demo?: boolean;
-  source?: string;
-}
+import type {
+  CreateCardDto,
+  DraftRowDto,
+  FixTnvedDto,
+  ImportDraftsDto,
+} from "./catalog/catalog.dto";
 
 @Injectable()
 export class CatalogService {
@@ -221,7 +216,7 @@ export class CatalogService {
     }
   }
 
-  async createDraft(tenantId: string, row: DraftRow): Promise<unknown> {
+  async createDraft(tenantId: string, row: DraftRowDto): Promise<unknown> {
     const tnved = row.tnved ?? "";
     const missing: string[] = [];
     if (!row.gtin) missing.push("gtin");
@@ -363,7 +358,7 @@ export class CatalogService {
         join(__dirname, "..", "..", "..", "fixtures", "invoice-38.json"),
         "utf8"
       )
-    ) as DraftRow[];
+    ) as DraftRowDto[];
     for (const r of rows) {
       await this.createDraft(tenantId, { ...r, demo: r.demo ?? false });
     }
@@ -407,7 +402,7 @@ export class CatalogController {
   @Roles("admin", "manager")
   @HttpCode(201)
   @Post("drafts/import")
-  async importDrafts(@Req() req: Request, @Body() body: { rows: DraftRow[] }) {
+  async importDrafts(@Req() req: Request, @Body() body: ImportDraftsDto) {
     const tenantId = this.tenantOf(req);
     // MVP: синхронно создаём (OutboxPoller-асинхронность — след. итерация),
     // но возвращаем jobId для совместимости с acceptance.
@@ -418,15 +413,7 @@ export class CatalogController {
   @Roles("admin", "manager")
   @HttpCode(201)
   @Post("cards")
-  async createCard(
-    @Req() req: Request,
-    @Body()
-    body: {
-      gtin: string;
-      attributes: Record<string, unknown>;
-      confirmDuplicate?: boolean;
-    }
-  ) {
+  async createCard(@Req() req: Request, @Body() body: CreateCardDto) {
     const tenantId = this.tenantOf(req);
     const actor = (req as unknown as { actor: string }).actor;
     return this.catalog.createCard(tenantId, actor, body);
@@ -438,7 +425,7 @@ export class CatalogController {
   async fixTnved(
     @Req() req: Request,
     @Param("id") id: string,
-    @Body() body: { tnved: string }
+    @Body() body: FixTnvedDto
   ) {
     return this.catalog.fixTnved(
       this.tenantOf(req),

@@ -62,10 +62,16 @@ export class DocumentController {
     return this.documents.submitWithdrawal(tenantOf(req), body);
   }
 
-  // дашборд: все документы tenant
+  // дашборд + OPS-журнал: import + withdrawal + utilisation tenant
   @Roles(...READ_ROLES)
   @Get("documents")
   list(@Req() req: Request) {
     return this.documents.list(tenantOf(req));
+  }
+
+  @Roles(...READ_ROLES)
+  @Get("operations")
+  listJournal(@Req() req: Request) {
+    return this.list(req);
   }
 }

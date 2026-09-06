@@ -1,5 +1,6 @@
 # ADR — принятые решения
 
+- Канон технического роадмапа **реального** контура: [`docs/ROADMAP-REAL.md`](./ROADMAP-REAL.md) (фазы A→B→C→D). [`docs/ROADMAP.md`](./ROADMAP.md) — архив OpenCode W1–W4 / симулятор, не продолжать как канон.
 - ADR-001 Модульный монолит; вынос Integration Hub/Code Vault — только по боли.
 - ADR-002 Изоляция tenant ЛОГИЧЕСКАЯ (tenant_id везде + Prisma-guard), не физическая БД.
 - ADR-003 Оферта в MVP-1 = акцепт (клик+скан+аудит); ЭЦП — фаза 3 (ТЗ DOC-051 Should).

@@ -230,7 +230,7 @@ export function LabelsPage() {
     <section>
       <div className="page-head">
         <div>
-          <h1>Этикетки</h1>
+          <h1>Печать и этикетки</h1>
           <div className="sub">
             Печать и перепечатка этикеток DataMatrix, очередь печати, устройства
           </div>
@@ -331,7 +331,11 @@ export function LabelsPage() {
                 300 DPI · Линия №1
               </small>
             </div>
-            <span className="badge b-green" style={{ marginLeft: "auto" }} data-status="ready">
+            <span
+              className="badge b-green"
+              style={{ marginLeft: "auto" }}
+              data-status="ready"
+            >
               {statusLabel("ready")}
             </span>
           </div>
@@ -343,7 +347,11 @@ export function LabelsPage() {
                 300 DPI · Линия №2
               </small>
             </div>
-            <span className="badge b-blue" style={{ marginLeft: "auto" }} data-status="printing">
+            <span
+              className="badge b-blue"
+              style={{ marginLeft: "auto" }}
+              data-status="printing"
+            >
               {statusLabel("printing")}
             </span>
           </div>

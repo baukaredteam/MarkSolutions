@@ -1,22 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { PAGES, type Role } from "./roles";
+import { MODULE_NAV_IDS, PAGES, type ModuleNavId, type Role } from "./roles";
 
-const COMMANDS = [
-  ["Главная", "/dashboard", "Открыть операционную панель"],
-  ["Каталог товаров", "/products", "Найти или создать товар"],
-  ["Заказать коды", "/orders", "Создать заказ кодов"],
-  ["Code Vault", "/vault", "Работа с защищёнными пулами"],
-  ["Проверить код", "/codecheck", "Сканирование и история"],
-  ["Производство", "/production", "Линии и задания"],
-  ["Склад и ТСД", "/warehouse", "Агрегация и сканирование"],
-  ["Документы", "/documents", "ЭЦП и обмен"],
-  ["Центр задач", "/tasks", "Мои и командные задачи"],
-  ["Центр исключений", "/exceptions", "Ошибки и инциденты"],
-  ["Состояние платформы", "/health", "Мониторинг сервисов"],
-  ["Конструктор процессов", "/processes", "Маршруты и автоматизация"],
-  ["Контрагенты", "/partners", "Участники оборота"],
-  ["Отчёты", "/reports", "Аналитика и выгрузки"],
+const MODULE_HINTS: Record<ModuleNavId, string> = {
+  dashboard: "Операционная панель и KPI",
+  tasks: "Задачи, уведомления и SLA",
+  search: "Поиск товаров, кодов и документов",
+  products: "Каталог и карточки товаров",
+  orders: "Заказы кодов маркировки",
+  labels: "Печать и шаблоны этикеток",
+  aggregation: "Иерархия упаковок",
+  documents: "Операции и документы движения",
+  shipments: "Поставки и отгрузки",
+  production: "Линии и производственные задания",
+  warehouse: "Складские операции и ТСД",
+  billing: "Лицевой счёт и тарификация",
+  reports: "Отчёты и аналитика",
+  ai: "ИИ помощник",
+  knowledge: "База знаний и инструкции",
+  settings: "Организация, доступ и интеграции",
+};
+
+const SECONDARY_COMMANDS = [
+  ["Code Vault", "/vault", "Защищённые пулы кодов"],
+  ["Информация о коде", "/codecheck", "Проверка и история кода"],
+  ["Интеграции", "/integrations", "Внешние подключения"],
 ] as const;
 
 interface Props {
@@ -30,10 +38,22 @@ export function CommandPalette({ open, roles, onClose }: Props) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
 
+  const commands = useMemo(
+    () => [
+      ...MODULE_NAV_IDS.map((id) => [
+        PAGES.find((p) => p.id === id)!.title,
+        `/${id}`,
+        MODULE_HINTS[id],
+      ]),
+      ...SECONDARY_COMMANDS,
+    ],
+    []
+  );
+
   // фильтр по правам роли + fuzzy
   const allowed = useMemo(
     () =>
-      COMMANDS.filter(([, path]) => {
+      commands.filter(([, path]) => {
         const id = path.slice(1);
         const meta = PAGES.find((p) => p.id === id);
         if (!meta) return true;
@@ -41,7 +61,7 @@ export function CommandPalette({ open, roles, onClose }: Props) {
           roles.includes("admin") || meta.roles.some((r) => roles.includes(r))
         );
       }),
-    [roles]
+    [roles, commands]
   );
 
   const filtered = useMemo(() => {

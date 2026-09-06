@@ -3,7 +3,7 @@
 // на en/kz позже (эволюция). Цвета остаются привязаны к КОДУ (STATUS_BADGE).
 
 export type StatusFamily =
-  "CARD" | "ORDER" | "CODE" | "DOC" | "QUEUE" | "DEVICE" | "BILLING";
+  "CARD" | "ORDER" | "CODE" | "DOC" | "QUEUE" | "DEVICE" | "BILLING" | "TASK";
 
 const RU: Record<string, Record<string, string>> = {
   CARD: {
@@ -69,6 +69,10 @@ const RU: Record<string, Record<string, string>> = {
     RELEASE: "Освобождение резерва",
     SETTLE: "Списание",
   },
+  TASK: {
+    OPEN: "Открыта",
+    DONE: "Завершена",
+  },
 };
 
 // фиксированный порядок семейств (пересечение кодов: CARD/ORDER оба имеют DRAFT)
@@ -80,6 +84,7 @@ const FAMILY_ORDER: StatusFamily[] = [
   "QUEUE",
   "DEVICE",
   "BILLING",
+  "TASK",
 ];
 
 const FLAT = new Map<string, string>();
@@ -116,6 +121,8 @@ export const STATUS_BADGE: Record<string, string> = {
   CANCELLED: "b-gray",
   FAILED: "b-red",
   CLOSED: "b-gray",
+  OPEN: "b-red",
+  DONE: "b-green",
   // CODE
   ACTIVE: "b-green",
   PRINTED: "b-blue",

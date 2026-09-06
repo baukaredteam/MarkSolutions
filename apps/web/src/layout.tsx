@@ -4,7 +4,15 @@ import { ToastProvider } from "./toast";
 import { sessionStore } from "./session";
 import { CommandPalette } from "./command-palette";
 import { TourTip } from "./tour";
-import { PAGES, NAV_GROUPS, SIDE_BOTTOM, type Role } from "./roles";
+import {
+  MODULE_ICONS,
+  MODULE_NAV_IDS,
+  PAGES,
+  NAV_GROUPS,
+  SIDE_BOTTOM,
+  type ModuleNavId,
+  type Role,
+} from "./roles";
 import { api } from "./api";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -43,6 +51,7 @@ async function loadSummary() {
       openAggregates: number;
       docsPendingDt: number;
       exceptions: number;
+      openTasks: number;
     }>("/dashboard/summary");
     return s;
   } catch {
@@ -91,7 +100,7 @@ export function Layout() {
           products: Math.max(s.codesNotApplied, 0),
           orders: Math.max(s.deadlineSoon, 0),
           documents: Math.max(s.docsPendingDt, 0),
-          exceptions: Math.max(s.exceptions, 0),
+          exceptions: Math.max(s.openTasks ?? s.exceptions, 0),
         });
       }
     });
@@ -132,38 +141,37 @@ export function Layout() {
     if (id === "products") return counts.products;
     if (id === "orders") return counts.orders;
     if (id === "documents") return counts.documents;
-    if (id === "exceptions") return counts.exceptions;
+    if (id === "tasks") return counts.exceptions;
     return null;
   };
 
   return (
     <ToastProvider>
       <div className="shell">
-        <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <aside className={`sidebar sidebar--dark ${sidebarOpen ? "open" : ""}`}>
           <div className="side-brand">
             <div className="brandmark">MF</div>
             <div>
-              <b style={{ fontSize: 19 }}>MarkFlow</b>
-              <small style={{ display: "block", color: "var(--muted)" }}>
-                Enterprise
-              </small>
+              <b className="side-brand-title">MARK FLOW</b>
+              <small className="side-brand-sub">Mark Solutions</small>
             </div>
           </div>
           <div className="tenant">
             <div className="tenant-logo">MS</div>
             <div>
               <b>Mark Solutions Demo</b>
-              <small style={{ display: "block", color: "var(--muted)" }}>
-                БИН 111111111111
-              </small>
+              <small className="side-tenant-sub">БИН 111111111111</small>
             </div>
           </div>
           {NAV_GROUPS.map((g) => (
-            <div key={g.label}>
-              <div className="nav-label">{g.label}</div>
+            <div key={g.label || "modules"}>
+              {g.label ? <div className="nav-label">{g.label}</div> : null}
               {g.ids.filter(navId).map((id) => {
                 const meta = PAGES.find((p) => p.id === id)!;
                 const c = countFor(id);
+                const icon = MODULE_NAV_IDS.includes(id as ModuleNavId)
+                  ? MODULE_ICONS[id as ModuleNavId]
+                  : "•";
                 return (
                   <NavLink
                     key={id}
@@ -173,31 +181,7 @@ export function Layout() {
                     }
                     onClick={() => setSidebarOpen(false)}
                   >
-                    <span className="nav-icon">
-                      {[
-                        "dashboard",
-                        "codecheck",
-                        "products",
-                        "orders",
-                        "vault",
-                        "labels",
-                        "operations",
-                        "warehouse",
-                        "documents",
-                        "reports",
-                        "billing",
-                        "integrations",
-                        "support",
-                        "tasks",
-                        "production",
-                        "partners",
-                        "processes",
-                        "exceptions",
-                        "health",
-                      ].includes(id)
-                        ? (NAV_ICONS[id] ?? "•")
-                        : "•"}
-                    </span>
+                    <span className="nav-icon">{icon}</span>
                     {meta.title}
                     {c !== null && c > 0 && (
                       <span className="nav-count">{c}</span>
@@ -243,7 +227,7 @@ export function Layout() {
                 placeholder="Поиск товара, GTIN, кода, документа или операции…"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    nav("/codecheck");
+                    nav("/search");
                   }
                 }}
               />
@@ -267,10 +251,11 @@ export function Layout() {
               >
                 ⌘
               </button>
-              <button className="icon-btn" onClick={() => nav("/exceptions")}>
-                ⚠
-              </button>
-              <button className="icon-btn" onClick={() => nav("/tasks")}>
+              <button
+                className="icon-btn"
+                title="Центр задач и уведомлений"
+                onClick={() => nav("/tasks")}
+              >
                 🔔
               </button>
               <div className="profile">
@@ -300,25 +285,3 @@ export function Layout() {
     </ToastProvider>
   );
 }
-
-const NAV_ICONS: Record<string, string> = {
-  dashboard: "⌂",
-  codecheck: "⌗",
-  products: "▦",
-  orders: "◫",
-  vault: "▣",
-  labels: "▤",
-  operations: "⇄",
-  warehouse: "▥",
-  documents: "▧",
-  reports: "◩",
-  billing: "₸",
-  integrations: "⌁",
-  support: "?",
-  tasks: "✓",
-  production: "⚙",
-  partners: "♢",
-  processes: "⤧",
-  exceptions: "⚠",
-  health: "♥",
-};

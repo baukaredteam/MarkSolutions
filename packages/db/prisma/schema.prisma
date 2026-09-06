@@ -21,6 +21,7 @@ model Tenant {
   accounts Account[]
   ledgerEntries LedgerEntry[]
   orders Order[]
+  orderLines OrderLine[]
   mptOrders MptOrder[]
   codeVaults CodeVault[]
   vaultExports VaultExport[]
@@ -36,6 +37,7 @@ model Tenant {
   users     User[]
   productCards ProductCard[]
   draftProposals DraftProposal[]
+  tasks     Task[]
   createdAt DateTime @default(now())
 }
 
@@ -228,6 +230,12 @@ model Order {
   isPaid       Boolean  @default(true)
   // C-04: бизнес-площадка нанесения (int32) — из заказа, не хардкод «1»
   businessPlaceId Int?
+  // MPT wire snapshot when set (STAGE oils = autofluids, not catalog motor-oils)
+  productGroup    String?
+  // CONTRACT POST /api/orders: PRIMARY|REMAINS|COMISSION|REMARK (string, not Prisma enum)
+  releaseMethodType String?
+  // STAGE/xTrace orderId from createOrder; getOrder/getCodes prefer this
+  externalOrderId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   lines        OrderLine[]
@@ -237,6 +245,8 @@ model Order {
 model OrderLine {
   id            String   @id @default(cuid())
   version       Int      @default(0)
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id])
   cardId        String
@@ -249,6 +259,7 @@ model OrderLine {
   serialNumberType String @default("OPERATOR")
   tariffId      String
   pricePerCodeKZT BigInt  // снимок тарифа, тиыны (смена тарифа заказ не меняет)
+  @@index([tenantId])
 }
 
 // Симулятор ИС МПТ (W3, ADR-005/024): state в БД, статус = f(now, createdAt, SIM_MPT_EMISSION_MS).
@@ -482,4 +493,23 @@ model AggregationMember {
   addedAt   DateTime @default(now())
   addedBy   String
   @@unique([unitId, codeKey])
+}
+
+// TASK minimal: projection of Outbox FAILED + UtilisationAlert (ID-017).
+// Unique (tenantId, source, sourceRef) — same exception does not spawn a second OPEN task.
+model Task {
+  id        String   @id @default(cuid())
+  version   Int      @default(0)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  source    String   // OUTBOX_FAILED | UTILISATION_ALERT
+  sourceRef String   // Outbox.id | UtilisationAlert.id
+  type      String   // ERROR | WARNING
+  title     String
+  status    String   @default("OPEN") // OPEN | DONE (ТЗ: Открыта / Завершённые)
+  severity  String   @default("HIGH") // CRITICAL | HIGH | MEDIUM
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, source, sourceRef])
+  @@index([tenantId, status])
 }

@@ -218,7 +218,7 @@ export function buildAppConfig(
       password: env.MPT_PASSWORD ?? "",
       requestTimeoutMs: num(env.MPT_REQUEST_TIMEOUT_MS, 15000),
       maxRetries: num(env.MPT_MAX_RETRIES, 2),
-      productGroup: env.MPT_PRODUCT_GROUP ?? "motor-oils",
+      productGroup: env.MPT_PRODUCT_GROUP ?? "autofluids",
       businessPlaceId: env.MPT_BUSINESS_PLACE_ID ?? null,
     },
   };

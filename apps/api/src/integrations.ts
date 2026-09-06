@@ -1,5 +1,5 @@
 // Порты интеграций модерации (T3, Q5/Q6) + симулятор ИС МПТ (W3, ADR-005/024).
-import { verifyGs1Mod10 } from "@markflow/shared";
+import { serializeAdr006Km, verifyGs1Mod10 } from "@markflow/shared";
 import { PrismaService } from "./prisma.service";
 import { Injectable } from "@nestjs/common";
 
@@ -108,6 +108,8 @@ export interface MptOrderInput {
   isPaid: boolean;
   productGroup?: string; // C-06: группа товара для тарифа (HttpMptAdapter)
   businessPlaceId?: number | string; // C-04: int32 на проводе (HttpMptAdapter)
+  /** CONTRACT: PRIMARY|REMAINS|COMISSION|REMARK. Adapter defaults PRIMARY. */
+  releaseMethodType?: string;
 }
 
 export interface MptCodeView {
@@ -122,12 +124,19 @@ export interface IMptAdapter {
   createOrder(input: MptOrderInput): Promise<{
     status: MptOrderStatus;
     requestId?: string; // корреляционный ID запроса (HttpMptAdapter; mock не возвращает)
+    orderId?: string; // STAGE/xTrace orderId when present
   }>;
   getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
+    found?: boolean;
   }>;
-  getCodes(orderId: string): Promise<{ codes: MptCodeView[] }>;
+  getCodes(input: {
+    orderId: string;
+    gtin: string;
+    quantity: number;
+    lastPackId?: string;
+  }): Promise<{ codes: string[]; packId?: string }>;
   submitUtilisation(input: {
     tenantId: string;
     sntins: string[];
@@ -208,11 +217,12 @@ export class MockMptAdapter implements IMptAdapter {
   async getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
+    found?: boolean;
   }> {
     const order = await this.prisma.mptOrder.findUnique({
       where: { externalId: orderId },
     });
-    if (!order) return { status: "CREATED", quantity: 0 };
+    if (!order) return { status: "CREATED", quantity: 0, found: false };
     const status = this.statusOf(order);
     // первый переход в READY → эмитировать коды (один раз)
     if (status === "READY" && order.status !== "READY") {
@@ -222,12 +232,22 @@ export class MockMptAdapter implements IMptAdapter {
       where: { id: order.id },
       data: { status },
     });
-    return { status, quantity: order.quantity };
+    return { status, quantity: order.quantity, found: true };
   }
 
-  async getCodes(orderId: string): Promise<{ codes: MptCodeView[] }> {
+  async getCodes(input: {
+    orderId: string;
+    gtin: string;
+    quantity: number;
+    lastPackId?: string;
+  }): Promise<{ codes: string[]; packId?: string }> {
+    // Signature-only adapt: still emit existing sim rows. Do not filter by
+    // gtin/quantity/lastPackId (no new simulator behavior).
+    void input.gtin;
+    void input.quantity;
+    void input.lastPackId;
     const order = await this.prisma.mptOrder.findUnique({
-      where: { externalId: orderId },
+      where: { externalId: input.orderId },
       include: { codes: true },
     });
     // только READY/CLOSED (CONTRACT-IS-MPT)
@@ -238,17 +258,19 @@ export class MockMptAdapter implements IMptAdapter {
       await this.emitCodes(order.id, order.gtin, order.quantity);
     }
     const fresh = await this.prisma.mptOrder.findUnique({
-      where: { externalId: orderId },
+      where: { externalId: input.orderId },
       include: { codes: true },
     });
     return {
-      codes: (fresh?.codes ?? []).map((c) => ({
-        gtin: c.gtin,
-        serial: c.serial,
-        ai91: c.ai91,
-        ai92: c.ai92,
-        form: c.form as "base" | "extended",
-      })),
+      codes: (fresh?.codes ?? []).map((c) =>
+        serializeAdr006Km({
+          gtin: c.gtin,
+          serial: c.serial,
+          ai91: c.ai91,
+          ai92: c.ai92,
+          form: c.form,
+        })
+      ),
     };
   }
 

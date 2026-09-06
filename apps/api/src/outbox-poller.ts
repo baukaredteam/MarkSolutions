@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "./prisma.service";
+import { parseAdr006Km } from "@markflow/shared";
 import {
   INktAdapter,
   NKT_ADAPTER,
@@ -13,11 +14,20 @@ import { VaultService } from "./vault.service";
 import { UtilisationService } from "./utilisation.service";
 import { CodeEventService } from "./code-event.service";
 
+/** STAGE emission ≫ 60s. Recommended ≥15–30 min. Do not RELEASE on age alone. */
+export const DEFAULT_MPT_ORDER_TIMEOUT_MS = 1_800_000;
+
 // OutboxPoller: асинхронные интеграции.
 // 1) nkt-register (T3): Approved → Registering → Registered (НКТ).
-// 2) send-order-to-mpt (W3, тикет 02): Queued → Sent (POST /api/orders в симулятор ИС МПТ),
+// 2) send-order-to-mpt (W3, тикет 02): Queued → Sent (POST /api/orders),
 //    затем поллинг статусов (ORD-029, поллер=сверка): READY → Completed; REJECTED →
-//    Rejected + RELEASE + задача; PENDING дольше MPT_ORDER_TIMEOUT_MS → Failed + RELEASE + задача.
+//    Rejected + RELEASE + задача.
+//    P0: after first createOrder attempt, outbox is never left PENDING.
+//    Success → PROCESSED + persist STAGE orderId. Permanent → FAILED.
+//    UNKNOWN_RESULT (timeout/5xx/network) → PROCESSED + unknownResult + SENT,
+//    then GET reconcile only. Never re-POST.
+//    RELEASE only on REJECTED, or aged + proven absent (found=false AND we
+//    have STAGE externalOrderId). Do not RELEASE while GET is CREATED/PENDING.
 // 3) инджест кодов в Code Vault (W3, тикет 04): COMPLETED/PARTIALLY → GET /api/codes из симулятора → Vault.
 @Injectable()
 export class OutboxPoller implements OnModuleDestroy {
@@ -44,7 +54,9 @@ export class OutboxPoller implements OnModuleDestroy {
     return Number(process.env.MPT_POLL_MS ?? 2000);
   }
   private get mptTimeoutMs(): number {
-    return Number(process.env.MPT_ORDER_TIMEOUT_MS ?? 60000);
+    return Number(
+      process.env.MPT_ORDER_TIMEOUT_MS ?? DEFAULT_MPT_ORDER_TIMEOUT_MS
+    );
   }
   private get requireGs1Verified(): boolean {
     return process.env.REQUIRE_GS1_VERIFIED_FOR_REGISTERING === "true";
@@ -313,11 +325,13 @@ export class OutboxPoller implements OnModuleDestroy {
         serialNumberType: "OPERATOR",
         cisType: "UNIT",
         isPaid: order.isPaid,
+        productGroup: order.productGroup ?? undefined,
+        businessPlaceId: order.businessPlaceId ?? undefined,
+        releaseMethodType: order.releaseMethodType ?? undefined,
       });
     } catch (e) {
       // постоянная ошибка внешнего API (4xx/конфиг): ретрай бесполезен →
-      // outbox FAILED + задача оператору (ID-017). Временные (5xx/network)
-      // бросаем дальше: поллер оставит PENDING для reconciliation.
+      // outbox FAILED + задача оператору (ID-017).
       if ((e as { permanent?: boolean }).permanent) {
         await this.prisma.outbox.update({
           where: { id: outboxId },
@@ -336,7 +350,27 @@ export class OutboxPoller implements OnModuleDestroy {
         });
         return;
       }
-      throw e;
+      // UNKNOWN_RESULT (timeout/5xx/network): do not leave PENDING (would re-POST).
+      // Mark SENT so reconcileOrder GET-s; next tick must not call createOrder.
+      await this.prisma.outbox.update({
+        where: { id: outboxId },
+        data: {
+          status: "PROCESSED",
+          processedAt: new Date(),
+          payload: {
+            ...payload,
+            correlationId,
+            attempt,
+            unknownResult: true,
+            requestId: null,
+          },
+        },
+      });
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: { status: "SENT" },
+      });
+      return;
     }
     await this.prisma.outbox.update({
       where: { id: outboxId },
@@ -365,7 +399,10 @@ export class OutboxPoller implements OnModuleDestroy {
     }
     await this.prisma.order.update({
       where: { id: order.id },
-      data: { status: "SENT" },
+      data: {
+        status: "SENT",
+        ...(res.orderId ? { externalOrderId: res.orderId } : {}),
+      },
     });
     await this.prisma.outbox.update({
       where: { id: outboxId },
@@ -380,41 +417,24 @@ export class OutboxPoller implements OnModuleDestroy {
       include: { lines: true },
     });
     if (!order) return;
-    const mpt = await this.mpt.getOrder(orderId);
+    const mptOrderId = order.externalOrderId ?? orderId;
+    const mpt = await this.mpt.getOrder(mptOrderId);
     const now = Date.now();
     const age = now - order.updatedAt.getTime();
     // количество заказа — из OrderLine (на Order колонки quantity нет)
     const expectedQty = order.lines.reduce((s, l) => s + l.quantity, 0);
 
-    // таймаут: PENDING дольше MPT_ORDER_TIMEOUT_MS → Failed + RELEASE + задача (ID-017)
-    if (age > this.mptTimeoutMs) {
-      if (order.status !== "FAILED") {
-        await this.billing
-          .release(order.tenantId, orderId, "mpt order timeout")
-          .catch(() => {});
-        await this.prisma.order.update({
-          where: { id: orderId },
-          data: { status: "FAILED" },
-        });
-        await this.prisma.outbox.create({
-          data: {
-            aggregate: "mpt-order-timeout",
-            status: "FAILED",
-            payload: {
-              orderId,
-              tenantId: order.tenantId,
-              mptStatus: mpt.status,
-            },
-          },
-        });
-      }
-      return;
-    }
-
     if (mpt.status === "READY" || mpt.status === "CLOSED") {
-      // расхождение количества: мок-шов (quantity−1 кодов) → Partially Completed + задача
-      const codes = await this.mpt.getCodes(orderId);
-      if (codes.codes.length < expectedQty) {
+      // MVP: first line gtin; quantity = OrderLine sum (same expectedQty as today).
+      const gtin = order.lines[0]?.gtin ?? order.gtin ?? "";
+      const fetched = await this.mpt.getCodes({
+        orderId: mptOrderId,
+        gtin,
+        quantity: expectedQty,
+      });
+      // official codes[] are strings; Vault.ingest still takes structured ADR-006.
+      const codes = fetched.codes.map(parseAdr006Km);
+      if (codes.length < expectedQty) {
         if (order.status !== "PARTIALLY_COMPLETED") {
           await this.prisma.order.update({
             where: { id: orderId },
@@ -429,12 +449,12 @@ export class OutboxPoller implements OnModuleDestroy {
                 tenantId: order.tenantId,
                 reason: "quantity mismatch",
                 expected: expectedQty,
-                actual: codes.codes.length,
+                actual: codes.length,
               },
             },
           });
           // инджест: сколько пришло (PARTIALLY) — в Vault
-          await this.vault.ingest(orderId, codes.codes, order.cardId);
+          await this.vault.ingest(orderId, codes, order.cardId);
         }
         return;
       }
@@ -444,7 +464,7 @@ export class OutboxPoller implements OnModuleDestroy {
           data: { status: "COMPLETED" },
         });
         // инджест всех кодов в Vault (граница с тикетом 03)
-        await this.vault.ingest(orderId, codes.codes, order.cardId);
+        await this.vault.ingest(orderId, codes, order.cardId);
       }
       return;
     }
@@ -471,7 +491,37 @@ export class OutboxPoller implements OnModuleDestroy {
       }
       return;
     }
-    // PENDING — ждём следующий тик
+    // CREATED/PENDING/SENT-equivalent: never RELEASE on age alone (STAGE emission ≫ 60s).
+    // Absent is proven only when we queried a stored STAGE id and GET found nothing.
+    if (
+      age > this.mptTimeoutMs &&
+      mpt.found === false &&
+      order.externalOrderId
+    ) {
+      if (order.status !== "FAILED") {
+        await this.billing
+          .release(order.tenantId, orderId, "mpt order absent after timeout")
+          .catch(() => {});
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { status: "FAILED" },
+        });
+        await this.prisma.outbox.create({
+          data: {
+            aggregate: "mpt-order-timeout",
+            status: "FAILED",
+            payload: {
+              orderId,
+              tenantId: order.tenantId,
+              mptStatus: mpt.status,
+              reason: "mpt order absent after timeout",
+            },
+          },
+        });
+      }
+      return;
+    }
+    // PENDING/CREATED — ждём следующий тик (даже если age > timeout)
   }
 
   // ---- Документы ИС МПТ (C-03, тикет MPT-02): async state machine ----

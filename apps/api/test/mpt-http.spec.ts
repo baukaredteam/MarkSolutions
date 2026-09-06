@@ -22,6 +22,7 @@ import {
   createMptAdapter,
   canonicalJson,
   toInt32,
+  MptUnknownResultError,
 } from "../src/http-mpt.adapter";
 
 // ---- fake fetch: записывает вызовы, отвечает по хендлеру ----
@@ -117,6 +118,7 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
         expect(body.products[0].cisType).toBe("UNIT");
         expect(body.businessPlaceId).toBe(7);
         expect(body.isPaid).toBe(true);
+        expect(body.releaseMethodType).toBe("PRIMARY");
         return jsonResponse({ orderId: "mpt-order-1", status: "CREATED" });
       }
       throw new Error(`unexpected url: ${call.url}`);
@@ -134,6 +136,98 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     });
     expect(res.status).toBe("CREATED");
     expect(res.requestId).toBeTruthy();
+    expect(res.orderId).toBe("mpt-order-1");
+  });
+
+  it("createOrder: default productGroup is autofluids; input/env override when set", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.endsWith("/api/orders"))
+        return jsonResponse({ orderId: "stg-1", status: "CREATED" });
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    await adapter.createOrder({
+      orderId: "o1",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+    });
+    const body = JSON.parse(
+      ff.calls.find((c) => c.url.endsWith("/api/orders"))!.body ?? "{}"
+    );
+    expect(body.productGroup).toBe("autofluids");
+
+    const ff2 = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      return jsonResponse({ orderId: "stg-2", status: "CREATED" });
+    });
+    await makeAdapter(ff2, { MPT_PRODUCT_GROUP: "from-env" }).createOrder({
+      orderId: "o2",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+      productGroup: "from-order",
+      businessPlaceId: 36,
+    });
+    const body2 = JSON.parse(
+      ff2.calls.find((c) => c.url.endsWith("/api/orders"))!.body ?? "{}"
+    );
+    expect(body2.productGroup).toBe("from-order");
+    expect(body2.businessPlaceId).toBe(36);
+    expect(body2.releaseMethodType).toBe("PRIMARY");
+  });
+
+  it("createOrder: releaseMethodType PRIMARY by default; passes CONTRACT enum through", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.endsWith("/api/orders"))
+        return jsonResponse({ orderId: "stg-rm", status: "CREATED" });
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    await adapter.createOrder({
+      orderId: "o-rm",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+    });
+    const body = JSON.parse(
+      ff.calls.find((c) => c.url.endsWith("/api/orders"))!.body ?? "{}"
+    );
+    expect(body.releaseMethodType).toBe("PRIMARY");
+
+    const ff2 = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      return jsonResponse({ orderId: "stg-rm2", status: "CREATED" });
+    });
+    await makeAdapter(ff2).createOrder({
+      orderId: "o-rm2",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+      releaseMethodType: "COMISSION",
+    });
+    const body2 = JSON.parse(
+      ff2.calls.find((c) => c.url.endsWith("/api/orders"))!.body ?? "{}"
+    );
+    expect(body2.releaseMethodType).toBe("COMISSION");
   });
 
   it("401 → ровно один refresh → повтор исходного запроса с тем же operation ID; второй 401 → ошибка", async () => {
@@ -201,55 +295,41 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     ).toHaveLength(1);
   });
 
-  it("backoff+jitter: 503 и network-ошибка → ретрай → успех; 4xx не ретраится", async () => {
-    // 503 → retry → 200
+  it("GET backoff+jitter: 503 и network-ошибка → ретрай → успех; 4xx не ретраится", async () => {
+    // 503 → retry → 200 (GET may retry; mutating POST must not)
     const ff = fakeFetch((call) => {
       if (call.url.endsWith("/api/users/authenticate"))
         return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
-      const n = ff.calls.filter((c) => c.url.endsWith("/api/orders")).length;
+      const n = ff.calls.filter((c) => c.url.includes("/api/orders?")).length;
       return n === 1
         ? new Response("Service Unavailable", { status: 503 })
-        : jsonResponse({ orderId: "x", status: "CREATED" });
+        : jsonResponse({
+            orderInfos: [{ orderId: "o1", orderStatus: "PENDING" }],
+          });
     });
     const adapter = makeAdapter(ff);
-    await adapter.createOrder({
-      orderId: "o1",
-      tenantId: "t1",
-      gtin: "4601005000001",
-      quantity: 1,
-      serialNumberType: "OPERATOR",
-      cisType: "UNIT",
-      isPaid: true,
-    });
-    expect(ff.calls.filter((c) => c.url.endsWith("/api/orders"))).toHaveLength(
+    await adapter.getOrder("o1");
+    expect(ff.calls.filter((c) => c.url.includes("/api/orders?"))).toHaveLength(
       2
     );
 
-    // network reject → retry → успех
     let rejects = 1;
     const ff2 = fakeFetch(async (call) => {
       if (call.url.endsWith("/api/users/authenticate"))
         return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
-      if (call.url.endsWith("/api/orders") && rejects-- > 0) {
+      if (call.url.includes("/api/orders?") && rejects-- > 0) {
         throw new TypeError("fetch failed: ECONNREFUSED");
       }
-      return jsonResponse({ orderId: "x", status: "CREATED" });
+      return jsonResponse({
+        orderInfos: [{ orderId: "o1", orderStatus: "PENDING" }],
+      });
     });
     const adapter2 = makeAdapter(ff2);
-    await adapter2.createOrder({
-      orderId: "o1",
-      tenantId: "t1",
-      gtin: "4601005000001",
-      quantity: 1,
-      serialNumberType: "OPERATOR",
-      cisType: "UNIT",
-      isPaid: true,
-    });
-    expect(ff2.calls.filter((c) => c.url.endsWith("/api/orders"))).toHaveLength(
-      2
-    );
+    await adapter2.getOrder("o1");
+    expect(
+      ff2.calls.filter((c) => c.url.includes("/api/orders?"))
+    ).toHaveLength(2);
 
-    // 400 → без ретрая и permanent-ошибка с телом в message
     const ff3 = fakeFetch((call) => {
       if (call.url.endsWith("/api/users/authenticate"))
         return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
@@ -258,7 +338,49 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     const adapter3 = makeAdapter(ff3);
     let err3: unknown;
     try {
-      await adapter3.createOrder({
+      await adapter3.getOrder("o1");
+    } catch (e) {
+      err3 = e;
+    }
+    expect(err3).toBeTruthy();
+    expect((err3 as { permanent?: boolean }).permanent).toBe(true);
+    expect(String((err3 as Error).message)).toContain("bad request");
+    expect(
+      ff3.calls.filter((c) => c.url.includes("/api/orders?"))
+    ).toHaveLength(1);
+  });
+
+  it("mutating POST createOrder: 503/network — one attempt, UNKNOWN_RESULT, no retry", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      return new Response("Service Unavailable", { status: 503 });
+    });
+    const adapter = makeAdapter(ff, { MPT_MAX_RETRIES: "2" });
+    await expect(
+      adapter.createOrder({
+        orderId: "o1",
+        tenantId: "t1",
+        gtin: "4601005000001",
+        quantity: 1,
+        serialNumberType: "OPERATOR",
+        cisType: "UNIT",
+        isPaid: true,
+      })
+    ).rejects.toBeInstanceOf(MptUnknownResultError);
+    expect(ff.calls.filter((c) => c.url.endsWith("/api/orders"))).toHaveLength(
+      1
+    );
+
+    const ff2 = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      throw new TypeError("fetch failed: ECONNREFUSED");
+    });
+    const adapter2 = makeAdapter(ff2, { MPT_MAX_RETRIES: "2" });
+    let err2: unknown;
+    try {
+      await adapter2.createOrder({
         orderId: "o1",
         tenantId: "t1",
         gtin: "4601005000001",
@@ -268,12 +390,12 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
         isPaid: true,
       });
     } catch (e) {
-      err3 = e;
+      err2 = e;
     }
-    expect(err3).toBeTruthy();
-    expect((err3 as { permanent?: boolean }).permanent).toBe(true);
-    expect(String((err3 as Error).message)).toContain("bad request");
-    expect(ff3.calls.filter((c) => c.url.endsWith("/api/orders"))).toHaveLength(
+    expect(err2).toBeInstanceOf(MptUnknownResultError);
+    expect((err2 as { unknownResult?: boolean }).unknownResult).toBe(true);
+    expect((err2 as { permanent?: boolean }).permanent).toBeFalsy();
+    expect(ff2.calls.filter((c) => c.url.endsWith("/api/orders"))).toHaveLength(
       1
     );
   });
@@ -331,6 +453,113 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     expect(() => toInt32("abc")).toThrow();
     expect(() => toInt32(-5)).toThrow();
     expect(() => toInt32(2 ** 40)).toThrow();
+  });
+
+  it("getOrder: list-shaped body → status from orderInfos[].orderStatus, quantity 0", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/orders?")) {
+        const url = new URL(call.url);
+        expect(url.searchParams.get("orderId")).toBe("ord-ready");
+        expect(url.searchParams.has("productGroup")).toBe(false);
+        expect(call.method).toBe("GET");
+        return jsonResponse({
+          status: "REJECTED",
+          quantity: 99,
+          orderInfos: [
+            { orderId: "other", orderStatus: "PENDING" },
+            { orderId: "ord-ready", orderStatus: "READY" },
+          ],
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getOrder("ord-ready");
+    expect(res.status).toBe("READY");
+    expect(res.quantity).toBe(0);
+  });
+
+  it("getOrder: single orderInfos entry used when orderId differs", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/orders?")) {
+        return jsonResponse({
+          orderInfos: [{ orderId: "stage-id", orderStatus: "CLOSED" }],
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getOrder("internal-id");
+    expect(res.status).toBe("CLOSED");
+    expect(res.quantity).toBe(0);
+  });
+
+  it("getCodes: official query orderId+gtin+quantity; returns string[] + packId", async () => {
+    const km = "0104014835723399210000001";
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/codes?")) {
+        const url = new URL(call.url);
+        expect(url.searchParams.get("orderId")).toBe("ord-1");
+        expect(url.searchParams.get("gtin")).toBe("04014835723399");
+        expect(url.searchParams.get("quantity")).toBe("3");
+        expect(url.searchParams.get("lastPackId")).toBe("pack-prev");
+        expect(call.method).toBe("GET");
+        return jsonResponse({
+          codes: [km, "0104014835723399210000002"],
+          packId: "pack-9",
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getCodes({
+      orderId: "ord-1",
+      gtin: "04014835723399",
+      quantity: 3,
+      lastPackId: "pack-prev",
+    });
+    expect(res.codes).toEqual([km, "0104014835723399210000002"]);
+    expect(res.packId).toBe("pack-9");
+    expect(res.codes.every((c) => typeof c === "string")).toBe(true);
+  });
+
+  it("getUtilisation: prefers reportStatus over status", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/utilisation/")) {
+        return jsonResponse({
+          reportId: "rep-1",
+          reportStatus: "SUCCESS",
+          status: "ERROR",
+          rejectReason: "ignored-when-reportStatus-present",
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getUtilisation("rep-1");
+    expect(res.status).toBe("SUCCESS");
+  });
+
+  it("getUtilisation: fallback to status when reportStatus absent", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/utilisation/")) {
+        return jsonResponse({ status: "IN_PROCESS" });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    const res = await adapter.getUtilisation("rep-legacy");
+    expect(res.status).toBe("IN_PROCESS");
   });
 
   it("submitUtilisation: businessPlaceId int32 в теле; отсутствие → ошибка", async () => {

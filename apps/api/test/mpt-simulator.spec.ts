@@ -279,41 +279,19 @@ describe("mpt simulator + order poller (W3, ORD-029)", () => {
     }
   });
 
-  it("таймаут MPT_ORDER_TIMEOUT_MS → Failed + RELEASE + задача оператору (ID-017)", async () => {
+  it("таймаут MPT_ORDER_TIMEOUT_MS при PENDING STAGE → SENT без RELEASE", async () => {
     process.env.MPT_ORDER_TIMEOUT_MS = "400";
     process.env.SIM_MPT_EMISSION_MS = "60000"; // эмиссия не завершится — заказ висит в PENDING
     try {
       const orderId = await createOrder(1, 1, "k-mpt-6");
       await waitStatus(orderId, "SENT");
-      // симулятор не выпустит (эмиссия 100мс, но дадим заказу "зависнуть" — обнулим createdAt симулятора назад)
-      // упрощение: поллер таймаутит по order.updatedAt; заказ в SENT старше таймаута → Failed
       await sleep(700);
       const order = await prisma.order.findUnique({ where: { id: orderId } });
-      expect(order!.status).toBe("FAILED");
-      // RELEASE записан (резерв освобождён)
+      expect(order!.status).toBe("SENT");
       const release = await prisma.ledgerEntry.findFirst({
         where: { tenantId, kind: "RELEASE", refOrderId: orderId },
       });
-      expect(release).toBeTruthy();
-      // задача оператору: outbox mpt-order-timeout FAILED
-      const task = await prisma.outbox.findFirst({
-        where: { aggregate: "mpt-order-timeout", status: "FAILED" },
-      });
-      expect(task).toBeTruthy();
-      // /moderation/exceptions показывает mpt-order-timeout (роль operator)
-      const opToken = app.get(JwtService).sign({
-        sub: "operator-seeded",
-        tenantId: null,
-        roles: ["operator"],
-        mfaCompleted: true,
-      });
-      const exc = await request(app.getHttpServer())
-        .get("/moderation/exceptions")
-        .set("Authorization", `Bearer ${opToken}`)
-        .expect(200);
-      expect(
-        exc.body.items.some((i: { id: string }) => i.id === task!.id)
-      ).toBe(true);
+      expect(release).toBeNull();
     } finally {
       process.env.MPT_ORDER_TIMEOUT_MS = "5000";
       process.env.SIM_MPT_EMISSION_MS = "100";

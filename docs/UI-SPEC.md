@@ -1,3 +1,9 @@
+> **SUPERSEDED (2026-08-31).** Visual contract is now the **16-module MARK FLOW** mockups in `docs/source/`: `MARK_FLOW_16_modules_exact_layout_v2.html` (`openM(0)`…`openM(15)`, HOME-01), `MarkSolutions_Detailed_Mockups_Final (1).md`, `MarkSolutions_Detailed_Mockups_v2.html`, `MARK_FLOW_Главная_финальная_v3.md`.
+>
+> This file and `docs/ui-reference.html` are the historical **v4** prototype (23 screens, grouped nav, 2026-08-11). Do not drive new UI from them. `apps/web` nav was aligned to the 16-module canon in PR #4.
+>
+> Keep the body below as archive. Do not rewrite it to match the new mockups here.
+
 # UI-SPEC — спецификация фронт-пересборки MarkFlow v4
 
 **Источник:** `docs/ui-reference.html` — интерактивный продуктовый прототип v4.0 (131KB, 23 страницы, 5 ролей).
