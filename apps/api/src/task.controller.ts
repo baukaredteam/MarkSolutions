@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Req } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { TaskService } from "./task.service";
 import { Roles, READ_ROLES } from "./guards";
@@ -10,9 +10,14 @@ export class TaskController {
 
   @Roles(...READ_ROLES)
   @Get()
-  list(@Req() req: Request) {
+  list(
+    @Req() req: Request,
+    @Query("source") source?: string,
+    @Query("status") status?: string
+  ) {
     return this.tasks.list(
-      tenantOfOrThrow(req as unknown as { tenantId?: string | null })
+      tenantOfOrThrow(req as unknown as { tenantId?: string | null }),
+      { source, status }
     );
   }
 
