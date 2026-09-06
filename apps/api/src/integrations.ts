@@ -108,6 +108,8 @@ export interface MptOrderInput {
   isPaid: boolean;
   productGroup?: string; // C-06: группа товара для тарифа (HttpMptAdapter)
   businessPlaceId?: number | string; // C-04: int32 на проводе (HttpMptAdapter)
+  /** CONTRACT: PRIMARY|REMAINS|COMISSION|REMARK. Adapter defaults PRIMARY. */
+  releaseMethodType?: string;
 }
 
 export interface MptCodeView {

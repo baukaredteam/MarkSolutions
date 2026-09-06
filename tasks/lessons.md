@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-06 — ORD-releaseMethodType: CONTRACT enum, not ЛК «Повторная»
+
+- Wire `releaseMethodType` is exactly `PRIMARY|REMAINS|COMISSION|REMARK` (`docs/CONTRACT-IS-MPT.md`). Official spelling is **COMISSION** (one M). `COMMISSION` is not the createOrder enum.
+- STAGE ЛК shows Первичная / Повторная. Первичная → `PRIMARY`. **Повторная is not a wire value** — do not map it to REMAINS or REMARK (`docs/STAGE-LK-FIELDS.md`). UI exposes the four CONTRACT labels (Первичная / Остатки / Комиссия / Перемаркировка).
+- Default omitted/blank → PRIMARY. Field goes on HTTP createOrder body only; no STAGE POST from this ticket. Poller pass-through is one field, not an outbox rewrite.
+
 ## Factory Finn loop
 
 - Factory крутится как Finn loop: PM режет цель на доску (Linear предпочтительно) и кормит Dev **по одной** карточке; Dev = только Cloud Agent + draft PR в `chore/cursor-agent-factory`; Chief оркестрирует и комментирует, не пишет весь код; merge / mutating STAGE — только явное «да» Harith. Канон: `docs/FACTORY.md`.

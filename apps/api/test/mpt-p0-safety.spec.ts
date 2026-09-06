@@ -26,6 +26,7 @@ type OrderRow = {
   gtin: string | null;
   isPaid: boolean;
   productGroup?: string | null;
+  releaseMethodType?: string | null;
   businessPlaceId?: number | null;
   externalOrderId?: string | null;
   cardId?: string | null;
@@ -104,6 +105,7 @@ function seedQueued(overrides: Partial<OrderRow> = {}) {
     gtin: "4601005000001",
     isPaid: true,
     productGroup: "autofluids",
+    releaseMethodType: "PRIMARY",
     businessPlaceId: 36,
     externalOrderId: null,
     updatedAt: new Date(),
@@ -167,6 +169,7 @@ describe("P0 MPT safety (no STAGE)", () => {
       orderId: "ord-1",
       productGroup: "autofluids",
       businessPlaceId: 36,
+      releaseMethodType: "PRIMARY",
     });
     expect(outbox.status).toBe("PROCESSED");
     expect(order.status).toBe("SENT");

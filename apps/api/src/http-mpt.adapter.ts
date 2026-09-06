@@ -355,6 +355,8 @@ export class HttpMptAdapter implements IMptAdapter {
           cisType: input.cisType,
         },
       ],
+      // CONTRACT required. Default PRIMARY. Do not invent aliases (Повторная/COMMISSION).
+      releaseMethodType: input.releaseMethodType ?? "PRIMARY",
       isPaid: input.isPaid,
     };
     if (businessPlaceId !== undefined)

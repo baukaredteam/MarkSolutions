@@ -10,6 +10,7 @@ import { BillingService } from "./billing.service";
 import { productGroupOf } from "@markflow/shared";
 import type { CreateOrderDto } from "./order/order.dto";
 import { requireGtin14, resolveOrderProductGroup } from "./order/gtin14";
+import { resolveReleaseMethodType } from "./order/release-method";
 
 // ORD-026: машина заказа до Queued в этом тикете.
 const QUEUEABLE = ["DRAFT", "VALIDATING", "FUNDS_RESERVED", "QUEUED"] as const;
@@ -67,6 +68,13 @@ export class OrderService {
     // Oils tenant: persist STAGE ТГ autofluids unless the client sent another group.
     const mptProductGroup = resolveOrderProductGroup(body.productGroup);
 
+    let releaseMethodType: string;
+    try {
+      releaseMethodType = resolveReleaseMethodType(body.releaseMethodType);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
     // карточка tenant (каталог не трогаем, ADR-023)
     const card = await this.prisma.productCard.findFirst({
       where: { id: body.cardId, tenantId, gtin },
@@ -101,6 +109,7 @@ export class OrderService {
         number: existing.number,
         status: existing.status,
         isPaid: existing.isPaid,
+        releaseMethodType: existing.releaseMethodType,
         lines: existing.lines.map((l) => ({
           quantity: l.quantity,
           totalPrice: l.totalPrice.toString(),
@@ -125,6 +134,7 @@ export class OrderService {
             isPaid: true,
             businessPlaceId: body.businessPlaceId ?? null, // C-04: order/tenant; env 803 is adapter fallback
             productGroup: mptProductGroup,
+            releaseMethodType,
             status: "DRAFT",
             // number omitted — assigned by PG sequence (nextval('order_number_seq'))
           },
@@ -195,6 +205,7 @@ export class OrderService {
             number: existing.number,
             status: existing.status,
             isPaid: existing.isPaid,
+            releaseMethodType: existing.releaseMethodType,
             lines: existing.lines.map((l) => ({
               quantity: l.quantity,
               totalPrice: l.totalPrice.toString(),
@@ -210,6 +221,7 @@ export class OrderService {
       number: order.number,
       status: order.status,
       isPaid: order.isPaid,
+      releaseMethodType: order.releaseMethodType,
       lines: [
         {
           quantity,
@@ -305,6 +317,7 @@ export class OrderService {
       status: order.status,
       gtin: order.gtin,
       isPaid: order.isPaid,
+      releaseMethodType: order.releaseMethodType,
       lines: order.lines.map((l) => ({
         quantity: l.quantity,
         totalPrice: l.totalPrice.toString(),

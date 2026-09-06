@@ -327,6 +327,7 @@ export class OutboxPoller implements OnModuleDestroy {
         isPaid: order.isPaid,
         productGroup: order.productGroup ?? undefined,
         businessPlaceId: order.businessPlaceId ?? undefined,
+        releaseMethodType: order.releaseMethodType ?? undefined,
       });
     } catch (e) {
       // постоянная ошибка внешнего API (4xx/конфиг): ретрай бесполезен →

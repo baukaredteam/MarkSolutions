@@ -118,6 +118,7 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
         expect(body.products[0].cisType).toBe("UNIT");
         expect(body.businessPlaceId).toBe(7);
         expect(body.isPaid).toBe(true);
+        expect(body.releaseMethodType).toBe("PRIMARY");
         return jsonResponse({ orderId: "mpt-order-1", status: "CREATED" });
       }
       throw new Error(`unexpected url: ${call.url}`);
@@ -182,6 +183,51 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     );
     expect(body2.productGroup).toBe("from-order");
     expect(body2.businessPlaceId).toBe(36);
+    expect(body2.releaseMethodType).toBe("PRIMARY");
+  });
+
+  it("createOrder: releaseMethodType PRIMARY by default; passes CONTRACT enum through", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.endsWith("/api/orders"))
+        return jsonResponse({ orderId: "stg-rm", status: "CREATED" });
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    await adapter.createOrder({
+      orderId: "o-rm",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+    });
+    const body = JSON.parse(
+      ff.calls.find((c) => c.url.endsWith("/api/orders"))!.body ?? "{}"
+    );
+    expect(body.releaseMethodType).toBe("PRIMARY");
+
+    const ff2 = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      return jsonResponse({ orderId: "stg-rm2", status: "CREATED" });
+    });
+    await makeAdapter(ff2).createOrder({
+      orderId: "o-rm2",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+      releaseMethodType: "COMISSION",
+    });
+    const body2 = JSON.parse(
+      ff2.calls.find((c) => c.url.endsWith("/api/orders"))!.body ?? "{}"
+    );
+    expect(body2.releaseMethodType).toBe("COMISSION");
   });
 
   it("401 → ровно один refresh → повтор исходного запроса с тем же operation ID; второй 401 → ошибка", async () => {
