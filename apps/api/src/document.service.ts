@@ -22,6 +22,34 @@ const WITHDRAWAL_REASONS = [
 ] as const;
 type WithdrawalReason = (typeof WITHDRAWAL_REASONS)[number];
 
+// Journal wire only (existing list types/statuses). Not SHP/PRD/WMS.
+const JOURNAL_TYPES = ["IMPORT", "WITHDRAWAL", "UTILISATION"] as const;
+const JOURNAL_STATUSES = [
+  "EXPECTED",
+  "SUBMITTED",
+  "IN_PROCESS",
+  "PARTIALLY_PROCESSED",
+  "SUCCESS",
+  "ERROR",
+] as const;
+
+function parseJournalFilter(
+  raw: string | undefined,
+  allowed: readonly string[],
+  field: "type" | "status"
+): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  if (!allowed.includes(value)) {
+    const msg = `${field} должен быть ${allowed.join("|")}`;
+    throw new BadRequestException({
+      message: msg,
+      fieldErrors: { [field]: msg },
+    });
+  }
+  return value;
+}
+
 type WithdrawalCode =
   | string
   | {
@@ -314,21 +342,38 @@ export class DocumentService {
 
   // GET /documents и GET /operations — EntityList (ADR-008) по всем типам
   // (без SERVICE_ACT_EXPORT: тикет 05). Тот же агрегатор, tenant-scoped.
-  async list(tenantId: string) {
+  // OPS-02: optional type+status; invalid → 400. No STAGE / mutating docs.
+  async list(
+    tenantId: string,
+    filters: { type?: string; status?: string } = {}
+  ) {
     if (!tenantId) throw new Error("tenant required");
+    const type = parseJournalFilter(filters.type, JOURNAL_TYPES, "type");
+    const status = parseJournalFilter(
+      filters.status,
+      JOURNAL_STATUSES,
+      "status"
+    );
+    const statusWhere = status ? { status } : {};
     const [imports, withdrawals, utilisations] = await Promise.all([
-      this.prisma.importDocument.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: "desc" },
-      }),
-      this.prisma.withdrawalDocument.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: "desc" },
-      }),
-      this.prisma.utilisationReport.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: "desc" },
-      }),
+      !type || type === "IMPORT"
+        ? this.prisma.importDocument.findMany({
+            where: { tenantId, ...statusWhere },
+            orderBy: { createdAt: "desc" },
+          })
+        : [],
+      !type || type === "WITHDRAWAL"
+        ? this.prisma.withdrawalDocument.findMany({
+            where: { tenantId, ...statusWhere },
+            orderBy: { createdAt: "desc" },
+          })
+        : [],
+      !type || type === "UTILISATION"
+        ? this.prisma.utilisationReport.findMany({
+            where: { tenantId, ...statusWhere },
+            orderBy: { createdAt: "desc" },
+          })
+        : [],
     ]);
     const items = [
       ...imports.map((d) => ({

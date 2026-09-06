@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-06 — OPS-02 journal filters are query params on the existing list
+
+- `GET /documents` / `GET /operations` already return IMPORT|WITHDRAWAL|UTILISATION. Filters are optional `type` + `status` on that aggregator — do not add SHP/PRD/WMS types or a second journal table.
+- Invalid values are 400 with `fieldErrors` (Приложение B), not a silent ignore. Empty/omitted = unfiltered. UI deep-link is the same query string; OPS-28 empty copy stays for both empty journal and empty filter match.
+- No STAGE / mutating doc POST in this ticket. Seed Prisma in AT; keep `http-mpt.adapter.ts` untouched.
+
 ## 2026-09-06 — HOME-02 ops KPI is a local read-model, not a new module
 
 - «Операции сегодня» / «Рабочая динамика» = COUNT of existing tenant rows (ImportDocument, WithdrawalDocument, UtilisationReport, CodeEvent.at, Order) in UTC calendar days. Do not invent SHP/PRD/WMS or call ИС МПТ.

@@ -93,7 +93,7 @@ describe("documents page (UI-06b)", () => {
     expect(screen.getByText("Завершено")).toBeTruthy();
     expect(screen.getAllByText("Нанесение").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Завершён").length).toBeGreaterThan(0);
-    expect(screen.getByText("Ошибка")).toBeTruthy();
+    expect(screen.getAllByText("Ошибка").length).toBeGreaterThan(0);
     expect(screen.getByText("rejected")).toBeTruthy();
     expect(screen.queryByText(/заглушка/i)).toBeNull();
   });
@@ -288,5 +288,135 @@ describe("documents page (UI-06b)", () => {
         "/operations/utilisation"
       )
     );
+  });
+
+  it("deep-link ?type=IMPORT&status=SUCCESS → GET /documents с теми же query", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    const get = vi
+      .spyOn(api, "get")
+      .mockImplementation(async (path: string) => {
+        if (path.startsWith("/documents")) {
+          return { items: DOCS.items.filter((d) => d.type === "IMPORT") };
+        }
+        if (path === "/orders") return ORDERS;
+        return { items: [] };
+      });
+    function Loc() {
+      const loc = useLocation();
+      return <div data-testid="search">{loc.search}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/operations?type=IMPORT&status=SUCCESS"]}>
+        <Loc />
+        <Routes>
+          <Route path="/operations" element={<DocumentsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith("/documents?type=IMPORT&status=SUCCESS")
+    );
+    expect(screen.getByTestId("search").textContent).toBe(
+      "?type=IMPORT&status=SUCCESS"
+    );
+    expect(screen.getByLabelText("Фильтр: тип")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Фильтр: тип") as HTMLSelectElement).value
+    ).toBe("IMPORT");
+    expect(
+      (screen.getByLabelText("Фильтр: статус") as HTMLSelectElement).value
+    ).toBe("SUCCESS");
+    expect(screen.getAllByText("Ввод в оборот").length).toBeGreaterThan(0);
+    expect(screen.queryByText("rejected")).toBeNull();
+    expect(screen.queryByText("d2")).toBeNull();
+  });
+
+  it("смена фильтра пишет query в URL и перезапрашивает журнал", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    const get = vi
+      .spyOn(api, "get")
+      .mockImplementation(async (path: string) => {
+        if (path.startsWith("/documents")) return DOCS;
+        if (path === "/orders") return ORDERS;
+        return { items: [] };
+      });
+    function Loc() {
+      const loc = useLocation();
+      return <div data-testid="search">{loc.search}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/operations"]}>
+        <Loc />
+        <Routes>
+          <Route path="/operations" element={<DocumentsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/documents"));
+    fireEvent.change(screen.getByLabelText("Фильтр: тип"), {
+      target: { value: "WITHDRAWAL" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("search").textContent).toBe("?type=WITHDRAWAL")
+    );
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith("/documents?type=WITHDRAWAL")
+    );
+    fireEvent.change(screen.getByLabelText("Фильтр: статус"), {
+      target: { value: "ERROR" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("search").textContent).toBe(
+        "?type=WITHDRAWAL&status=ERROR"
+      )
+    );
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(
+        "/documents?type=WITHDRAWAL&status=ERROR"
+      )
+    );
+  });
+
+  it("пустой результат фильтра — OPS-28, не StubPage", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    vi.spyOn(api, "get").mockImplementation(async (path: string) => {
+      if (path.startsWith("/documents")) return { items: [] };
+      if (path === "/orders") return ORDERS;
+      return { items: [] };
+    });
+    render(
+      <MemoryRouter initialEntries={["/operations?type=UTILISATION"]}>
+        <Routes>
+          <Route path="/operations" element={<DocumentsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Операций пока нет")).toBeTruthy()
+    );
+    expect(
+      screen.getByText(
+        /Создайте операцию вручную, импортируйте файл или перейдите из производства/
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/заглушка/i)).toBeNull();
+    expect(
+      (screen.getByLabelText("Фильтр: тип") as HTMLSelectElement).value
+    ).toBe("UTILISATION");
   });
 });

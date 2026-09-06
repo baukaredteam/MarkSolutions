@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
@@ -34,6 +34,33 @@ const TYPE_LABEL: Record<string, string> = {
   UTILISATION: "Нанесение",
 };
 
+const JOURNAL_TYPES = ["IMPORT", "WITHDRAWAL", "UTILISATION"] as const;
+const JOURNAL_STATUSES = [
+  "EXPECTED",
+  "SUBMITTED",
+  "IN_PROCESS",
+  "PARTIALLY_PROCESSED",
+  "SUCCESS",
+  "ERROR",
+] as const;
+
+const STATUS_LABEL: Record<string, string> = {
+  EXPECTED: "Ожидает ДТ",
+  SUBMITTED: "Отправлен",
+  IN_PROCESS: "В обработке",
+  PARTIALLY_PROCESSED: "Частично обработан",
+  SUCCESS: "Завершён",
+  ERROR: "Ошибка",
+};
+
+function journalPath(type: string, status: string): string {
+  const q = new URLSearchParams();
+  if (type) q.set("type", type);
+  if (status) q.set("status", status);
+  const qs = q.toString();
+  return qs ? `/documents?${qs}` : "/documents";
+}
+
 const WITHDRAWAL_REASONS: [string, string][] = [
   ["DEFECT", "Брак"],
   ["LOST", "Утрата"],
@@ -50,6 +77,9 @@ const WRITE_ROLES = ["admin", "manager", "marking"];
 // «Вывод/списание». Статусы — русские (UI-i18n).
 export function DocumentsPage() {
   const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  const typeFilter = params.get("type") ?? "";
+  const statusFilter = params.get("status") ?? "";
   const [docs, setDocs] = useState<DocRow[] | null>(null);
   const [orders, setOrders] = useState<OrderOption[]>([]);
   const [codes, setCodes] = useState<CodeItem[]>([]);
@@ -75,7 +105,9 @@ export function DocumentsPage() {
 
   async function load() {
     try {
-      const d = await api.get<{ items: DocRow[] }>("/documents");
+      const d = await api.get<{ items: DocRow[] }>(
+        journalPath(typeFilter, statusFilter)
+      );
       setDocs(d.items);
       const o = await api
         .get<{ items: OrderOption[] }>("/orders")
@@ -103,9 +135,16 @@ export function DocumentsPage() {
     }
   }
 
+  function setFilter(key: "type" | "status", value: string) {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  }
+
   useEffect(() => {
     load();
-  }, []);
+  }, [typeFilter, statusFilter]);
 
   useEffect(() => {
     loadCodes(withOrderId);
@@ -287,38 +326,86 @@ export function DocumentsPage() {
 
       {docs === null ? (
         <p className="sub">Загрузка…</p>
-      ) : isEmpty ? (
-        <div className="card home-empty-state">
-          <h2>Операций пока нет</h2>
-          <p className="sub">
-            Создайте операцию вручную, импортируйте файл или перейдите из
-            производства, поставки, склада либо агрегации.
-          </p>
-        </div>
       ) : (
         <>
-          <div className="grid four">
-            {kpis.map((k) => (
-              <div className="card" key={k.label}>
-                <b>{k.value}</b>
-                <p className="sub">{k.label}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="card" style={{ marginTop: 15 }}>
+          <div className="card" style={{ marginBottom: 15 }}>
             <div className="toolbar">
+              <label className="field" style={{ margin: 0 }}>
+                Тип
+                <select
+                  aria-label="Фильтр: тип"
+                  value={
+                    JOURNAL_TYPES.includes(
+                      typeFilter as (typeof JOURNAL_TYPES)[number]
+                    )
+                      ? typeFilter
+                      : ""
+                  }
+                  onChange={(e) => setFilter("type", e.target.value)}
+                >
+                  <option value="">Все типы</option>
+                  {JOURNAL_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {TYPE_LABEL[t]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field" style={{ margin: 0 }}>
+                Статус
+                <select
+                  aria-label="Фильтр: статус"
+                  value={
+                    JOURNAL_STATUSES.includes(
+                      statusFilter as (typeof JOURNAL_STATUSES)[number]
+                    )
+                      ? statusFilter
+                      : ""
+                  }
+                  onChange={(e) => setFilter("status", e.target.value)}
+                >
+                  <option value="">Все статусы</option>
+                  {JOURNAL_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button className="btn btn-light" onClick={load}>
                 ↻ Обновить
               </button>
             </div>
-            <EntityList
-              columns={columns}
-              rows={rows}
-              rowKey={(r) => r.id}
-              emptyText="Операций пока нет"
-            />
           </div>
+          {isEmpty ? (
+            <div className="card home-empty-state">
+              <h2>Операций пока нет</h2>
+              <p className="sub">
+                Создайте операцию вручную, импортируйте файл или перейдите из
+                производства, поставки, склада либо агрегации.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="grid four">
+                {kpis.map((k) => (
+                  <div className="card" key={k.label}>
+                    <b>{k.value}</b>
+                    <p className="sub">{k.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="card" style={{ marginTop: 15 }}>
+                <EntityList
+                  columns={columns}
+                  rows={rows}
+                  rowKey={(r) => r.id}
+                  emptyText="Операций пока нет"
+                />
+              </div>
+            </>
+          )}
         </>
       )}
 

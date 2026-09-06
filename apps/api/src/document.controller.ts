@@ -6,6 +6,7 @@ import {
   HttpCode,
   Injectable,
   Post,
+  Query,
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
@@ -65,8 +66,12 @@ export class DocumentController {
   // дашборд + OPS-журнал: import + withdrawal + utilisation tenant
   @Roles(...READ_ROLES)
   @Get("documents")
-  list(@Req() req: Request) {
-    return this.documents.list(tenantOf(req));
+  list(
+    @Req() req: Request,
+    @Query("type") type?: string,
+    @Query("status") status?: string
+  ) {
+    return this.documents.list(tenantOf(req), { type, status });
   }
 
   @Roles(...READ_ROLES)
