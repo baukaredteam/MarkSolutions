@@ -462,7 +462,7 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
       if (call.url.includes("/api/orders?")) {
         const url = new URL(call.url);
         expect(url.searchParams.get("orderId")).toBe("ord-ready");
-        expect(url.searchParams.has("productGroup")).toBe(false);
+        expect(url.searchParams.get("productGroup")).toBe("autofluids");
         expect(call.method).toBe("GET");
         return jsonResponse({
           status: "REJECTED",
@@ -479,6 +479,108 @@ describe("HttpMptAdapter (unit, fake fetch)", () => {
     const res = await adapter.getOrder("ord-ready");
     expect(res.status).toBe("READY");
     expect(res.quantity).toBe(0);
+  });
+
+  it("getOrder: productGroup from MPT_PRODUCT_GROUP when set", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/orders?")) {
+        const url = new URL(call.url);
+        expect(url.searchParams.get("orderId")).toBe("ord-pg");
+        expect(url.searchParams.get("productGroup")).toBe("from-env");
+        return jsonResponse({
+          orderInfos: [{ orderId: "ord-pg", orderStatus: "PENDING" }],
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff, { MPT_PRODUCT_GROUP: "from-env" });
+    const res = await adapter.getOrder("ord-pg");
+    expect(res.status).toBe("PENDING");
+  });
+
+  it("GET sends Content-Type application/json; POST json body still application/json", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/api/orders?"))
+        return jsonResponse({
+          orderInfos: [{ orderId: "o-ct", orderStatus: "READY" }],
+        });
+      if (call.url.endsWith("/api/orders"))
+        return jsonResponse({ orderId: "mpt-ct", status: "CREATED" });
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const adapter = makeAdapter(ff);
+    await adapter.getOrder("o-ct");
+    const getCall = ff.calls.find((c) => c.url.includes("/api/orders?"));
+    expect(getCall?.method).toBe("GET");
+    expect(getCall?.headers["content-type"]).toBe("application/json");
+    expect(getCall?.headers.accept).toBe("*/*");
+    expect(getCall?.body).toBeUndefined();
+
+    await adapter.createOrder({
+      orderId: "o-ct-post",
+      tenantId: "t1",
+      gtin: "4601005000001",
+      quantity: 1,
+      serialNumberType: "OPERATOR",
+      cisType: "UNIT",
+      isPaid: true,
+    });
+    const postCall = ff.calls.find(
+      (c) => c.url.endsWith("/api/orders") && c.method === "POST"
+    );
+    expect(postCall?.headers["content-type"]).toBe("application/json");
+    expect(postCall?.headers.accept).toBe("*/*");
+    expect(postCall?.body).toBeTruthy();
+  });
+
+  it("getDocument: official status enum is not collapsed to IN_PROCESS", async () => {
+    for (const status of [
+      "CREATED",
+      "VALIDATING",
+      "IN_PROCESS",
+      "PARTIALLY_PROCESSED",
+      "SUCCESS",
+      "ERROR",
+    ] as const) {
+      const ff = fakeFetch((call) => {
+        if (call.url.endsWith("/api/users/authenticate"))
+          return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+        if (call.url.includes("/public/api/v1/doc/storage/docs/")) {
+          expect(call.method).toBe("GET");
+          expect(call.headers["content-type"]).toBe("application/json");
+          return jsonResponse({
+            documentId: "doc-1",
+            type: "LP_INTRODUCE",
+            status,
+          });
+        }
+        throw new Error(`unexpected url: ${call.url}`);
+      });
+      const res = await makeAdapter(ff).getDocument("doc-1");
+      expect(res.status).toBe(status);
+    }
+  });
+
+  it("getDocument: does not invent rejectReason from docs/:id body", async () => {
+    const ff = fakeFetch((call) => {
+      if (call.url.endsWith("/api/users/authenticate"))
+        return jsonResponse({ accessToken: "acc-1", refreshToken: "ref-1" });
+      if (call.url.includes("/public/api/v1/doc/storage/docs/")) {
+        return jsonResponse({
+          documentId: "doc-err",
+          status: "ERROR",
+          rejectReason: "not-on-this-GET",
+        });
+      }
+      throw new Error(`unexpected url: ${call.url}`);
+    });
+    const res = await makeAdapter(ff).getDocument("doc-err");
+    expect(res.status).toBe("ERROR");
+    expect(res.rejectReason).toBeUndefined();
   });
 
   it("getOrder: single orderInfos entry used when orderId differs", async () => {

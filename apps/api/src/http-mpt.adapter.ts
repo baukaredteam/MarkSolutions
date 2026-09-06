@@ -34,10 +34,12 @@ import type {
 //   (document.service шлёт внутренние codeKeys Vault; utilisation — serial).
 //   Для реального контура это должно стать полными КМ из vault.reveal —
 //   в скоупе тикетов 02/03 (http-режим для документов включать после них).
-// - getOrder шлёт только ?orderId= (без productGroup — P1). Парсит
-//   orderInfos[].orderStatus; quantity=0 (list body has no qty).
+// - getOrder: ?orderId= + optional productGroup from config (default
+//   autofluids). Парсит orderInfos[].orderStatus; quantity=0 (list has no qty).
 // - getCodes: official query orderId+gtin+quantity (+ lastPackId); codes string[] + packId.
-//   GET-аудит: docs/MPT-GET-CONTRACT-AUDIT.md. A4 P0 landed.
+//   GET-аудит: docs/MPT-GET-CONTRACT-AUDIT.md. A4 P0 + P1 landed.
+// - GET request(): Content-Type application/json (official table); POST
+//   json/form unchanged. getDocument: official status enum as-is; no rejectReason.
 // - requestId генерируется локально (трассировка в outbox), на провод не уходит.
 //
 // Phase B P0: mutating POST (createOrder / utilisation / import / withdrawal)
@@ -251,6 +253,10 @@ export class HttpMptAdapter implements IMptAdapter {
     } else if (opts.form !== undefined) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       body = opts.form;
+    } else if (method.toUpperCase() === "GET") {
+      // Official GET table lists Content-Type: application/json (no body).
+      // Do not set this on POST without json/form — refresh stays form-urlencoded.
+      headers["Content-Type"] = "application/json";
     }
     Object.assign(headers, opts.headers ?? {});
 
@@ -381,17 +387,18 @@ export class HttpMptAdapter implements IMptAdapter {
   }
 
   // GET /api/orders?orderId= — official list body { orderInfos[] }.
+  // productGroup is optional in the spec; STAGE list 200 with autofluids.
   // Do not treat root status/quantity as STAGE contract (A4 P0).
   async getOrder(orderId: string): Promise<{
     status: MptOrderStatus;
     quantity: number;
     found?: boolean;
   }> {
-    const { data } = await this.request(
-      `/api/orders?orderId=${encodeURIComponent(orderId)}`,
-      "GET",
-      { operationId: orderId }
-    );
+    const q = new URLSearchParams({ orderId });
+    if (this.productGroup) q.set("productGroup", this.productGroup);
+    const { data } = await this.request(`/api/orders?${q.toString()}`, "GET", {
+      operationId: orderId,
+    });
     const d = data as {
       orderInfos?: Array<{ orderId?: string; orderStatus?: string }>;
     };
@@ -581,7 +588,12 @@ export class HttpMptAdapter implements IMptAdapter {
     return { documentId: d.documentId ?? "", status: "IN_PROCESS" };
   }
 
-  // Путь docs/:id уточняется на STAGE (CONTRACT-IS-MPT: storage docs/:id).
+  // Путь docs/:id — CONTRACT-IS-MPT storage docs/:id.
+  // Official status: CREATED|VALIDATING|IN_PROCESS|PARTIALLY_PROCESSED|SUCCESS|ERROR.
+  // Do not remap CREATED/VALIDATING/PARTIALLY_PROCESSED to IN_PROCESS.
+  // rejectReason is not on this GET (errors/:id is P2). Port type stays
+  // the 3-value union in integrations.ts (out of this PR); poller branches
+  // only on SUCCESS/ERROR and treats the rest as in-flight.
   async getDocument(documentId: string): Promise<{
     status: "IN_PROCESS" | "SUCCESS" | "ERROR";
     rejectReason?: string;
@@ -591,9 +603,13 @@ export class HttpMptAdapter implements IMptAdapter {
       "GET",
       { operationId: documentId }
     );
-    const d = data as { status?: string; rejectReason?: string };
-    const st = (d.status ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
-    return { status: st, rejectReason: d.rejectReason ?? undefined };
+    const d = data as { status?: string };
+    const raw =
+      typeof d.status === "string" && d.status.length > 0
+        ? d.status
+        : undefined;
+    const status = (raw ?? "IN_PROCESS") as "IN_PROCESS" | "SUCCESS" | "ERROR";
+    return { status };
   }
 }
 
