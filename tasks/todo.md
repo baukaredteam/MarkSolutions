@@ -14,6 +14,13 @@
 - [x] #27 merged with red CI — follow-up `feature/OPS-02-filter-ci-fix`
 - [ ] Merge hotfix — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
 
+## HOME-03-recent-events / MAR-7 (2026-09-06)
+
+- [x] `GET /dashboard/summary` — `recentEvents` (≤10) from Order / ProductCard / Import+Withdrawal+Utilisation / CodeEvent; newest first; tenant-scoped; KM mask only
+- [x] HOME UI: «Последние события»; empty = «Нет событий»; no HOME-01/02 KPI rewrite
+- [x] AT/unit: helpers + dashboard.spec + dashboard.spec.tsx; CI mock-only
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
+
 ## HOME-02-ops-kpi / MAR-6 (2026-09-06)
 
 - [x] `GET /dashboard/summary` — `operationsToday` / `operationsYesterday` / `operationsDeltaPct` / `operationsLast7d` from ImportDocument + Withdrawal + Utilisation + CodeEvent + Order (tenant-scoped, UTC day)

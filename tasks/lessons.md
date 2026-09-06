@@ -12,6 +12,12 @@
 - Invalid values are 400 with `fieldErrors` (Приложение B), not a silent ignore. Empty/omitted = unfiltered. UI deep-link is the same query string; OPS-28 empty copy stays for both empty journal and empty filter match.
 - No STAGE / mutating doc POST in this ticket. Seed Prisma in AT; keep `http-mpt.adapter.ts` untouched.
 
+## 2026-09-06 — HOME-03 recent events is a merge of existing rows, not a new journal
+
+- «Последние события» = take 10 newest from Order / ProductCard / documents / CodeEvent, merge in JS, cap 10. No SHP/PRD event store, no ИС МПТ call.
+- CodeEvent title uses `CodeVault.mask` only. Never select ciphertext / serial / sntins into the summary payload.
+- HOME-01 attention/integrations and HOME-02 ops KPI stay as-is. Empty HOME banner still keys off attention + ops series, not the events list.
+
 ## 2026-09-06 — HOME-02 ops KPI is a local read-model, not a new module
 
 - «Операции сегодня» / «Рабочая динамика» = COUNT of existing tenant rows (ImportDocument, WithdrawalDocument, UtilisationReport, CodeEvent.at, Order) in UTC calendar days. Do not invent SHP/PRD/WMS or call ИС МПТ.

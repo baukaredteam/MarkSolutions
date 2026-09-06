@@ -10,6 +10,13 @@ interface OpsDay {
   count: number;
 }
 
+interface RecentEvent {
+  id: string;
+  source: "ORDER" | "PRODUCT" | "DOCUMENT" | "CODE";
+  at: string;
+  title: string;
+}
+
 interface Summary {
   codesNotApplied: number;
   deadlineSoon: number;
@@ -21,6 +28,7 @@ interface Summary {
   operationsYesterday: number;
   operationsDeltaPct: number | null;
   operationsLast7d: OpsDay[];
+  recentEvents: RecentEvent[];
 }
 
 interface IntegrationRow {
@@ -120,6 +128,17 @@ function hasLiveOps(summary: Summary | null): boolean {
   if (!summary) return false;
   if (summary.operationsToday > 0) return true;
   return (summary.operationsLast7d ?? []).some((d) => d.count > 0);
+}
+
+export function formatRecentAgo(iso: string, now = new Date()): string {
+  const min = Math.floor((now.getTime() - new Date(iso).getTime()) / 60_000);
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} мин назад`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} ч назад`;
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `${days} дн назад`;
+  return iso.slice(0, 10);
 }
 
 function integrationStatus(
@@ -458,6 +477,28 @@ export function DashboardPage() {
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        <div className="card" style={{ marginTop: 15 }}>
+          <div className="card-title">Последние события</div>
+          {summary == null ? (
+            <p className="sub">Загрузка…</p>
+          ) : (summary.recentEvents ?? []).length === 0 ? (
+            <p className="sub">Нет событий</p>
+          ) : (
+            <div className="timeline" data-testid="home-recent-events">
+              {(summary.recentEvents ?? []).slice(0, 10).map((ev) => (
+                <div className="event" key={ev.id}>
+                  <div className="event-dot" />
+                  <div>
+                    <p>
+                      {ev.title} {formatRecentAgo(ev.at)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
