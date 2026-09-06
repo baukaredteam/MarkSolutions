@@ -15,6 +15,7 @@
 ## 2026-09-06 — HOME-03 recent events is a merge of existing rows, not a new journal
 
 - «Последние события» = take 10 newest from Order / ProductCard / documents / CodeEvent, merge in JS, cap 10. No SHP/PRD event store, no ИС МПТ call.
+- Order/ProductCard timestamp is `createdAt` (settable, same clock as HOME-02). `@updatedAt` is auto-touched and is not an event log.
 - CodeEvent title uses `CodeVault.mask` only. Never select ciphertext / serial / sntins into the summary payload.
 - HOME-01 attention/integrations and HOME-02 ops KPI stay as-is. Empty HOME banner still keys off attention + ops series, not the events list.
 

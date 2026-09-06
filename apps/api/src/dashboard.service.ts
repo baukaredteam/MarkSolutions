@@ -233,15 +233,15 @@ export class DashboardService {
     ] = await Promise.all([
       this.prisma.order.findMany({
         where: { tenantId },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { createdAt: "desc" },
         take: RECENT_EVENTS_LIMIT,
-        select: { id: true, number: true, status: true, updatedAt: true },
+        select: { id: true, number: true, status: true, createdAt: true },
       }),
       this.prisma.productCard.findMany({
         where: { tenantId },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { createdAt: "desc" },
         take: RECENT_EVENTS_LIMIT,
-        select: { id: true, status: true, updatedAt: true, attributes: true },
+        select: { id: true, status: true, createdAt: true, attributes: true },
       }),
       this.prisma.importDocument.findMany({
         where: { tenantId },
@@ -283,13 +283,13 @@ export class DashboardService {
       ...recentOrders.map((o) => ({
         id: `ORDER:${o.id}`,
         source: "ORDER" as const,
-        at: o.updatedAt.toISOString(),
+        at: o.createdAt.toISOString(),
         title: orderRecentTitle(o.number, o.status),
       })),
       ...recentCards.map((c) => ({
         id: `PRODUCT:${c.id}`,
         source: "PRODUCT" as const,
-        at: c.updatedAt.toISOString(),
+        at: c.createdAt.toISOString(),
         title: productRecentTitle(cardNameOf(c.attributes), c.status),
       })),
       ...recentImports.map((d) => ({

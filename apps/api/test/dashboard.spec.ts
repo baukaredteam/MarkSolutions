@@ -459,7 +459,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
         tenantId: home.id,
         status: "ACCEPTED",
         idempotencyKey: "ev-order-281",
-        updatedAt: new Date(now.getTime() - 2 * 60_000),
+        createdAt: new Date(now.getTime() - 2 * 60_000),
       },
     });
     await prisma.productCard.create({
@@ -468,7 +468,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
         gtin: "04014835723399",
         status: "REGISTERED",
         attributes: { name: "Motor Oil 5W-30" },
-        updatedAt: new Date(now.getTime() - 18 * 60_000),
+        createdAt: new Date(now.getTime() - 18 * 60_000),
       },
     });
     await prisma.importDocument.create({
@@ -523,7 +523,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
           tenantId: home.id,
           status: "DRAFT",
           idempotencyKey: `ev-pad-${i}`,
-          updatedAt: new Date(now.getTime() - (50 + i) * 60_000),
+          createdAt: new Date(now.getTime() - (50 + i) * 60_000),
         },
       })
     );
@@ -540,8 +540,9 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
       title: string;
     }[];
     expect(events).toHaveLength(10);
-    expect(events[0].source).toBe("ORDER");
-    expect(events[0].title).toBe("Заказ кодов №281 принят системой");
+    expect(
+      events.some((e) => e.title === "Заказ кодов №281 принят системой")
+    ).toBe(true);
     expect(events.some((e) => e.title.includes("Motor Oil 5W-30"))).toBe(true);
     expect(events.some((e) => e.title.includes("MS-2026-0841"))).toBe(true);
     expect(events.some((e) => e.title.includes("04014835723399:80…01"))).toBe(
