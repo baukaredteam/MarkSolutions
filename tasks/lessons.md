@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-09-06 — HOME-03 rebase after OPS #27+#28: only tasks/* overlap
+
+- After #27+#28 (`09c29b6`) landed, HOME-03 conflicted only on `tasks/todo.md` / `tasks/lessons.md`. Keep both OPS sections and the HOME-03 recentEvents notes.
+- Do not rewrite HOME-01/02 KPIs, `docs.tsx`, or `http-mpt.adapter.ts` to “win” the rebase.
+
 ## 2026-09-06 — Nest @Query is not injected when one handler calls another
 
 - `GET /operations` aliased as `return this.list(req)` dropped `@Query("type"|"status")`. Nest injects query params only when it invokes the route handler — a direct method call passes `undefined`, so `DocumentService.list` treated every `/operations` request as unfiltered (200 + extra ids; invalid status stayed 200).
