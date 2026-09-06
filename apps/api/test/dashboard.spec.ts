@@ -233,6 +233,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     expect(
       s0.body.operationsLast7d.every((d: { count: number }) => d.count === 0)
     ).toBe(true);
+    expect(s0.body.recentEvents).toEqual([]);
 
     // прогрессия: карточка → registered → заказ → PRINTED → APPLIED → INTRODUCED
     const card = await prisma.productCard.create({
@@ -434,5 +435,140 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
 
   it("HOME-02: summary without tenant JWT → 401 (no leak)", async () => {
     await request(app.getHttpServer()).get("/dashboard/summary").expect(401);
+  });
+
+  it("HOME-03: recentEvents from order/card/docs/code; newest first; tenant-scoped; mask only", async () => {
+    const now = new Date("2026-09-06T15:00:00.000Z");
+    const home = await prisma.tenant.create({
+      data: { bin: "777000111445", name: "СобытияДом", status: "ACTIVE" },
+    });
+    const other = await prisma.tenant.create({
+      data: { bin: "777000111446", name: "ЧужиеСобытия", status: "ACTIVE" },
+    });
+    const tokenHome = app.get(JwtService).sign({
+      sub: "u-events-home",
+      tenantId: home.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+
+    await prisma.order.create({
+      data: {
+        id: "o-ev-281",
+        number: 281,
+        tenantId: home.id,
+        status: "ACCEPTED",
+        idempotencyKey: "ev-order-281",
+        createdAt: new Date(now.getTime() - 2 * 60_000),
+      },
+    });
+    await prisma.productCard.create({
+      data: {
+        tenantId: home.id,
+        gtin: "04014835723399",
+        status: "REGISTERED",
+        attributes: { name: "Motor Oil 5W-30" },
+        createdAt: new Date(now.getTime() - 18 * 60_000),
+      },
+    });
+    await prisma.importDocument.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-ev-281",
+        customsDate: "2026-09-06",
+        customsNumber: "MS-2026-0841",
+        status: "ERROR",
+        createdAt: new Date(now.getTime() - 31 * 60_000),
+      },
+    });
+    const kms = app.get(KMS_ADAPTER);
+    const { ciphertext } = await kms.encrypt(
+      Buffer.from(JSON.stringify({ serial: "8000001", ai91: null, ai92: null }))
+    );
+    const code = await prisma.codeVault.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-ev-281",
+        gtin: "04014835723399",
+        mask: "04014835723399:80…01",
+        status: "PRINTED",
+        ciphertext: ciphertext.toString("base64"),
+      },
+    });
+    await prisma.codeEvent.create({
+      data: {
+        tenantId: home.id,
+        codeId: code.id,
+        event: "PRINTED",
+        at: new Date(now.getTime() - 40 * 60_000),
+        actor: "u1",
+      },
+    });
+    await prisma.importDocument.create({
+      data: {
+        tenantId: other.id,
+        orderId: "o-other-ev",
+        customsDate: "2026-09-06",
+        customsNumber: "MS-OTHER-9999",
+        status: "SUCCESS",
+        createdAt: now,
+      },
+    });
+
+    const extra = Array.from({ length: 8 }, (_, i) =>
+      prisma.order.create({
+        data: {
+          id: `o-ev-pad-${i}`,
+          number: 400 + i,
+          tenantId: home.id,
+          status: "DRAFT",
+          idempotencyKey: `ev-pad-${i}`,
+          createdAt: new Date(now.getTime() - (50 + i) * 60_000),
+        },
+      })
+    );
+    await Promise.all(extra);
+
+    const res = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenHome}`)
+      .expect(200);
+    const events = res.body.recentEvents as {
+      id: string;
+      source: string;
+      at: string;
+      title: string;
+    }[];
+    expect(events).toHaveLength(10);
+    expect(
+      events.some((e) => e.title === "Заказ кодов №281 принят системой")
+    ).toBe(true);
+    expect(events.some((e) => e.title.includes("Motor Oil 5W-30"))).toBe(true);
+    expect(events.some((e) => e.title.includes("MS-2026-0841"))).toBe(true);
+    expect(events.some((e) => e.title.includes("04014835723399:80…01"))).toBe(
+      true
+    );
+    const dumped = JSON.stringify(events);
+    expect(dumped).not.toContain("8000001");
+    expect(dumped).not.toContain("MS-OTHER-9999");
+    for (let i = 1; i < events.length; i++) {
+      expect(new Date(events[i].at).getTime()).toBeLessThanOrEqual(
+        new Date(events[i - 1].at).getTime()
+      );
+    }
+
+    const tokenOther = app.get(JwtService).sign({
+      sub: "u-events-other",
+      tenantId: other.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+    const otherRes = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenOther}`)
+      .expect(200);
+    expect(otherRes.body.recentEvents).toHaveLength(1);
+    expect(otherRes.body.recentEvents[0].title).toContain("MS-OTHER-9999");
+    expect(otherRes.body.recentEvents[0].title).not.toContain("№281");
   });
 });

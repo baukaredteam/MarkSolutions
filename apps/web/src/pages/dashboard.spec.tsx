@@ -40,6 +40,12 @@ const EMPTY_SUMMARY = {
   operationsYesterday: 0,
   operationsDeltaPct: null as number | null,
   operationsLast7d: EMPTY_OPS_7D,
+  recentEvents: [] as {
+    id: string;
+    source: "ORDER" | "PRODUCT" | "DOCUMENT" | "CODE";
+    at: string;
+    title: string;
+  }[],
 };
 
 const POPULATED_SUMMARY = {
@@ -60,6 +66,26 @@ const POPULATED_SUMMARY = {
     { date: "2026-09-04", count: 15 },
     { date: "2026-09-05", count: 100 },
     { date: "2026-09-06", count: 108 },
+  ],
+  recentEvents: [
+    {
+      id: "ORDER:o1",
+      source: "ORDER" as const,
+      at: new Date(Date.now() - 2 * 60_000).toISOString(),
+      title: "Заказ кодов №281 принят системой",
+    },
+    {
+      id: "PRODUCT:c1",
+      source: "PRODUCT" as const,
+      at: new Date(Date.now() - 18 * 60_000).toISOString(),
+      title: "Карточка Motor Oil 5W-30 опубликована",
+    },
+    {
+      id: "DOCUMENT:d1",
+      source: "DOCUMENT" as const,
+      at: new Date(Date.now() - 31 * 60_000).toISOString(),
+      title: "Документ MS-2026-0841 отклонён ИС МПТ",
+    },
   ],
 };
 
@@ -272,5 +298,58 @@ describe("HOME-01 dashboard read-model", () => {
     expect(screen.getByText("Глобальный поиск")).toBeTruthy();
     expect(screen.getByText("Заказать коды")).toBeTruthy();
     expect(screen.getByText("Создать поставку")).toBeTruthy();
+  });
+
+  it("HOME-03: пустой список — «Нет событий»", async () => {
+    mockApis(EMPTY_SUMMARY);
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Последние события")).toBeTruthy()
+    );
+    expect(screen.getByText("Нет событий")).toBeTruthy();
+  });
+
+  it("HOME-03: ≤10 событий, newest titles, KM mask only", async () => {
+    const extra = Array.from({ length: 9 }, (_, i) => ({
+      id: `ORDER:pad-${i}`,
+      source: "ORDER" as const,
+      at: new Date(Date.now() - (40 + i) * 60_000).toISOString(),
+      title: `Заказ кодов №${400 + i} создан`,
+    }));
+    mockApis({
+      ...POPULATED_SUMMARY,
+      recentEvents: [
+        ...POPULATED_SUMMARY.recentEvents,
+        {
+          id: "CODE:c1",
+          source: "CODE" as const,
+          at: new Date(Date.now() - 40 * 60_000).toISOString(),
+          title: "Код 04014835723399:80…01 напечатан",
+        },
+        ...extra,
+      ],
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Заказ кодов №281 принят системой/)
+      ).toBeTruthy()
+    );
+    expect(screen.getByText(/Карточка Motor Oil 5W-30 опубликована/)).toBeTruthy();
+    expect(
+      screen.getByText(/Документ MS-2026-0841 отклонён ИС МПТ/)
+    ).toBeTruthy();
+    expect(screen.getByText(/04014835723399:80…01/)).toBeTruthy();
+    expect(container.querySelectorAll("[data-testid=home-recent-events] .event").length).toBe(10);
+    expect(container.textContent).not.toContain("8000001");
+    expect(screen.queryByText("Нет событий")).toBeNull();
   });
 });

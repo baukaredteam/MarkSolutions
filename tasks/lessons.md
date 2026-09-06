@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-09-06 — HOME-03 rebase after OPS #27+#28: only tasks/* overlap
+
+- After #27+#28 (`09c29b6`) landed, HOME-03 conflicted only on `tasks/todo.md` / `tasks/lessons.md`. Keep both OPS sections and the HOME-03 recentEvents notes.
+- Do not rewrite HOME-01/02 KPIs, `docs.tsx`, or `http-mpt.adapter.ts` to “win” the rebase.
+
 ## 2026-09-06 — Nest @Query is not injected when one handler calls another
 
 - `GET /operations` aliased as `return this.list(req)` dropped `@Query("type"|"status")`. Nest injects query params only when it invokes the route handler — a direct method call passes `undefined`, so `DocumentService.list` treated every `/operations` request as unfiltered (200 + extra ids; invalid status stayed 200).
@@ -11,6 +16,13 @@
 - `GET /documents` / `GET /operations` already return IMPORT|WITHDRAWAL|UTILISATION. Filters are optional `type` + `status` on that aggregator — do not add SHP/PRD/WMS types or a second journal table.
 - Invalid values are 400 with `fieldErrors` (Приложение B), not a silent ignore. Empty/omitted = unfiltered. UI deep-link is the same query string; OPS-28 empty copy stays for both empty journal and empty filter match.
 - No STAGE / mutating doc POST in this ticket. Seed Prisma in AT; keep `http-mpt.adapter.ts` untouched.
+
+## 2026-09-06 — HOME-03 recent events is a merge of existing rows, not a new journal
+
+- «Последние события» = take 10 newest from Order / ProductCard / documents / CodeEvent, merge in JS, cap 10. No SHP/PRD event store, no ИС МПТ call.
+- Order/ProductCard timestamp is `createdAt` (settable, same clock as HOME-02). `@updatedAt` is auto-touched and is not an event log.
+- CodeEvent title uses `CodeVault.mask` only. Never select ciphertext / serial / sntins into the summary payload.
+- HOME-01 attention/integrations and HOME-02 ops KPI stay as-is. Empty HOME banner still keys off attention + ops series, not the events list.
 
 ## 2026-09-06 — HOME-02 ops KPI is a local read-model, not a new module
 
