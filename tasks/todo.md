@@ -1,5 +1,13 @@
 # Factory setup — Cursor Ultra
 
+## OPS-04-utilisation-wizard / MAR-13 (2026-09-06)
+
+- [x] `utilisation-form` as wizard: заказ → поля → подтверждение → статус
+- [x] Order picker from existing `GET /orders` (not bare UUID paste)
+- [x] Still posts mock `POST /utilisation` (same body + Idempotency-Key poll). No STAGE / no http-mpt
+- [x] AT: `utilisation-form.spec.tsx`
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
+
 ## HOME-04-my-queue / MAR-14 (2026-09-06)
 
 - [x] `GET /dashboard/summary` — `myQueue` from ProductCard (DRAFT|NEEDS_CORRECTION|REJECTED) + Order (DRAFT|SENT|ACCEPTED|PROCESSING|REJECTED|FAILED) + Import/Withdrawal/Utilisation ERROR; tenant-scoped counts

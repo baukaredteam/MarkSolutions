@@ -1,0 +1,38 @@
+/* OPS-04: мастер нанесения (заказ → поля → подтверждение → статус). */
+.utilisation-wizard .wizard {
+  flex-wrap: wrap;
+}
+
+.utilisation-review {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.utilisation-review p {
+  margin: 0;
+}
+
+.utilisation-status {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #f7f9fb;
+}
+
+.utilisation-status.ok {
+  background: #f1fbf6;
+  border-color: #ccebdd;
+}
+
+.utilisation-status.err {
+  background: #fff5f5;
+  border-color: #f0c8c8;
+}
+
+.utilisation-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
