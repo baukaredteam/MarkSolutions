@@ -232,6 +232,8 @@ model Order {
   businessPlaceId Int?
   // MPT wire snapshot when set (STAGE oils = autofluids, not catalog motor-oils)
   productGroup    String?
+  // CONTRACT POST /api/orders: PRIMARY|REMAINS|COMISSION|REMARK (string, not Prisma enum)
+  releaseMethodType String?
   // STAGE/xTrace orderId from createOrder; getOrder/getCodes prefer this
   externalOrderId String?
   createdAt    DateTime @default(now())

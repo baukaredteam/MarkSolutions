@@ -97,8 +97,36 @@ describe("OrderForm (мастер 4 шага)", () => {
       cisType: "UNIT",
       serialNumberType: "OPERATOR",
       productGroup: "autofluids",
+      releaseMethodType: "PRIMARY",
     });
     expect(key).toBeTruthy(); // crypto.randomUUID
+  });
+
+  it("цель маркировки: Первичная → PRIMARY; Остатки → REMAINS (CONTRACT spellings)", async () => {
+    postRaw.mockResolvedValue({ status: 201, body: { id: "o-rm" } });
+    render(<OrderForm />);
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    expect(
+      (screen.getByRole("radio", { name: /Первичная/ }) as HTMLInputElement)
+        .checked
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: /Остатки/ }));
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "c1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    fireEvent.change(screen.getByPlaceholderText("Места"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Штук в месте"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    fireEvent.click(screen.getByRole("button", { name: "Заказать коды" }));
+    await waitFor(() => expect(postRaw).toHaveBeenCalled());
+    const [, body] = postRaw.mock.calls[0];
+    expect(body.releaseMethodType).toBe("REMAINS");
   });
 
   it("P2-C: 13-digit GTIN blocks step 0 with Длина должна быть равна 14", async () => {
@@ -179,6 +207,7 @@ describe("OrderForm (мастер 4 шага)", () => {
       productGroup: "autofluids",
       businessPlaceId: 803,
       quantity: 1,
+      releaseMethodType: "PRIMARY",
     });
   });
 

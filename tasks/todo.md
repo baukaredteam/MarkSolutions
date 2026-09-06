@@ -1,5 +1,13 @@
 # Factory setup — Cursor Ultra
 
+## ORD-releaseMethodType (2026-09-06)
+
+- [x] DTO + validation: PRIMARY|REMAINS|COMISSION|REMARK, default PRIMARY
+- [x] Persist on Order + pass through poller createOrder input
+- [x] HttpMptAdapter.createOrder body includes releaseMethodType (body only)
+- [x] Web «Цель маркировки» radios → wire field
+- [ ] Mutating STAGE — **запрещено**. This PR does not POST to test.markirovka.kz
+
 ## Factory Finn loop
 
 Playbook: `docs/FACTORY.md`. Роли Chief / MS-PM (Linear|Notion, без Cloud Agents на код) / MS-Dev (один тикет → один draft PR в `chore/cursor-agent-factory`). Merge и STAGE POST — только после «да» Harith. Tip 2026-09-06: A read-only закрыта; #17 P0 safety влит; P2 STAGE-LK-FIELDS + GTIN-14 влиты; Phase B закрыта.
@@ -43,7 +51,7 @@ Playbook: `docs/FACTORY.md`. Роли Chief / MS-PM (Linear|Notion, без Cloud
 - [x] send path uses order `productGroup`/`businessPlaceId`; adapter default `autofluids`
 - [ ] A4 P1 — **не** этот PR
 - [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
-- [ ] `releaseMethodType` on createOrder body — follow-up (CONTRACT requires; not this PR)
+- [x] `releaseMethodType` on createOrder body — CONTRACT PRIMARY\|REMAINS\|COMISSION\|REMARK, default PRIMARY (ORD-releaseMethodType). **Not** STAGE POST.
 
 ## MPT Phase B readiness A6 (2026-09-01)
 

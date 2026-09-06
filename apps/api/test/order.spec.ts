@@ -616,5 +616,62 @@ describe("order create (W3, ORD-024..028)", () => {
     });
     expect(order!.gtin).toBe("04650063110374");
     expect(order!.productGroup).toBe("autofluids");
+    expect(order!.releaseMethodType).toBe("PRIMARY");
+  });
+
+  it("ORD-releaseMethodType: default PRIMARY; persist CONTRACT enum; reject aliases", async () => {
+    const { id: cardId, gtin } = await createCard();
+    const dflt = await createOrder(
+      { cardId, gtin, places: 1, unitsPerPlace: 1 },
+      "k-rm-dflt"
+    ).expect(201);
+    expect(dflt.body.releaseMethodType).toBe("PRIMARY");
+    const stored = await prisma.order.findUnique({
+      where: { id: dflt.body.id },
+    });
+    expect(stored!.releaseMethodType).toBe("PRIMARY");
+
+    const remains = await createOrder(
+      {
+        cardId,
+        gtin,
+        places: 1,
+        unitsPerPlace: 1,
+        releaseMethodType: "REMAINS",
+      },
+      "k-rm-remains"
+    ).expect(201);
+    expect(remains.body.releaseMethodType).toBe("REMAINS");
+    expect(
+      (await prisma.order.findUnique({
+        where: { id: remains.body.id },
+      }))!.releaseMethodType
+    ).toBe("REMAINS");
+
+    const bad = await createOrder(
+      {
+        cardId,
+        gtin,
+        places: 1,
+        unitsPerPlace: 1,
+        releaseMethodType: "COMMISSION",
+      },
+      "k-rm-bad"
+    ).expect(400);
+    expect(bad.body.message).toMatch(/PRIMARY\|REMAINS\|COMISSION\|REMARK/);
+    expect(
+      await prisma.order.findUnique({ where: { idempotencyKey: "k-rm-bad" } })
+    ).toBeNull();
+
+    await createOrder(
+      {
+        cardId,
+        gtin,
+        places: 1,
+        unitsPerPlace: 1,
+        releaseMethodType: "Повторная",
+      },
+      "k-rm-povt"
+    ).expect(400);
   });
 });

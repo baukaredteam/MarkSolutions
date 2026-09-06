@@ -17,6 +17,14 @@ interface CardOption {
 
 const STEPS = ["Товар", "Параметры", "Финансы", "Подтверждение"] as const;
 
+/** CONTRACT wire. Первичная → PRIMARY. Повторная is not a wire value. */
+const RELEASE_METHOD_OPTIONS = [
+  { value: "PRIMARY", label: "Первичная" },
+  { value: "REMAINS", label: "Остатки" },
+  { value: "COMISSION", label: "Комиссия" },
+  { value: "REMARK", label: "Перемаркировка" },
+] as const;
+
 // Мастер «Новый заказ кодов» (UI-SPEC §4.6, §5): Товары → Параметры → Финансы →
 // Подтверждение. Превью «места × штук = quantity», тариф из activeTariff, остаток
 // после списания = available − totalPrice, Idempotency-Key (crypto.randomUUID).
@@ -30,6 +38,8 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
   const [unitsPerPlace, setUnitsPerPlace] = useState("");
   const [quantity, setQuantity] = useState("");
   const [businessPlaceId, setBusinessPlaceId] = useState("");
+  const [releaseMethodType, setReleaseMethodType] =
+    useState<(typeof RELEASE_METHOD_OPTIONS)[number]["value"]>("PRIMARY");
   const productGroup = "autofluids";
   const [tariff, setTariff] = useState<Tariff | null>(null);
   const [balance, setBalance] = useState<{ available: string } | null>(null);
@@ -101,6 +111,7 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
           cisType: "UNIT",
           serialNumberType: "OPERATOR",
           productGroup,
+          releaseMethodType,
           ...(businessPlaceId.trim()
             ? { businessPlaceId: Number(businessPlaceId) }
             : {}),
@@ -219,6 +230,25 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
             Площадка нанесения из заказа. Дефолт env: MPT_BUSINESS_PLACE_ID=803
             (не хардкод в адаптере).
           </p>
+          <fieldset>
+            <legend>Цель маркировки</legend>
+            {RELEASE_METHOD_OPTIONS.map((opt) => (
+              <label key={opt.value} style={{ display: "block" }}>
+                <input
+                  type="radio"
+                  name="releaseMethodType"
+                  value={opt.value}
+                  checked={releaseMethodType === opt.value}
+                  onChange={() => setReleaseMethodType(opt.value)}
+                />{" "}
+                {opt.label} <code>{opt.value}</code>
+              </label>
+            ))}
+            <p className="hint">
+              Wire: PRIMARY | REMAINS | COMISSION | REMARK. Первичная → PRIMARY.
+              Повторная в ЛК — не отдельное значение на проводе.
+            </p>
+          </fieldset>
         </div>
       )}
 
@@ -283,7 +313,13 @@ export function OrderForm({ onCreated }: { onCreated?: (id: string) => void }) {
             ТГ {productGroup}
             {businessPlaceId.trim()
               ? ` · МОД ${businessPlaceId.trim()}`
-              : " · МОД из tenant/env"}
+              : " · МОД из tenant/env"}{" "}
+            · цель{" "}
+            {
+              RELEASE_METHOD_OPTIONS.find((o) => o.value === releaseMethodType)
+                ?.label
+            }{" "}
+            ({releaseMethodType})
           </p>
           <p>
             Idempotency-Key: <code>{idemKey}</code>

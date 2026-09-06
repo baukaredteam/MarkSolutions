@@ -14,4 +14,9 @@ export interface CreateOrderDto {
   businessPlaceId?: number;
   /** MPT productGroup. Oils tenant default = autofluids (not catalog motor-oils). */
   productGroup?: string;
+  /**
+   * CONTRACT releaseMethodType: PRIMARY|REMAINS|COMISSION|REMARK.
+   * Omit → PRIMARY. COMISSION is the official spelling (one M).
+   */
+  releaseMethodType?: string;
 }
