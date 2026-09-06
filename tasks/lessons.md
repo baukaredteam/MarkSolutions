@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-09-06 — documents.spec DOC_TIMEOUT race is not HOME-02
+
+- CI `validate` on HOME-02 went red in `documents.spec.ts` «IN_PROCESS дольше DOC_TIMEOUT_MS → ERROR»: expected ERROR, got SUCCESS. HOME-02 files were not on that path (`dashboard.spec.ts` 7/7, `dashboard.ops.spec.ts` 4/4).
+- Race: poller can get simulator SUCCESS before the test backdates `createdAt`. Do not “fix” `documents.spec.ts` / poller inside a HOME-02 allowed-path PR.
+
 ## 2026-09-06 — HOME-02 ops KPI is a local read-model, not a new module
 
 - «Операции сегодня» / «Рабочая динамика» = COUNT of existing tenant rows (ImportDocument, WithdrawalDocument, UtilisationReport, CodeEvent.at, Order) in UTC calendar days. Do not invent SHP/PRD/WMS or call ИС МПТ.
