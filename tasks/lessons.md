@@ -1,5 +1,11 @@
 # Lessons
 
+## Factory Finn loop
+
+- Factory крутится как Finn loop: PM режет цель на доску (Linear предпочтительно) и кормит Dev **по одной** карточке; Dev = только Cloud Agent + draft PR в `chore/cursor-agent-factory`; Chief оркестрирует и комментирует, не пишет весь код; merge / mutating STAGE — только явное «да» Harith. Канон: `docs/FACTORY.md`.
+- Не параллелить агентов на одни файлы и никогда два сразу на `http-mpt.adapter.ts`. Потолок — 4 Cloud Agents. PM Cloud Agents за код не запускает.
+- Tip не путать с разрешением: A read-only закрыта, #17 P0 и P2 (STAGE-LK-FIELDS + GTIN-14) влиты — это всё ещё не Phase B и не «да» на POST. API только CONTRACT + поля ЛК из `docs/STAGE-LK-FIELDS.md`. Sim/StubPage вытеснять, не растить как MVP.
+
 ## 2026-09-03 — P2-C: STAGE GTIN is 14 digits; ТГ autofluids; МОД 803 in env only
 
 - STAGE ЛК GTIN is 14 digits (`04650063110374`). Reject 13 with `Длина должна быть равна 14`; do not silently pad unless checksum-proven.

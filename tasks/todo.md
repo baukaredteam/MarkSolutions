@@ -1,5 +1,11 @@
 # Factory setup — Cursor Ultra
 
+## Factory Finn loop
+
+Playbook: `docs/FACTORY.md`. Роли Chief / MS-PM (Linear|Notion, без Cloud Agents на код) / MS-Dev (один тикет → один draft PR в `chore/cursor-agent-factory`). Merge и STAGE POST — только после «да» Harith. Tip 2026-09-06: A read-only закрыта; #17 P0 safety влит; P2 STAGE-LK-FIELDS + GTIN-14 влиты; Phase B закрыта.
+
+---
+
 ## P2-C ORD/CAT GTIN-14 (2026-09-03)
 
 - [x] Order/catalog create: GTIN-14 only; 13-digit → `Длина должна быть равна 14`
