@@ -17,6 +17,14 @@ interface RecentEvent {
   title: string;
 }
 
+interface MyQueueItem {
+  kind: "PRODUCT" | "ORDER" | "DOCUMENT";
+  title: string;
+  count: number;
+  action: string;
+  href: "/products" | "/orders" | "/operations";
+}
+
 interface Summary {
   codesNotApplied: number;
   deadlineSoon: number;
@@ -29,6 +37,7 @@ interface Summary {
   operationsDeltaPct: number | null;
   operationsLast7d: OpsDay[];
   recentEvents: RecentEvent[];
+  myQueue: MyQueueItem[];
 }
 
 interface IntegrationRow {
@@ -85,6 +94,12 @@ const QUICK_LINKS = [
     className: "home-quick-link home-quick-link--violet",
   },
 ] as const;
+
+const QUEUE_CTA: Record<MyQueueItem["kind"], string> = {
+  PRODUCT: "Каталог товаров",
+  ORDER: "Заказ кодов",
+  DOCUMENT: "Операции",
+};
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Руководитель",
@@ -280,11 +295,14 @@ export function DashboardPage() {
 
   const critical = summary == null ? 0 : criticalCount(summary);
 
+  const queueItems = summary?.myQueue ?? [];
+
   const isHomeEmpty =
     summary != null &&
     attentionTotal === 0 &&
     attentionItems.length === 0 &&
-    !hasLiveOps(summary);
+    !hasLiveOps(summary) &&
+    queueItems.length === 0;
 
   const opsSeries = summary?.operationsLast7d ?? [];
   const hasDynamics = opsSeries.some((d) => d.count > 0);
@@ -477,6 +495,40 @@ export function DashboardPage() {
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        <div
+          className="card"
+          style={{ marginTop: 15 }}
+          data-testid="home-my-queue"
+        >
+          <div className="card-title">Моя очередь</div>
+          {summary == null ? (
+            <p className="sub">Загрузка…</p>
+          ) : queueItems.length === 0 ? (
+            <p className="sub">Нет задач в очереди</p>
+          ) : (
+            queueItems.map((row) => (
+              <div className="home-queue-item" key={row.kind}>
+                <div className="home-queue-main">
+                  <div>
+                    <b>{row.title}</b>
+                    <small className="sub">{row.action}</small>
+                  </div>
+                  <span className="home-queue-count">
+                    {fmtCount(row.count)}
+                  </span>
+                </div>
+                <button
+                  className="btn btn-soft btn-sm"
+                  type="button"
+                  onClick={() => nav(row.href)}
+                >
+                  {QUEUE_CTA[row.kind]}
+                </button>
+              </div>
+            ))
           )}
         </div>
 

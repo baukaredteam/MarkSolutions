@@ -1,5 +1,12 @@
 # Factory setup — Cursor Ultra
 
+## HOME-04-my-queue / MAR-14 (2026-09-06)
+
+- [x] `GET /dashboard/summary` — `myQueue` from ProductCard (DRAFT|NEEDS_CORRECTION|REJECTED) + Order (DRAFT|SENT|ACCEPTED|PROCESSING|REJECTED|FAILED) + Import/Withdrawal/Utilisation ERROR; tenant-scoped counts
+- [x] HOME UI: «Моя очередь»; empty = «Нет задач в очереди»; deep-link /products|/orders|/operations; HOME-02/03 KPI untouched
+- [x] AT/unit: `dashboard.queue.spec.ts` + dashboard.spec + dashboard.spec.tsx; CI mock-only
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
+
 ## TASK-02-filters-nav / MAR-12 (2026-09-06)
 
 - [x] `GET /tasks` optional `source` (OUTBOX_FAILED|UTILISATION_ALERT) + `status` (OPEN|DONE); 400 + fieldErrors on invalid

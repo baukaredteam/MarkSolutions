@@ -46,6 +46,13 @@ const EMPTY_SUMMARY = {
     at: string;
     title: string;
   }[],
+  myQueue: [] as {
+    kind: "PRODUCT" | "ORDER" | "DOCUMENT";
+    title: string;
+    count: number;
+    action: string;
+    href: "/products" | "/orders" | "/operations";
+  }[],
 };
 
 const POPULATED_SUMMARY = {
@@ -85,6 +92,29 @@ const POPULATED_SUMMARY = {
       source: "DOCUMENT" as const,
       at: new Date(Date.now() - 31 * 60_000).toISOString(),
       title: "Документ MS-2026-0841 отклонён ИС МПТ",
+    },
+  ],
+  myQueue: [
+    {
+      kind: "PRODUCT" as const,
+      title: "Карточки товара",
+      count: 12,
+      action: "Проверить атрибуты и регистрацию",
+      href: "/products" as const,
+    },
+    {
+      kind: "ORDER" as const,
+      title: "Заказы кодов",
+      count: 7,
+      action: "Контроль статусов и ошибок",
+      href: "/orders" as const,
+    },
+    {
+      kind: "DOCUMENT" as const,
+      title: "Документы",
+      count: 4,
+      action: "Исправить отклонённые операции",
+      href: "/operations" as const,
     },
   ],
 };
@@ -339,17 +369,108 @@ describe("HOME-01 dashboard read-model", () => {
       </MemoryRouter>
     );
     await waitFor(() =>
-      expect(
-        screen.getByText(/Заказ кодов №281 принят системой/)
-      ).toBeTruthy()
+      expect(screen.getByText(/Заказ кодов №281 принят системой/)).toBeTruthy()
     );
-    expect(screen.getByText(/Карточка Motor Oil 5W-30 опубликована/)).toBeTruthy();
+    expect(
+      screen.getByText(/Карточка Motor Oil 5W-30 опубликована/)
+    ).toBeTruthy();
     expect(
       screen.getByText(/Документ MS-2026-0841 отклонён ИС МПТ/)
     ).toBeTruthy();
     expect(screen.getByText(/04014835723399:80…01/)).toBeTruthy();
-    expect(container.querySelectorAll("[data-testid=home-recent-events] .event").length).toBe(10);
+    expect(
+      container.querySelectorAll("[data-testid=home-recent-events] .event")
+        .length
+    ).toBe(10);
     expect(container.textContent).not.toContain("8000001");
     expect(screen.queryByText("Нет событий")).toBeNull();
+  });
+
+  it("HOME-04: пустая очередь — «Нет задач в очереди»", async () => {
+    mockApis(EMPTY_SUMMARY);
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText("Моя очередь")).toBeTruthy());
+    expect(screen.getByText("Нет задач в очереди")).toBeTruthy();
+    expect(screen.queryByText("Проверить атрибуты и регистрацию")).toBeNull();
+  });
+
+  it("HOME-04: строки очереди и deep-link /products|/orders|/operations", async () => {
+    mockApis(POPULATED_SUMMARY);
+    function Loc() {
+      const loc = useLocation();
+      return <div data-testid="path">{loc.pathname}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <Loc />
+        <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/products" element={<div>products-page</div>} />
+          <Route path="/orders" element={<div>orders-page</div>} />
+          <Route path="/operations" element={<div>operations-page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Проверить атрибуты и регистрацию")).toBeTruthy()
+    );
+    expect(screen.getByText("Контроль статусов и ошибок")).toBeTruthy();
+    expect(screen.getByText("Исправить отклонённые операции")).toBeTruthy();
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
+    expect(screen.queryByText("Нет задач в очереди")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Каталог товаров" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("path").textContent).toBe("/products")
+    );
+  });
+
+  it("HOME-04: заказ кодов → /orders, документы → /operations", async () => {
+    mockApis(POPULATED_SUMMARY);
+    function Loc() {
+      const loc = useLocation();
+      return <div data-testid="path">{loc.pathname}</div>;
+    }
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <Loc />
+        <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/orders" element={<div>orders-page</div>} />
+          <Route path="/operations" element={<div>operations-page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Заказ кодов" })).toBeTruthy()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Заказ кодов" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("path").textContent).toBe("/orders")
+    );
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <Loc />
+        <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/operations" element={<div>operations-page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Операции" })).toBeTruthy()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Операции" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("path").textContent).toBe("/operations")
+    );
   });
 });

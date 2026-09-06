@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-06 — HOME-04 queue is counts of existing rows, not a new work table
+
+- «Моя очередь» = three tenant-scoped counts (ProductCard / Order / Import+Withdrawal+Utilisation) filtered to statuses that need marking action. No Task table, no SHP/PRD/WMS, no ИС МПТ call.
+- Rows are grouped like MARK_FLOW_Главная specialist mockup (title + count + action + list deep-link). Do not invent per-item /products/:id routes.
+- HOME-02 ops KPI and HOME-03 recentEvents stay as-is. Empty HOME banner now also hides when myQueue is non-empty; it still does not key off events alone.
+
 ## 2026-09-06 — TASK-02 filters are query params on the existing queue
 
 - `GET /tasks` already materializes Outbox FAILED + UtilisationAlert. Filters are optional `source` + `status` on that list — do not add an SLA engine or a second task table.

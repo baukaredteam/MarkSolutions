@@ -32,3 +32,34 @@
   font-size: 10px;
   font-weight: 700;
 }
+
+.home-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line, #e4e9ef);
+}
+
+.home-queue-item:last-child {
+  border-bottom: 0;
+}
+
+.home-queue-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.home-queue-main b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.home-queue-count {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
