@@ -117,6 +117,10 @@ describe("ops journal type/status filters", () => {
       [ids.importSuccess, ids.importError].sort()
     );
     expect(items.every((r) => r.type === "IMPORT")).toBe(true);
+    const ops = await getJournal("/operations", { type: "IMPORT" }).expect(200);
+    expect((ops.body.items as JournalRow[]).map((r) => r.id).sort()).toEqual(
+      items.map((r) => r.id).sort()
+    );
   });
 
   it("GET /operations?status=SUCCESS matches GET /documents?status=SUCCESS", async () => {

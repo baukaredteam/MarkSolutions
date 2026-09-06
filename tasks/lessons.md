@@ -2,7 +2,7 @@
 
 ## 2026-09-06 — OPS-02 journal filters are query params on the existing list
 
-- `GET /documents` / `GET /operations` already return IMPORT|WITHDRAWAL|UTILISATION. Filters are optional `type` + `status` on that aggregator — do not add SHP/PRD/WMS types or a second journal table.
+- `GET /documents` / `GET /operations` already return IMPORT|WITHDRAWAL|UTILISATION. Filters are optional `type` + `status` on that aggregator — do not add SHP/PRD/WMS types or a second journal table. The `/operations` alias must re-bind `@Query` itself; `this.list(req)` drops Nest query injection (CI: status filter and 400 never hit).
 - Invalid values are 400 with `fieldErrors` (Приложение B), not a silent ignore. Empty/omitted = unfiltered. UI deep-link is the same query string; OPS-28 empty copy stays for both empty journal and empty filter match.
 - No STAGE / mutating doc POST in this ticket. Seed Prisma in AT; keep `http-mpt.adapter.ts` untouched.
 
