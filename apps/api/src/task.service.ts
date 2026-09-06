@@ -10,7 +10,7 @@ export function relatedHrefForSource(source: string): string {
   return source === TASK_SOURCE_ALERT ? "/operations/utilisation" : "/orders";
 }
 
-function parseTaskFilter(
+export function parseTaskFilter(
   raw: string | undefined,
   allowed: readonly string[],
   field: "source" | "status"
