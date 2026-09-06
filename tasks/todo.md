@@ -1,5 +1,13 @@
 # Factory setup — Cursor Ultra
 
+## A4-P1-get-polish / MAR-10 (2026-09-06)
+
+- [x] `getOrder`: optional `productGroup` from `MPT_PRODUCT_GROUP` (default `autofluids`); omit if empty
+- [x] GET `request()`: `Content-Type: application/json` without changing POST json/form
+- [x] `getDocument`: official status enum as-is; do not invent `rejectReason` on docs/:id
+- [x] fake-fetch unit tests in `mpt-http.spec.ts` (no STAGE HTTP)
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE / test.markirovka.kz / prod.markirovka.kz
+
 ## OPS-02-filter-ci-fix (2026-09-06)
 
 - [x] Hotfix after #27 merged with red CI: `GET /operations` re-binds `@Query type/status` (calling `this.list(req)` dropped Nest injection)
@@ -78,7 +86,7 @@ Playbook: `docs/FACTORY.md`. Роли Chief / MS-PM (Linear|Notion, без Cloud
 - [x] `reconcileOrder`: no RELEASE while CREATED/PENDING; default timeout 30 min
 - [x] Persist STAGE `orderId` → `Order.externalOrderId`; getOrder/getCodes use it
 - [x] send path uses order `productGroup`/`businessPlaceId`; adapter default `autofluids`
-- [ ] A4 P1 — **не** этот PR
+- [x] A4 P1 — `feature/A4-P1-get-polish` (GET-only; not this P0 PR)
 - [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
 - [x] `releaseMethodType` on createOrder body — CONTRACT PRIMARY\|REMAINS\|COMISSION\|REMARK, default PRIMARY (ORD-releaseMethodType). **Not** STAGE POST.
 
@@ -87,7 +95,7 @@ Playbook: `docs/FACTORY.md`. Роли Chief / MS-PM (Linear|Notion, без Cloud
 - [x] `docs/MPT-PHASE-B-READINESS.md` — goal, hard rules, as-is vs to-be, Harith checklist, proposal only
 - [x] Pointers: `tasks/lessons.md`, `docs/STAGE-MPT-READONLY-GET.md`, `docs/CONTRACT-IS-MPT.md`, comment-only in adapter/outbox
 - [x] P0 code gaps closed in follow-up PR (see above)
-- [ ] A4 P1 — **не** этот PR
+- [x] A4 P1 — landed in `feature/A4-P1-get-polish` (GET-only)
 - [ ] Mutating STAGE (`createOrder` / utilisation / doc) — **запрещено** до отдельного «да» Harith
 
 ## MPT GET contract audit A3 (2026-09-01)
@@ -95,7 +103,7 @@ Playbook: `docs/FACTORY.md`. Роли Chief / MS-PM (Linear|Notion, без Cloud
 - [x] `docs/MPT-GET-CONTRACT-AUDIT.md` — official GET vs `HttpMptAdapter` (no STAGE call, no mutating change)
 - [x] Pointers: `docs/STAGE-MPT-READONLY-GET.md`, comment in adapter (query fact only)
 - [x] A4 P0: parse `orderInfos.orderStatus` + `reportStatus`; `getCodes` official `orderId+gtin+quantity` + `codes[]` strings
-- [ ] A4 P1: optional `productGroup` on getOrder; GET Content-Type; document status enum / errors GET
+- [x] A4 P1: optional `productGroup` on getOrder; GET Content-Type; document status enum as-is (errors GET remains P2)
 - [ ] Mutating STAGE / adapter POST — **запрещено** до отдельного «да»
 
 ## MPT GET /api/orders safe error (2026-09-01)

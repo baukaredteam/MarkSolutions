@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-06 — A4 P1 GET polish: optional query + GET header, not a port rewrite
+
+- `GET /api/orders` `productGroup` is optional in CONTRACT. Send it from `MPT_PRODUCT_GROUP` (default `autofluids`) because STAGE list 200 used that query; do not mark it required and do not add `cursor`/`limit`.
+- Official GET tables list `Content-Type: application/json` with no body. Set CT only on the `request()` branch without json/form **and** `method === GET`. POST json and refresh `x-www-form-urlencoded` stay as they are.
+- `GET …/docs/:id` status is `CREATED|VALIDATING|IN_PROCESS|PARTIALLY_PROCESSED|SUCCESS|ERROR`. Do not remap the first three to `IN_PROCESS`. `rejectReason` is not on this GET — leave it for `errors/:id` (P2). The `IMptAdapter` 3-value union stays until a port PR; poller already treats non-SUCCESS/ERROR as in-flight.
+- GET-only. No STAGE HTTP, no POST/outbox/simulator.
+
 ## 2026-09-06 — HOME-03 rebase after OPS #27+#28: only tasks/* overlap
 
 - After #27+#28 (`09c29b6`) landed, HOME-03 conflicted only on `tasks/todo.md` / `tasks/lessons.md`. Keep both OPS sections and the HOME-03 recentEvents notes.
