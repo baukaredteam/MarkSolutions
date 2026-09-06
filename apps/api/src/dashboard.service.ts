@@ -117,6 +117,72 @@ export function mergeRecentEvents(
     .slice(0, limit);
 }
 
+/** Marking-role queue: cards that need attributes / correction. */
+export const MY_QUEUE_PRODUCT_STATUSES = [
+  "DRAFT",
+  "NEEDS_CORRECTION",
+  "REJECTED",
+] as const;
+
+/** Draft + in-flight + errors — «контроль статусов и ошибок». */
+export const MY_QUEUE_ORDER_STATUSES = [
+  "DRAFT",
+  "SENT",
+  "ACCEPTED",
+  "PROCESSING",
+  "REJECTED",
+  "FAILED",
+] as const;
+
+/** Rejected operations only — «исправить отклонённые». */
+export const MY_QUEUE_DOCUMENT_STATUSES = ["ERROR"] as const;
+
+export type MyQueueKind = "PRODUCT" | "ORDER" | "DOCUMENT";
+
+export type MyQueueItem = {
+  kind: MyQueueKind;
+  title: string;
+  count: number;
+  action: string;
+  href: "/products" | "/orders" | "/operations";
+};
+
+export function buildMyQueue(counts: {
+  products: number;
+  orders: number;
+  documents: number;
+}): MyQueueItem[] {
+  const rows: MyQueueItem[] = [];
+  if (counts.products > 0) {
+    rows.push({
+      kind: "PRODUCT",
+      title: "Карточки товара",
+      count: counts.products,
+      action: "Проверить атрибуты и регистрацию",
+      href: "/products",
+    });
+  }
+  if (counts.orders > 0) {
+    rows.push({
+      kind: "ORDER",
+      title: "Заказы кодов",
+      count: counts.orders,
+      action: "Контроль статусов и ошибок",
+      href: "/orders",
+    });
+  }
+  if (counts.documents > 0) {
+    rows.push({
+      kind: "DOCUMENT",
+      title: "Документы",
+      count: counts.documents,
+      action: "Исправить отклонённые операции",
+      href: "/operations",
+    });
+  }
+  return rows;
+}
+
 // Дашборд «Следующие действия» (W4-06, Q10, ADR-025): ОДИН снимок 5 счётчиков.
 // openAggregates и serviceActExport = 0 в MVP (тикеты 03/05 stretch после демо).
 @Injectable()
@@ -279,6 +345,44 @@ export class DashboardService {
         },
       }),
     ]);
+    const [
+      queueCards,
+      queueOrders,
+      queueImports,
+      queueWithdrawals,
+      queueUtils,
+    ] = await Promise.all([
+      this.prisma.productCard.count({
+        where: {
+          tenantId,
+          status: { in: [...MY_QUEUE_PRODUCT_STATUSES] },
+        },
+      }),
+      this.prisma.order.count({
+        where: {
+          tenantId,
+          status: { in: [...MY_QUEUE_ORDER_STATUSES] },
+        },
+      }),
+      this.prisma.importDocument.count({
+        where: {
+          tenantId,
+          status: { in: [...MY_QUEUE_DOCUMENT_STATUSES] },
+        },
+      }),
+      this.prisma.withdrawalDocument.count({
+        where: {
+          tenantId,
+          status: { in: [...MY_QUEUE_DOCUMENT_STATUSES] },
+        },
+      }),
+      this.prisma.utilisationReport.count({
+        where: {
+          tenantId,
+          status: { in: [...MY_QUEUE_DOCUMENT_STATUSES] },
+        },
+      }),
+    ]);
     const recentEvents = mergeRecentEvents([
       ...recentOrders.map((o) => ({
         id: `ORDER:${o.id}`,
@@ -354,6 +458,11 @@ export class DashboardService {
       operationsDeltaPct: opsDeltaPct(operationsToday, operationsYesterday),
       operationsLast7d,
       recentEvents,
+      myQueue: buildMyQueue({
+        products: queueCards,
+        orders: queueOrders,
+        documents: queueImports + queueWithdrawals + queueUtils,
+      }),
     };
   }
 }

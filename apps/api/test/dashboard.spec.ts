@@ -234,6 +234,7 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
       s0.body.operationsLast7d.every((d: { count: number }) => d.count === 0)
     ).toBe(true);
     expect(s0.body.recentEvents).toEqual([]);
+    expect(s0.body.myQueue).toEqual([]);
 
     // прогрессия: карточка → registered → заказ → PRINTED → APPLIED → INTRODUCED
     const card = await prisma.productCard.create({
@@ -570,5 +571,215 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     expect(otherRes.body.recentEvents).toHaveLength(1);
     expect(otherRes.body.recentEvents[0].title).toContain("MS-OTHER-9999");
     expect(otherRes.body.recentEvents[0].title).not.toContain("№281");
+  });
+
+  it("HOME-04: myQueue cards/orders/docs that need action; tenant-scoped; no KM leak", async () => {
+    const home = await prisma.tenant.create({
+      data: { bin: "777000111557", name: "ОчередьДом", status: "ACTIVE" },
+    });
+    const other = await prisma.tenant.create({
+      data: { bin: "777000111558", name: "ЧужаяОчередь", status: "ACTIVE" },
+    });
+    const tokenHome = app.get(JwtService).sign({
+      sub: "u-queue-home",
+      tenantId: home.id,
+      roles: ["marking"],
+      mfaCompleted: true,
+    });
+
+    await prisma.productCard.create({
+      data: {
+        tenantId: home.id,
+        gtin: "04014835723399",
+        status: "DRAFT",
+        attributes: { name: "Motor Oil 5W-30" },
+      },
+    });
+    await prisma.productCard.create({
+      data: {
+        tenantId: home.id,
+        gtin: "04650051170016",
+        status: "NEEDS_CORRECTION",
+        attributes: { name: "Filter" },
+      },
+    });
+    await prisma.productCard.create({
+      data: {
+        tenantId: home.id,
+        gtin: "04650051170023",
+        status: "REGISTERED",
+        attributes: { name: "Ready" },
+      },
+    });
+    await prisma.order.create({
+      data: {
+        id: "o-q-draft",
+        number: 501,
+        tenantId: home.id,
+        status: "DRAFT",
+        idempotencyKey: "q-order-draft",
+      },
+    });
+    await prisma.order.create({
+      data: {
+        id: "o-q-rej",
+        number: 502,
+        tenantId: home.id,
+        status: "REJECTED",
+        idempotencyKey: "q-order-rej",
+      },
+    });
+    await prisma.order.create({
+      data: {
+        id: "o-q-done",
+        number: 503,
+        tenantId: home.id,
+        status: "COMPLETED",
+        idempotencyKey: "q-order-done",
+      },
+    });
+    await prisma.importDocument.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-q-rej",
+        customsDate: "2026-09-06",
+        customsNumber: "MS-2026-0841",
+        status: "ERROR",
+      },
+    });
+    await prisma.withdrawalDocument.create({
+      data: {
+        tenantId: home.id,
+        codes: ["c-q"],
+        withdrawalType: "WRITE_OFF",
+        withdrawalReason: "DEFECT",
+        status: "ERROR",
+      },
+    });
+    await prisma.utilisationReport.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-q-done",
+        idempotencyKey: "util-q-err",
+        reportId: "rpt-q-err",
+        status: "ERROR",
+        sntins: ["0104014835723399218000001"],
+        releaseType: "IMPORT",
+        expirationDate: "2027-01-01",
+        productionDate: "2026-09-01",
+        manufacturerCountry: "KZ",
+        businessPlaceId: "1",
+      },
+    });
+    await prisma.importDocument.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-q-done",
+        customsDate: "2026-09-06",
+        customsNumber: "MS-OK-0001",
+        status: "SUCCESS",
+      },
+    });
+    await prisma.productCard.create({
+      data: {
+        tenantId: other.id,
+        status: "DRAFT",
+        attributes: { name: "Other card" },
+      },
+    });
+    await prisma.order.create({
+      data: {
+        id: "o-q-other",
+        number: 777,
+        tenantId: other.id,
+        status: "FAILED",
+        idempotencyKey: "q-order-other",
+      },
+    });
+    await prisma.importDocument.create({
+      data: {
+        tenantId: other.id,
+        orderId: "o-q-other",
+        customsDate: "2026-09-06",
+        customsNumber: "MS-OTHER-Q",
+        status: "ERROR",
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenHome}`)
+      .expect(200);
+    expect(res.body.operationsToday).toBeDefined();
+    expect(res.body.operationsLast7d).toHaveLength(7);
+    expect(Array.isArray(res.body.recentEvents)).toBe(true);
+    const queue = res.body.myQueue as {
+      kind: string;
+      title: string;
+      count: number;
+      action: string;
+      href: string;
+    }[];
+    expect(queue).toEqual([
+      {
+        kind: "PRODUCT",
+        title: "Карточки товара",
+        count: 2,
+        action: "Проверить атрибуты и регистрацию",
+        href: "/products",
+      },
+      {
+        kind: "ORDER",
+        title: "Заказы кодов",
+        count: 2,
+        action: "Контроль статусов и ошибок",
+        href: "/orders",
+      },
+      {
+        kind: "DOCUMENT",
+        title: "Документы",
+        count: 3,
+        action: "Исправить отклонённые операции",
+        href: "/operations",
+      },
+    ]);
+    const dumped = JSON.stringify(res.body.myQueue);
+    expect(dumped).not.toContain("0104014835723399218000001");
+    expect(dumped).not.toContain("MS-OTHER-Q");
+    expect(dumped).not.toContain("Other card");
+
+    const tokenOther = app.get(JwtService).sign({
+      sub: "u-queue-other",
+      tenantId: other.id,
+      roles: ["marking"],
+      mfaCompleted: true,
+    });
+    const otherRes = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenOther}`)
+      .expect(200);
+    expect(otherRes.body.myQueue).toEqual([
+      {
+        kind: "PRODUCT",
+        title: "Карточки товара",
+        count: 1,
+        action: "Проверить атрибуты и регистрацию",
+        href: "/products",
+      },
+      {
+        kind: "ORDER",
+        title: "Заказы кодов",
+        count: 1,
+        action: "Контроль статусов и ошибок",
+        href: "/orders",
+      },
+      {
+        kind: "DOCUMENT",
+        title: "Документы",
+        count: 1,
+        action: "Исправить отклонённые операции",
+        href: "/operations",
+      },
+    ]);
   });
 });
