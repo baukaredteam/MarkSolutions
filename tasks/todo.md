@@ -1,11 +1,18 @@
 # Factory setup — Cursor Ultra
 
+## OPS-02-filter-ci-fix (2026-09-06)
+
+- [x] Hotfix after #27 merged with red CI: `GET /operations` re-binds `@Query type/status` (calling `this.list(req)` dropped Nest injection)
+- [x] Invalid non-blank type/status → 400 + fieldErrors; type+status intersection; AT `ops-journal-filters.spec.ts`
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
+
 ## OPS-02-journal-filters / MAR-8 (2026-09-06)
 
 - [x] `GET /documents` + alias `GET /operations` — optional `type` (IMPORT|WITHDRAWAL|UTILISATION) and `status` (EXPECTED|SUBMITTED|IN_PROCESS|PARTIALLY_PROCESSED|SUCCESS|ERROR); 400 + fieldErrors on invalid
 - [x] UI `docs.tsx`: type/status selects + deep-link query params; OPS-28 empty (journal or filter)
 - [x] AT: `ops-journal-filters.spec.ts` + `docs.spec.tsx` (Prisma seed / mock-only, no STAGE HTTP)
-- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
+- [x] #27 merged with red CI — follow-up `feature/OPS-02-filter-ci-fix`
+- [ ] Merge hotfix — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
 
 ## HOME-02-ops-kpi / MAR-6 (2026-09-06)
 

@@ -74,9 +74,15 @@ export class DocumentController {
     return this.documents.list(tenantOf(req), { type, status });
   }
 
+  // Same aggregator as /documents. Re-bind @Query — calling this.list(req)
+  // drops Nest query injection (PR #27 CI: /operations ignored type/status).
   @Roles(...READ_ROLES)
   @Get("operations")
-  listJournal(@Req() req: Request) {
-    return this.list(req);
+  listJournal(
+    @Req() req: Request,
+    @Query("type") type?: string,
+    @Query("status") status?: string
+  ) {
+    return this.documents.list(tenantOf(req), { type, status });
   }
 }
