@@ -98,6 +98,7 @@ export function DocumentsPage() {
   const [withComment, setWithComment] = useState("");
   const [withChildren, setWithChildren] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const sess = sessionStore.get();
   const roles = sess?.roles ?? [];
@@ -152,6 +153,7 @@ export function DocumentsPage() {
 
   const rows = docs ?? [];
   const isEmpty = docs !== null && docs.length === 0;
+  const selected = rows.find((r) => r.id === selectedId) ?? null;
   const kpis = [
     {
       label: "Черновики",
@@ -292,6 +294,23 @@ export function DocumentsPage() {
       label: "Дата",
       render: (r) => new Date(r.date).toLocaleDateString(),
     },
+    {
+      key: "actions",
+      label: "",
+      render: (r) => (
+        <button
+          type="button"
+          className="btn btn-light btn-sm"
+          aria-label={
+            selectedId === r.id ? `Скрыть ${r.id}` : `Открыть ${r.id}`
+          }
+          aria-pressed={selectedId === r.id}
+          onClick={() => setSelectedId((id) => (id === r.id ? null : r.id))}
+        >
+          {selectedId === r.id ? "Скрыть" : "Открыть"}
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -404,6 +423,40 @@ export function DocumentsPage() {
                   emptyText="Операций пока нет"
                 />
               </div>
+              {selected && (
+                <aside
+                  className="card"
+                  style={{ marginTop: 15 }}
+                  data-testid="journal-detail"
+                  aria-label="Детали операции"
+                >
+                  <h2>Детали операции</h2>
+                  <div className="info-grid">
+                    <div className="info-box">
+                      <small>Тип</small>
+                      <b>{TYPE_LABEL[selected.type] ?? selected.type}</b>
+                    </div>
+                    <div className="info-box">
+                      <small>Статус</small>
+                      <StatusBadge code={selected.status} />
+                    </div>
+                    {selected.rejectReason ? (
+                      <div className="info-box">
+                        <small>Причина отказа</small>
+                        <b>{selected.rejectReason}</b>
+                      </div>
+                    ) : null}
+                    <div className="info-box">
+                      <small>Дата</small>
+                      <b>{new Date(selected.date).toLocaleDateString()}</b>
+                    </div>
+                    <div className="info-box">
+                      <small>Идентификатор</small>
+                      <b>{selected.id}</b>
+                    </div>
+                  </div>
+                </aside>
+              )}
             </>
           )}
         </>
