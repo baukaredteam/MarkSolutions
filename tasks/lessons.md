@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-09-06 — TASK-02 filters are query params on the existing queue
+
+- `GET /tasks` already materializes Outbox FAILED + UtilisationAlert. Filters are optional `source` + `status` on that list — do not add an SLA engine or a second task table.
+- Invalid values are 400 with `fieldErrors` (Приложение B), not a silent ignore. Empty/omitted = unfiltered. UI deep-link is the same query string.
+- Row navigation is source→route (`OUTBOX_FAILED` → `/orders`, `UTILISATION_ALERT` → `/operations/utilisation`). EntityList has no onRowClick; wrap the table and put `data-task-href` on a cell.
+- Age is a client format of `createdAt` (мин/ч/дн). No SLA clock. No STAGE HTTP. Keep `document.*` / `docs.tsx` untouched (OPS-03 owns that slice).
+
 ## 2026-09-06 — A4 P1 GET polish: optional query + GET header, not a port rewrite
 
 - `GET /api/orders` `productGroup` is optional in CONTRACT. Send it from `MPT_PRODUCT_GROUP` (default `autofluids`) because STAGE list 200 used that query; do not mark it required and do not add `cursor`/`limit`.

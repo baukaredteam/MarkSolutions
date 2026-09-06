@@ -1,5 +1,12 @@
 # Factory setup — Cursor Ultra
 
+## TASK-02-filters-nav / MAR-12 (2026-09-06)
+
+- [x] `GET /tasks` optional `source` (OUTBOX_FAILED|UTILISATION_ALERT) + `status` (OPEN|DONE); 400 + fieldErrors on invalid
+- [x] UI `tasks.tsx`: source/status selects + deep-link query; age/createdAt; row → `/orders` or `/operations/utilisation`
+- [x] AT: `tasks-filters.spec.ts` + `tasks.spec.tsx` (Prisma seed / mock-only, no STAGE HTTP)
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE / test.markirovka.kz / prod.markirovka.kz
+
 ## A4-P1-get-polish / MAR-10 (2026-09-06)
 
 - [x] `getOrder`: optional `productGroup` from `MPT_PRODUCT_GROUP` (default `autofluids`); omit if empty

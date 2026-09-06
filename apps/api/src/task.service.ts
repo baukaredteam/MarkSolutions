@@ -1,8 +1,31 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "./prisma.service";
 
 export const TASK_SOURCE_OUTBOX = "OUTBOX_FAILED";
 export const TASK_SOURCE_ALERT = "UTILISATION_ALERT";
+export const TASK_SOURCES = [TASK_SOURCE_OUTBOX, TASK_SOURCE_ALERT] as const;
+export const TASK_STATUSES = ["OPEN", "DONE"] as const;
+
+export function relatedHrefForSource(source: string): string {
+  return source === TASK_SOURCE_ALERT ? "/operations/utilisation" : "/orders";
+}
+
+function parseTaskFilter(
+  raw: string | undefined,
+  allowed: readonly string[],
+  field: "source" | "status"
+): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  if (!allowed.includes(value)) {
+    const msg = `${field} должен быть ${allowed.join("|")}`;
+    throw new BadRequestException({
+      message: msg,
+      fieldErrors: { [field]: msg },
+    });
+  }
+  return value;
+}
 
 type OutboxPayload = {
   tenantId?: string;
@@ -20,6 +43,7 @@ export type TaskDto = {
   status: string;
   severity: string;
   createdAt: Date;
+  relatedHref: string;
 };
 
 @Injectable()
@@ -94,14 +118,28 @@ export class TaskService {
     }
   }
 
-  async list(tenantId: string): Promise<{ items: TaskDto[] }> {
+  async list(
+    tenantId: string,
+    filters: { source?: string; status?: string } = {}
+  ): Promise<{ items: TaskDto[] }> {
     if (!tenantId) throw new Error("tenant required");
+    const source = parseTaskFilter(filters.source, TASK_SOURCES, "source");
+    const status = parseTaskFilter(filters.status, TASK_STATUSES, "status");
     await this.materialize(tenantId);
     const items = await this.prisma.task.findMany({
-      where: { tenantId },
+      where: {
+        tenantId,
+        ...(source ? { source } : {}),
+        ...(status ? { status } : {}),
+      },
       orderBy: { createdAt: "desc" },
     });
-    return { items };
+    return {
+      items: items.map((row) => ({
+        ...row,
+        relatedHref: relatedHrefForSource(row.source),
+      })),
+    };
   }
 
   async createFromSources(tenantId: string): Promise<{ items: TaskDto[] }> {
