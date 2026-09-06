@@ -447,6 +447,7 @@ describe("documents page (UI-06b)", () => {
         screen.getByRole("heading", { name: "Операции и документы" })
       ).toBeTruthy()
     );
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/codes/o1/codes"));
     expect(screen.queryByTestId("journal-detail")).toBeNull();
     const callsBefore = get.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Открыть d1" }));
