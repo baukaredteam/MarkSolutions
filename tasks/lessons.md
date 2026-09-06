@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-06 — OPS-04 utilisation wizard is UI over the existing mock POST
+
+- Нанесение already has mock `POST /utilisation` + idempotent poll. Wizard is only a 4-step shell (заказ → поля → подтверждение → статус) over that contract.
+- Order picker = `GET /orders` list (`KM-2026-… · gtin · status`), same pattern as labels/docs. Do not add a UUID paste field or a new utilisation list API.
+- Stay on the status step after submit (do not auto-nav away). No STAGE HTTP. Do not touch `http-mpt.adapter.ts`. HOME-04 owns `dashboard.*`.
+
 ## 2026-09-06 — HOME-04 queue is counts of existing rows, not a new work table
 
 - «Моя очередь» = three tenant-scoped counts (ProductCard / Order / Import+Withdrawal+Utilisation) filtered to statuses that need marking action. No Task table, no SHP/PRD/WMS, no ИС МПТ call.
