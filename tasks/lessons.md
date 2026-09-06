@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-06 — Nest @Query is not injected when one handler calls another
+
+- `GET /operations` aliased as `return this.list(req)` dropped `@Query("type"|"status")`. Nest injects query params only when it invokes the route handler — a direct method call passes `undefined`, so `DocumentService.list` treated every `/operations` request as unfiltered (200 + extra ids; invalid status stayed 200).
+- Re-bind `@Query` on the alias (or call `this.documents.list` with the parsed query). Do not rely on decorator metadata from a sibling handler. `/documents` was already correct; #27 CI failed only on `/operations`.
+- No STAGE / mutating doc POST. Keep `http-mpt.adapter.ts` untouched.
+
 ## 2026-09-06 — OPS-02 journal filters are query params on the existing list
 
 - `GET /documents` / `GET /operations` already return IMPORT|WITHDRAWAL|UTILISATION. Filters are optional `type` + `status` on that aggregator — do not add SHP/PRD/WMS types or a second journal table.
