@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { DocumentsPage } from "./docs";
 import { sessionStore } from "../session";
@@ -418,5 +424,117 @@ describe("documents page (UI-06b)", () => {
     expect(
       (screen.getByLabelText("Фильтр: тип") as HTMLSelectElement).value
     ).toBe("UTILISATION");
+  });
+
+  it("выбор строки: панель из полей списка (тип/статус/дата/id), без GET по id", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    const get = vi
+      .spyOn(api, "get")
+      .mockImplementation(async (path: string) => {
+        if (path === "/documents") return DOCS;
+        if (path === "/orders") return ORDERS;
+        if (path === "/codes/o1/codes") return CODES;
+        return { items: [] };
+      });
+    renderDocs();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/codes/o1/codes"));
+    expect(screen.queryByTestId("journal-detail")).toBeNull();
+    const callsBefore = get.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Открыть d1" }));
+    const panel = await screen.findByTestId("journal-detail");
+    expect(within(panel).getByText("Ввод в оборот")).toBeTruthy();
+    expect(within(panel).getByText("Завершён")).toBeTruthy();
+    expect(within(panel).getByText("d1")).toBeTruthy();
+    expect(
+      within(panel).getByText(
+        new Date("2026-08-12T10:00:00Z").toLocaleDateString()
+      )
+    ).toBeTruthy();
+    expect(within(panel).queryByText("Причина отказа")).toBeNull();
+    expect(get.mock.calls.length).toBe(callsBefore);
+    expect(
+      get.mock.calls.every(([p]) => !String(p).match(/\/documents\/d/))
+    ).toBe(true);
+  });
+
+  it("ERROR-строка: rejectReason в панели; повторный клик скрывает", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    vi.spyOn(api, "get").mockImplementation(async (path: string) => {
+      if (path === "/documents") return DOCS;
+      if (path === "/orders") return ORDERS;
+      if (path === "/codes/o1/codes") return CODES;
+      return { items: [] };
+    });
+    renderDocs();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Операции и документы" })
+      ).toBeTruthy()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Открыть d2" }));
+    const panel = await screen.findByTestId("journal-detail");
+    expect(within(panel).getByText("Вывод из оборота")).toBeTruthy();
+    expect(within(panel).getByText("Ошибка")).toBeTruthy();
+    expect(within(panel).getByText("Причина отказа")).toBeTruthy();
+    expect(within(panel).getByText("rejected")).toBeTruthy();
+    expect(within(panel).getByText("d2")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Скрыть d2" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("journal-detail")).toBeNull()
+    );
+  });
+
+  it("фильтр убирает выбранную строку — панель закрывается, OPS-28 пустое сохраняется", async () => {
+    sessionStore.set({
+      tenantId: "t",
+      token: "j",
+      roles: ["admin"],
+      login: "a",
+    });
+    vi.spyOn(api, "get").mockImplementation(async (path: string) => {
+      if (path === "/documents?type=IMPORT") {
+        return { items: DOCS.items.filter((d) => d.type === "IMPORT") };
+      }
+      if (path.startsWith("/documents")) return DOCS;
+      if (path === "/orders") return ORDERS;
+      return { items: [] };
+    });
+    render(
+      <MemoryRouter initialEntries={["/operations"]}>
+        <Routes>
+          <Route path="/operations" element={<DocumentsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Открыть d2" })).toBeTruthy()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Открыть d2" }));
+    expect(await screen.findByTestId("journal-detail")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Фильтр: тип"), {
+      target: { value: "IMPORT" },
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("journal-detail")).toBeNull()
+    );
+    expect(screen.getByLabelText("Фильтр: тип")).toBeTruthy();
+    expect(screen.queryByText(/заглушка/i)).toBeNull();
+    expect(screen.queryByText("Операций пока нет")).toBeNull();
+    expect(screen.getAllByText("Ввод в оборот").length).toBeGreaterThan(0);
   });
 });
