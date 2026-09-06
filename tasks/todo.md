@@ -1,5 +1,12 @@
 # Factory setup — Cursor Ultra
 
+## HOME-02-ops-kpi / MAR-6 (2026-09-06)
+
+- [x] `GET /dashboard/summary` — `operationsToday` / `operationsYesterday` / `operationsDeltaPct` / `operationsLast7d` from ImportDocument + Withdrawal + Utilisation + CodeEvent + Order (tenant-scoped, UTC day)
+- [x] HOME UI: live «Операции сегодня» (+N% к вчера) and «Рабочая динамика» 7d bars; empty = 0 / «нет операций за сегодня» / chart «Нет данных»
+- [x] AT/unit: helpers + dashboard.spec + dashboard.spec.tsx; CI mock-only
+- [ ] Merge — **запрещено** до «да» Harith. Draft PR only. No STAGE HTTP.
+
 ## ORD-releaseMethodType (2026-09-06)
 
 - [x] DTO + validation: PRIMARY|REMAINS|COMISSION|REMARK, default PRIMARY

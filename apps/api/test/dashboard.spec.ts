@@ -226,6 +226,13 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     expect(s0.body.hasPrinted).toBe(false);
     expect(s0.body.hasApplied).toBe(false);
     expect(s0.body.hasIntroduced).toBe(false);
+    expect(s0.body.operationsToday).toBe(0);
+    expect(s0.body.operationsYesterday).toBe(0);
+    expect(s0.body.operationsDeltaPct).toBeNull();
+    expect(s0.body.operationsLast7d).toHaveLength(7);
+    expect(
+      s0.body.operationsLast7d.every((d: { count: number }) => d.count === 0)
+    ).toBe(true);
 
     // прогрессия: карточка → registered → заказ → PRINTED → APPLIED → INTRODUCED
     const card = await prisma.productCard.create({
@@ -297,5 +304,135 @@ describe("dashboard summary + w4-seed (W4-06, Q10, ADR-025)", () => {
     expect(s1.body.hasPrinted).toBe(true);
     expect(s1.body.hasApplied).toBe(true);
     expect(s1.body.hasIntroduced).toBe(true);
+  });
+
+  it("HOME-02: operationsToday + last7d from docs/events/orders; tenant-scoped", async () => {
+    const now = new Date();
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 10)
+    );
+    const yesterday = new Date(today.getTime() - 86400000);
+    const home = await prisma.tenant.create({
+      data: { bin: "777000111334", name: "ОпсДом", status: "ACTIVE" },
+    });
+    const other = await prisma.tenant.create({
+      data: { bin: "777000111333", name: "Чужой", status: "ACTIVE" },
+    });
+    const tokenHome = app.get(JwtService).sign({
+      sub: "u-ops-home",
+      tenantId: home.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+
+    await prisma.importDocument.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-ops-today",
+        customsDate: "2026-09-06",
+        customsNumber: "DT-OPS-TODAY",
+        status: "EXPECTED",
+        createdAt: today,
+      },
+    });
+    await prisma.withdrawalDocument.create({
+      data: {
+        tenantId: home.id,
+        codes: ["c-ops"],
+        withdrawalType: "WITHDRAWAL",
+        withdrawalReason: "DEFECT",
+        status: "SUBMITTED",
+        createdAt: today,
+      },
+    });
+    await prisma.utilisationReport.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-ops-today",
+        idempotencyKey: "util-ops-today",
+        reportId: "rpt-ops-today",
+        status: "IN_PROCESS",
+        sntins: [],
+        releaseType: "IMPORT",
+        expirationDate: "2027-01-01",
+        productionDate: "2026-09-01",
+        manufacturerCountry: "KZ",
+        businessPlaceId: "1",
+        createdAt: yesterday,
+      },
+    });
+    await prisma.order.create({
+      data: {
+        id: "o-ops-yday",
+        number: 201,
+        tenantId: home.id,
+        status: "DRAFT",
+        idempotencyKey: "ops-yday-order",
+        createdAt: yesterday,
+      },
+    });
+    const kms = app.get(KMS_ADAPTER);
+    const { ciphertext } = await kms.encrypt(
+      Buffer.from(JSON.stringify({ serial: "8000001", ai91: null, ai92: null }))
+    );
+    const code = await prisma.codeVault.create({
+      data: {
+        tenantId: home.id,
+        orderId: "o-ops-yday",
+        gtin: "04014835723399",
+        mask: "04014835723399:80…01",
+        status: "PRINTED",
+        ciphertext: ciphertext.toString("base64"),
+      },
+    });
+    await prisma.codeEvent.create({
+      data: {
+        tenantId: home.id,
+        codeId: code.id,
+        event: "PRINTED",
+        at: today,
+        actor: "u1",
+      },
+    });
+    await prisma.importDocument.create({
+      data: {
+        tenantId: other.id,
+        orderId: "o-other",
+        customsDate: "2026-09-06",
+        customsNumber: "DT-OTHER-OPS",
+        status: "EXPECTED",
+        createdAt: today,
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenHome}`)
+      .expect(200);
+    // today: import + withdrawal + printed event (3). yesterday: utilisation + order (2).
+    expect(res.body.operationsToday).toBe(3);
+    expect(res.body.operationsYesterday).toBe(2);
+    expect(res.body.operationsDeltaPct).toBe(50);
+    expect(res.body.operationsLast7d).toHaveLength(7);
+    expect(res.body.operationsLast7d[6].count).toBe(3);
+    expect(res.body.operationsLast7d[5].count).toBe(2);
+
+    const tokenOther = app.get(JwtService).sign({
+      sub: "u-other",
+      tenantId: other.id,
+      roles: ["admin"],
+      mfaCompleted: true,
+    });
+    const otherRes = await request(app.getHttpServer())
+      .get("/dashboard/summary")
+      .set("Authorization", `Bearer ${tokenOther}`)
+      .expect(200);
+    expect(otherRes.body.operationsToday).toBe(1);
+    expect(otherRes.body.operationsYesterday).toBe(0);
+    expect(otherRes.body.operationsDeltaPct).toBeNull();
+  });
+
+  it("HOME-02: summary without tenant JWT → 401 (no leak)", async () => {
+    await request(app.getHttpServer()).get("/dashboard/summary").expect(401);
   });
 });
