@@ -19,6 +19,16 @@ vi.mock("../api", () => ({
 
 vi.mock("../toast", () => ({ useToast: () => ({ push: vi.fn() }) }));
 
+const EMPTY_OPS_7D = [
+  { date: "2026-08-31", count: 0 },
+  { date: "2026-09-01", count: 0 },
+  { date: "2026-09-02", count: 0 },
+  { date: "2026-09-03", count: 0 },
+  { date: "2026-09-04", count: 0 },
+  { date: "2026-09-05", count: 0 },
+  { date: "2026-09-06", count: 0 },
+];
+
 const EMPTY_SUMMARY = {
   codesNotApplied: 0,
   deadlineSoon: 0,
@@ -26,6 +36,10 @@ const EMPTY_SUMMARY = {
   docsPendingDt: 0,
   exceptions: 0,
   openTasks: 0,
+  operationsToday: 0,
+  operationsYesterday: 0,
+  operationsDeltaPct: null as number | null,
+  operationsLast7d: EMPTY_OPS_7D,
 };
 
 const POPULATED_SUMMARY = {
@@ -35,6 +49,18 @@ const POPULATED_SUMMARY = {
   docsPendingDt: 3,
   exceptions: 5,
   openTasks: 5,
+  operationsToday: 108,
+  operationsYesterday: 100,
+  operationsDeltaPct: 8,
+  operationsLast7d: [
+    { date: "2026-08-31", count: 10 },
+    { date: "2026-09-01", count: 12 },
+    { date: "2026-09-02", count: 9 },
+    { date: "2026-09-03", count: 20 },
+    { date: "2026-09-04", count: 15 },
+    { date: "2026-09-05", count: 100 },
+    { date: "2026-09-06", count: 108 },
+  ],
 };
 
 const INTEGRATIONS = {
@@ -213,6 +239,26 @@ describe("HOME-01 dashboard read-model", () => {
     );
     await waitFor(() => expect(screen.getByText("Нет данных")).toBeTruthy());
     expect(container.querySelector(".chart")).toBeTruthy();
+    expect(screen.getByText("нет операций за сегодня")).toBeTruthy();
+    expect(
+      container.querySelector(".home-kpi--green .home-kpi-num")?.textContent
+    ).toBe("0");
+  });
+
+  it("HOME-02: живые операции сегодня и столбики динамики, не «нет данных»", async () => {
+    mockApis(POPULATED_SUMMARY);
+    const { container } = render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByText("108")).toBeTruthy());
+    expect(screen.getByText("+8% к вчера")).toBeTruthy();
+    expect(screen.queryByText("нет операций за сегодня")).toBeNull();
+    const opsCard = container.querySelector(".home-kpi--green");
+    expect(opsCard?.textContent).not.toContain("нет данных");
+    expect(screen.queryByText("Нет данных")).toBeNull();
+    expect(container.querySelectorAll(".home-dynamics-bar").length).toBe(7);
   });
 
   it("быстрые переходы HOME-01", async () => {

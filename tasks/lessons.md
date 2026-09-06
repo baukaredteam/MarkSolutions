@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-06 — HOME-02 ops KPI is a local read-model, not a new module
+
+- «Операции сегодня» / «Рабочая динамика» = COUNT of existing tenant rows (ImportDocument, WithdrawalDocument, UtilisationReport, CodeEvent.at, Order) in UTC calendar days. Do not invent SHP/PRD/WMS or call ИС МПТ.
+- HOME-01 attention (`openTasks`) and integrations stay as-is. Shipments KPI stays «модуль поставок — нет». Empty HOME banner hides only when ops series or attention is non-zero.
+- `+N% к вчера` is null when yesterday = 0 (no fake +∞). Chart empty copy remains «Нет данных» when all 7 buckets are 0.
+
 ## 2026-09-06 — ORD-releaseMethodType: CONTRACT enum, not ЛК «Повторная»
 
 - Wire `releaseMethodType` is exactly `PRIMARY|REMAINS|COMISSION|REMARK` (`docs/CONTRACT-IS-MPT.md`). Official spelling is **COMISSION** (one M). `COMMISSION` is not the createOrder enum.

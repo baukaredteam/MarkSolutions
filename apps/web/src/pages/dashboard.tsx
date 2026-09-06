@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiErrorResponse, ApiUnavailable } from "../api";
 import { sessionStore } from "../session";
 import { useToast } from "../toast";
+import "./dashboard.css";
+
+interface OpsDay {
+  date: string;
+  count: number;
+}
 
 interface Summary {
   codesNotApplied: number;
@@ -11,6 +17,10 @@ interface Summary {
   docsPendingDt: number;
   exceptions: number;
   openTasks: number;
+  operationsToday: number;
+  operationsYesterday: number;
+  operationsDeltaPct: number | null;
+  operationsLast7d: OpsDay[];
 }
 
 interface IntegrationRow {
@@ -96,6 +106,20 @@ function attentionKpiTotal(summary: Summary): number {
 
 function criticalCount(summary: Summary): number {
   return summary.openTasks;
+}
+
+function opsTodaySub(summary: Summary | null): string {
+  if (summary == null) return "загрузка…";
+  if (summary.operationsToday === 0) return "нет операций за сегодня";
+  if (summary.operationsDeltaPct == null) return "к вчера нет базы";
+  const sign = summary.operationsDeltaPct > 0 ? "+" : "";
+  return `${sign}${summary.operationsDeltaPct}% к вчера`;
+}
+
+function hasLiveOps(summary: Summary | null): boolean {
+  if (!summary) return false;
+  if (summary.operationsToday > 0) return true;
+  return (summary.operationsLast7d ?? []).some((d) => d.count > 0);
 }
 
 function integrationStatus(
@@ -238,7 +262,14 @@ export function DashboardPage() {
   const critical = summary == null ? 0 : criticalCount(summary);
 
   const isHomeEmpty =
-    summary != null && attentionTotal === 0 && attentionItems.length === 0;
+    summary != null &&
+    attentionTotal === 0 &&
+    attentionItems.length === 0 &&
+    !hasLiveOps(summary);
+
+  const opsSeries = summary?.operationsLast7d ?? [];
+  const hasDynamics = opsSeries.some((d) => d.count > 0);
+  const opsMax = Math.max(1, ...opsSeries.map((d) => d.count));
 
   const integrationById = useMemo(() => {
     const map = new Map<string, IntegrationRow>();
@@ -298,8 +329,10 @@ export function DashboardPage() {
         <div className="grid four home-kpis">
           <div className="card home-kpi home-kpi--green">
             <div className="home-kpi-title">Операции сегодня</div>
-            <div className="home-kpi-num">—</div>
-            <div className="home-kpi-sub">нет данных</div>
+            <div className="home-kpi-num">
+              {summary == null ? "—" : fmtCount(summary.operationsToday)}
+            </div>
+            <div className="home-kpi-sub">{opsTodaySub(summary)}</div>
           </div>
           <div className="card home-kpi home-kpi--red">
             <div className="home-kpi-title">Требуют внимания</div>
@@ -335,7 +368,30 @@ export function DashboardPage() {
               Операции за последние 7 дней
             </div>
             <div className="chart home-dynamics-chart">
-              <span className="home-dynamics-empty">Нет данных</span>
+              {hasDynamics ? (
+                <div
+                  className="home-dynamics-bars"
+                  role="img"
+                  aria-label="Операции за последние 7 дней"
+                >
+                  {opsSeries.map((d) => (
+                    <div className="home-dynamics-col" key={d.date}>
+                      <div
+                        className="home-dynamics-bar"
+                        style={{
+                          height: `${Math.round((d.count / opsMax) * 100)}%`,
+                        }}
+                        title={`${d.date}: ${d.count}`}
+                      />
+                      <span className="home-dynamics-label">
+                        {d.date.slice(8)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="home-dynamics-empty">Нет данных</span>
+              )}
             </div>
           </div>
           <div className="card">
